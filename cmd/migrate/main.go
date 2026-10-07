@@ -7,7 +7,9 @@ import (
 	"os"
 
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/runtime"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/access"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 )
@@ -28,7 +30,16 @@ func main() {
 	}
 	defer db.Close()
 	framework := runtime.New()
+	usersModule := users.New(users.Dependencies{Pool: db, Auth: cfg.Auth})
+	accessModule := access.New(access.Dependencies{Pool: db, Permissions: framework.Permissions, Users: usersModule.Service(), Authenticator: usersModule.Service()})
+	usersModule.SetAuthorizer(accessModule.Service())
 	if err := framework.Modules.Register(core.New(core.Dependencies{Metadata: framework.Metadata})); err != nil {
+		fail(err)
+	}
+	if err := framework.Modules.Register(usersModule); err != nil {
+		fail(err)
+	}
+	if err := framework.Modules.Register(accessModule); err != nil {
 		fail(err)
 	}
 	if err := framework.Initialize(ctx); err != nil {

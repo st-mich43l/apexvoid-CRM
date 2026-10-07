@@ -4,7 +4,9 @@ go 1.25
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.5
+	golang.org/x/crypto v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -15,7 +17,7 @@ require (
 	github.com/kr/text v0.1.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 )

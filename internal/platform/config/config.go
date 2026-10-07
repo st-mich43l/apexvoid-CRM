@@ -12,10 +12,12 @@ import (
 )
 
 type Config struct {
-	App      AppConfig      `yaml:"app"`
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Logging  LoggingConfig  `yaml:"logging"`
+	App       AppConfig       `yaml:"app"`
+	Server    ServerConfig    `yaml:"server"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Auth      AuthConfig      `yaml:"auth"`
+	Bootstrap BootstrapConfig `yaml:"bootstrap"`
+	Logging   LoggingConfig   `yaml:"logging"`
 }
 
 type AppConfig struct {
@@ -45,6 +47,20 @@ type LoggingConfig struct {
 	Level string `yaml:"level"`
 }
 
+type AuthConfig struct {
+	AccessTokenTTL  time.Duration `yaml:"access_token_ttl"`
+	RefreshTokenTTL time.Duration `yaml:"refresh_token_ttl"`
+	CookieSecure    bool          `yaml:"cookie_secure"`
+	CookieSameSite  string        `yaml:"cookie_same_site"`
+	PasswordMinLen  int           `yaml:"password_min_length"`
+	PasswordMaxLen  int           `yaml:"password_max_length"`
+}
+
+type BootstrapConfig struct {
+	AdminEmail    string `yaml:"admin_email"`
+	AdminPassword string `yaml:"admin_password"`
+}
+
 func Load(path string) (Config, error) {
 	cfg := defaultConfig()
 	if path != "" {
@@ -70,6 +86,7 @@ func defaultConfig() Config {
 		App:      AppConfig{Name: "apexvoid-crm", Environment: "development"},
 		Server:   ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
 		Database: DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
+		Auth:     AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
 		Logging:  LoggingConfig{Level: "INFO"},
 	}
 }
@@ -79,6 +96,14 @@ func applyEnv(c *Config) {
 	setString(&c.App.Environment, "APP_ENV")
 	setString(&c.Server.Address, "SERVER_ADDRESS")
 	setString(&c.Database.URL, "DATABASE_URL")
+	setDuration(&c.Auth.AccessTokenTTL, "AUTH_ACCESS_TOKEN_TTL")
+	setDuration(&c.Auth.RefreshTokenTTL, "AUTH_REFRESH_TOKEN_TTL")
+	setBool(&c.Auth.CookieSecure, "AUTH_COOKIE_SECURE")
+	setString(&c.Auth.CookieSameSite, "AUTH_COOKIE_SAMESITE")
+	setInt(&c.Auth.PasswordMinLen, "AUTH_PASSWORD_MIN_LENGTH")
+	setInt(&c.Auth.PasswordMaxLen, "AUTH_PASSWORD_MAX_LENGTH")
+	setString(&c.Bootstrap.AdminEmail, "APEXVOID_BOOTSTRAP_ADMIN_EMAIL")
+	setString(&c.Bootstrap.AdminPassword, "APEXVOID_BOOTSTRAP_ADMIN_PASSWORD")
 	setString(&c.Logging.Level, "LOG_LEVEL")
 	setDuration(&c.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
 	setDuration(&c.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
@@ -109,6 +134,22 @@ func setInt32(target *int32, key string) {
 	}
 }
 
+func setInt(target *int, key string) {
+	if value, ok := os.LookupEnv(key); ok {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			*target = parsed
+		}
+	}
+}
+
+func setBool(target *bool, key string) {
+	if value, ok := os.LookupEnv(key); ok {
+		if parsed, err := strconv.ParseBool(value); err == nil {
+			*target = parsed
+		}
+	}
+}
+
 func (c Config) Validate() error {
 	var missing []string
 	if strings.TrimSpace(c.App.Name) == "" {
@@ -125,6 +166,15 @@ func (c Config) Validate() error {
 	}
 	if c.Database.MinConns < 0 || c.Database.MaxConns < 1 || c.Database.MinConns > c.Database.MaxConns {
 		return fmt.Errorf("invalid configuration: database pool bounds")
+	}
+	if c.Auth.AccessTokenTTL <= 0 || c.Auth.RefreshTokenTTL <= c.Auth.AccessTokenTTL {
+		return fmt.Errorf("invalid configuration: auth token lifetimes")
+	}
+	if c.Auth.PasswordMinLen < 12 || c.Auth.PasswordMaxLen < c.Auth.PasswordMinLen {
+		return fmt.Errorf("invalid configuration: password policy")
+	}
+	if c.Auth.CookieSameSite != "lax" && c.Auth.CookieSameSite != "strict" && c.Auth.CookieSameSite != "none" {
+		return fmt.Errorf("invalid configuration: auth cookie same-site must be lax, strict, or none")
 	}
 	return nil
 }

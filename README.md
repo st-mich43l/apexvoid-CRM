@@ -6,7 +6,7 @@ ApexVoid is a modular business application framework built as a Go/React modular
 
 - Backend: Go, chi, `log/slog`, pgx, PostgreSQL
 - Frontend: React, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query
-- Runtime: explicit module registry, dependency resolution, metadata registries, synchronous typed event bus, extension points, and module-owned HTTP transport
+- Runtime: explicit module registry, dependency resolution, metadata registries, synchronous typed event bus, extension points, module-owned HTTP transport, and user/RBAC modules
 - Infrastructure: PostgreSQL only; no cache or message broker is required
 - API: versioned REST under `/api/v1`
 
@@ -18,12 +18,14 @@ See [docs/architecture.md](docs/architecture.md) for layer responsibilities, tra
 
 - Modules declare identity, version, dependencies, and registration behavior.
 - Entities and fields describe strongly typed business models without replacing relational tables.
-- Permissions and capabilities are explicit registries; authorization and roles are intentionally deferred.
+- Permissions and capabilities are explicit registries; users and RBAC assignments are owned by the platform modules.
 - Events use namespaced definitions and generic typed subscriber/publisher functions.
 - Extensions attach named implementations to explicit extension points with deterministic ordering.
 - Metadata aggregates framework definitions for read-only discovery by API clients.
 
 The built-in `core` module registers only `core.example`, `core.example.read`, `core.example.created`, `core.auditable`, and `core.navigation` to exercise the framework. Its discovery handlers live under `internal/modules/core/transport/http`; no CRM entities are included.
+
+Phase 3 adds `users` and `access` modules. Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Access roles reference permissions from the framework registry, and the protected `administrator` role grants all registered permissions. No tokens or password hashes are returned by the API.
 
 ## Development
 
@@ -44,10 +46,14 @@ Endpoints:
 - Entities: `GET /api/v1/framework/entities`
 - Entity detail: `GET /api/v1/framework/entities/{entity}`
 - Permissions: `GET /api/v1/framework/permissions`
+- Login: `POST /api/v1/auth/login`
+- Current user: `GET /api/v1/auth/me`
+- Users: `/api/v1/users`
+- Roles: `/api/v1/access/roles`
 
 Configuration defaults are in `config/application.yaml`; environment variables override them. Use `.env.example` as the local template and do not commit secrets.
 
-Migration metadata is owned by modules and ordered by module dependencies. There are currently no persistent framework migrations. The runner remains available for future module migrations:
+Migration metadata is owned by modules and ordered by module dependencies. Users and access migrations create the identity and RBAC tables:
 
 ```bash
 make migrate-up
@@ -55,9 +61,11 @@ make migrate-down
 make test-integration
 ```
 
+For a fresh deployment, set `APEXVOID_BOOTSTRAP_ADMIN_EMAIL` and `APEXVOID_BOOTSTRAP_ADMIN_PASSWORD` in the environment before starting the backend. The administrator is created only when the database has no users; credentials are never logged or reset automatically.
+
 ## Frontend structure
 
-The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. A navigation registry provides deterministic ordering without a runtime plugin system.
+The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. The core module owns login and protected routing, while the administration module provides basic user and role management. A navigation registry provides deterministic ordering without a runtime plugin system.
 
 ## Testing
 
@@ -76,7 +84,7 @@ The test suite covers dependency ordering, missing dependencies, cycles, entity/
 cmd/server/          HTTP application entrypoint
 internal/app/        application bootstrap and discovery routes
 internal/framework/  module, entity, field, permission, event, extension, metadata, runtime
-internal/modules/    compiled-in modules, currently only core
+internal/modules/    compiled-in modules: core, users, and access
 internal/platform/   config, PostgreSQL, health, logging, HTTP
 web/src/core/        platform API client and application shell
 web/src/framework/   frontend module, navigation, and metadata contracts

@@ -6,6 +6,11 @@ import "net/http"
 // depend on chi or the application's router implementation.
 type RouteRegistry interface {
 	Get(path string, handler http.HandlerFunc)
+	Post(path string, handler http.HandlerFunc)
+	Put(path string, handler http.HandlerFunc)
+	Patch(path string, handler http.HandlerFunc)
+	Delete(path string, handler http.HandlerFunc)
+	With(middleware ...func(http.Handler) http.Handler) RouteRegistry
 }
 
 type RouteRegistrar interface {
