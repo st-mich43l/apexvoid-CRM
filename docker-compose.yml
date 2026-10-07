@@ -22,8 +22,6 @@ services:
     environment:
       APP_ENV: development
       DATABASE_URL: postgres://${POSTGRES_USER:-apexvoid}:${POSTGRES_PASSWORD:-apexvoid}@postgres:5432/${POSTGRES_DB:-apexvoid}?sslmode=disable
-      APEXVOID_BOOTSTRAP_ADMIN_EMAIL: ${APEXVOID_BOOTSTRAP_ADMIN_EMAIL:-}
-      APEXVOID_BOOTSTRAP_ADMIN_PASSWORD: ${APEXVOID_BOOTSTRAP_ADMIN_PASSWORD:-}
     ports:
       - "${BACKEND_PORT:-6868}:6868"
     depends_on:

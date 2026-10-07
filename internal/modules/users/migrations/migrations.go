@@ -36,5 +36,11 @@ CREATE INDEX IF NOT EXISTS users_sessions_user_id_idx ON users_sessions (user_id
 CREATE INDEX IF NOT EXISTS users_sessions_refresh_expiry_idx ON users_sessions (refresh_expires_at);`,
 		DownSQL: `DROP TABLE IF EXISTS users_sessions;
 DROP TABLE IF EXISTS users_users;`,
+	}, {
+		Module:  "users",
+		Version: 2,
+		Name:    "force_bootstrap_password_change",
+		UpSQL:   `ALTER TABLE users_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;`,
+		DownSQL: `ALTER TABLE users_users DROP COLUMN IF EXISTS must_change_password;`,
 	}}
 }

@@ -29,3 +29,14 @@ func TestLoadFailsWithoutRequiredInfrastructureURLs(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+func TestLoadUsesDefaultBootstrapAdministrator(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://test")
+	cfg, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Bootstrap.AdminUsername != "admin" || cfg.Bootstrap.AdminPassword != "admin" {
+		t.Fatalf("unexpected default bootstrap administrator: %+v", cfg.Bootstrap)
+	}
+}

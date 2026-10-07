@@ -68,14 +68,15 @@ type updateRequest struct {
 	DisplayName *string `json:"display_name"`
 }
 type userResponse struct {
-	ID          string  `json:"id"`
-	Email       string  `json:"email"`
-	Username    string  `json:"username,omitempty"`
-	DisplayName string  `json:"display_name"`
-	Status      string  `json:"status"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
-	LastLoginAt *string `json:"last_login_at,omitempty"`
+	ID                 string  `json:"id"`
+	Email              string  `json:"email"`
+	Username           string  `json:"username,omitempty"`
+	DisplayName        string  `json:"display_name"`
+	Status             string  `json:"status"`
+	MustChangePassword bool    `json:"must_change_password"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+	LastLoginAt        *string `json:"last_login_at,omitempty"`
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -147,12 +148,16 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal, _ := api.PrincipalFromContext(r.Context())
-	if err := h.service.ChangePassword(r.Context(), principal.UserID, request.CurrentPassword, request.NewPassword); err != nil {
+	if err := h.service.ChangePassword(r.Context(), principal.UserID, principal.SessionID, request.CurrentPassword, request.NewPassword); err != nil {
 		writeDomainError(w, r, err)
 		return
 	}
-	clearCookies(w)
-	w.WriteHeader(http.StatusNoContent)
+	user, err := h.service.Find(r.Context(), principal.UserID)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.authResponse(r, user))
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +253,7 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func toUserResponse(user domain.User) userResponse {
-	response := userResponse{ID: user.ID.String(), Email: user.Email, Username: user.Username, DisplayName: user.DisplayName, Status: string(user.Status), CreatedAt: user.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: user.UpdatedAt.UTC().Format(time.RFC3339)}
+	response := userResponse{ID: user.ID.String(), Email: user.Email, Username: user.Username, DisplayName: user.DisplayName, Status: string(user.Status), MustChangePassword: user.MustChangePassword, CreatedAt: user.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: user.UpdatedAt.UTC().Format(time.RFC3339)}
 	if user.LastLoginAt != nil {
 		value := user.LastLoginAt.UTC().Format(time.RFC3339)
 		response.LastLoginAt = &value

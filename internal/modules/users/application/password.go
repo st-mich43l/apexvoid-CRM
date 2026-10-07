@@ -26,6 +26,20 @@ func (h PasswordHasher) Hash(password string) (string, error) {
 	if err := h.Validate(password); err != nil {
 		return "", err
 	}
+	return h.hash(password)
+}
+
+// HashBootstrap permits only the deliberately short first-start credential.
+// It is still encoded with Argon2id before it reaches the database and the
+// account is forced through the normal password policy after first login.
+func (h PasswordHasher) HashBootstrap(password string) (string, error) {
+	if strings.TrimSpace(password) == "" || len([]rune(password)) > h.MaxLength {
+		return "", fmt.Errorf("invalid bootstrap password")
+	}
+	return h.hash(password)
+}
+
+func (h PasswordHasher) hash(password string) (string, error) {
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate password salt: %w", err)

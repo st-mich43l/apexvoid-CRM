@@ -8,5 +8,6 @@ export function ProtectedLayout({ navigation }: { navigation: NavigationItem[] }
   const location = useLocation()
   if (loading) return <div className="grid min-h-screen place-items-center bg-ink text-zinc-500">Loading…</div>
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (user.must_change_password && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
   return <AppShell navigation={navigation} />
 }
