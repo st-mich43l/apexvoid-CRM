@@ -21,6 +21,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => { void reload().finally(() => setLoading(false)) }, [reload])
-  const value = useMemo<AuthContextValue>(() => ({ user, loading, permissions, login: async (email, password) => { const response = await api.auth.login(email, password); setUser(response.user); setPermissions(response.permissions ?? []) }, logout: async () => { await api.auth.logout(); setUser(null); setPermissions([]) }, can: permission => permissions.includes(permission), reload }), [user, loading, permissions, reload])
+  const value = useMemo<AuthContextValue>(() => ({ user, loading, permissions, login: async (email, password) => { const response = await api.auth.login(email, password); setUser(response.user); setPermissions(response.permissions ?? []) }, logout: async () => { try { await api.auth.logout() } finally { window.localStorage.removeItem('apexvoid.active_workspace'); setUser(null); setPermissions([]) } }, can: permission => permissions.includes(permission), reload }), [user, loading, permissions, reload])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
