@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../../core/auth/context'
 import { AppShell } from '../../core/layout/AppShell'
 import { useWorkspace } from '../../core/workspace/context'
@@ -11,6 +11,7 @@ export function ProtectedLayout({ navigation }: { navigation: NavigationItem[] }
   if (loading) return <div className="grid min-h-screen place-items-center bg-ink text-zinc-500">Loading…</div>
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
   if (user.must_change_password && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
+  if (user.must_change_password && location.pathname === '/change-password') return <Outlet />
   return <WorkspaceProvider><WorkspaceGate navigation={navigation} /></WorkspaceProvider>
 }
 
