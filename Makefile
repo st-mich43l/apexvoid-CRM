@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: dev build test lint fmt backend frontend compose-up compose-down compose-logs
+.PHONY: dev build test test-integration lint fmt backend frontend compose-up compose-down compose-logs migrate-up migrate-down
 
 dev: compose-up
 
@@ -12,12 +12,15 @@ test:
 	go test ./...
 	npm --prefix web run typecheck
 
+test-integration:
+	go test -tags=integration ./tests/integration
+
 lint:
 	go vet ./...
 	npm --prefix web run lint
 
 fmt:
-	gofmt -w $$(find cmd internal -name '*.go' -type f)
+	gofmt -w $$(find cmd internal tests -name '*.go' -type f)
 
 backend:
 	go run ./cmd/server
@@ -33,3 +36,9 @@ compose-down:
 
 compose-logs:
 	docker compose logs -f
+
+migrate-up:
+	go run ./cmd/migrate up
+
+migrate-down:
+	go run ./cmd/migrate down

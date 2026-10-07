@@ -3,32 +3,42 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/runtime"
+	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/health"
 )
 
 type App struct {
-	Logger   *slog.Logger
-	Database *pgxpool.Pool
-	Health   *health.Checker
-	Metadata *metadata.Registry
+	Logger       *slog.Logger
+	Database     *pgxpool.Pool
+	Transactions *database.TxManager
+	Health       *health.Checker
+	Runtime      *runtime.Runtime
 }
 
-func (a *App) RegisterRoutes(router chi.Router) {
+func (a *App) RegisterRoutes(router chi.Router) error {
 	router.Get("/health", a.healthHandler)
 	router.Get("/ready", a.readyHandler)
-	router.Route("/api/v1", func(r chi.Router) {
-		r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]string{"service": "apexvoid-crm", "version": "v1"})
-		})
-		a.registerFrameworkRoutes(r)
+	api := chi.NewRouter()
+	api.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"service": "apexvoid-crm", "version": "v1"})
 	})
+	if err := a.Runtime.Modules.RegisterRoutes(chiRoutes{router: api}); err != nil {
+		return fmt.Errorf("register module routes: %w", err)
+	}
+	router.Mount("/api/v1", api)
+	return nil
 }
+
+type chiRoutes struct{ router chi.Router }
+
+func (r chiRoutes) Get(path string, handler http.HandlerFunc) { r.router.Get(path, handler) }
 
 func (a *App) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "apexvoid-crm"})

@@ -1,0 +1,1 @@
+export function NotFoundPage() { return <div className="rounded-2xl border border-line bg-panel p-8"><p className="mb-3 text-sm font-medium text-accent">ApexVoid Framework</p><h1 className="text-3xl font-semibold tracking-tight">Page not found</h1><p className="mt-3 text-zinc-500">The requested route is not registered by an application module.</p></div> }

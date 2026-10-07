@@ -1,0 +1,1 @@
+export function SettingsPage() { return <div><p className="mb-3 text-sm font-medium text-accent">Platform</p><h1 className="text-3xl font-semibold tracking-tight">Settings</h1><p className="mt-3 text-zinc-500">Configuration is managed by the server environment and application YAML.</p></div> }

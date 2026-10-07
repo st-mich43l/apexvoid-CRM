@@ -12,15 +12,17 @@ import (
 
 func TestFrameworkDiscoveryEndpoints(t *testing.T) {
 	framework := runtime.New()
-	if err := framework.Modules.Register(core.New()); err != nil {
+	if err := framework.Modules.Register(core.New(core.Dependencies{Metadata: framework.Metadata})); err != nil {
 		t.Fatal(err)
 	}
 	if err := framework.Initialize(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	application := &App{Metadata: framework.Metadata}
+	application := &App{Runtime: framework}
 	router := chi.NewRouter()
-	application.RegisterRoutes(router)
+	if err := application.RegisterRoutes(router); err != nil {
+		t.Fatal(err)
+	}
 	for _, path := range []string{"/api/v1/framework/modules", "/api/v1/framework/entities", "/api/v1/framework/permissions", "/api/v1/framework/entities/core.example"} {
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))

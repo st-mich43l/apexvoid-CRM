@@ -1,4 +1,4 @@
-package core
+package metadata
 
 import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/capability"
@@ -10,13 +10,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
 )
 
-type Module struct{}
-
-func New() Module { return Module{} }
-func (Module) Descriptor() module.Descriptor {
-	return module.Descriptor{Name: "core", DisplayName: "ApexVoid Core", Version: "1.0.0"}
-}
-func (Module) Register(ctx *module.Context) error {
+func Register(ctx *module.Context) error {
 	if err := ctx.Capabilities.Register(capability.Definition{Name: "core.auditable", Module: "core", DisplayName: "Auditable", Description: "Marks an entity as eligible for audit history."}); err != nil {
 		return err
 	}

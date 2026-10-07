@@ -1,0 +1,10 @@
+import { Activity, Boxes, ShieldCheck } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../../../core/api/client'
+
+export function DashboardPage() {
+  const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: 1 })
+  const readiness = useQuery({ queryKey: ['readiness'], queryFn: api.readiness, retry: 1 })
+  const cards = [{ label: 'API service', value: health.data?.status === 'ok' ? 'Healthy' : 'Unavailable', icon: Activity, ok: health.data?.status === 'ok' }, { label: 'PostgreSQL', value: readiness.data?.dependencies.postgres === 'ok' ? 'Connected' : 'Unavailable', icon: ShieldCheck, ok: readiness.data?.dependencies.postgres === 'ok' }, { label: 'Framework modules', value: '1 registered', icon: Boxes, ok: true }]
+  return <div><div className="mb-10"><p className="mb-3 text-sm font-medium text-accent">ApexVoid CRM</p><h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Framework initialized</h1><p className="mt-3 max-w-xl text-zinc-500">The modular application foundation is running. Your next module can be built on explicit contracts and a predictable platform.</p></div><div className="grid gap-4 md:grid-cols-3">{cards.map(({ label, value, icon: Icon, ok }) => <div key={label} className="rounded-2xl border border-line bg-panel p-5"><div className="mb-8 flex items-center justify-between"><span className="text-sm text-zinc-500">{label}</span><Icon size={18} className={ok ? 'text-emerald-400' : 'text-zinc-600'} /></div><p className="text-xl font-medium">{value}</p><p className="mt-2 text-xs text-zinc-600">Foundation dependency check</p></div>)}</div><div className="mt-8 rounded-2xl border border-line bg-panel p-6"><div className="flex items-center gap-3"><div className="h-2 w-2 rounded-full bg-accent" /><h2 className="font-medium">Ready for the next layer</h2></div><p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500">ApexVoid is intentionally starting as a modular monolith. Domain capabilities can be added as bounded modules without introducing distributed-system complexity too early.</p></div></div>
+}

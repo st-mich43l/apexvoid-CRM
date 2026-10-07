@@ -19,7 +19,7 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	framework := runtime.New()
-	if err := framework.Modules.Register(core.New()); err != nil {
+	if err := framework.Modules.Register(core.New(core.Dependencies{Metadata: framework.Metadata})); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register built-in modules: %w", err)
 	}
@@ -27,7 +27,7 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 		postgres.Close()
 		return nil, fmt.Errorf("initialize framework: %w", err)
 	}
-	application := &App{Logger: logger, Database: postgres, Health: health.NewChecker(postgres), Metadata: framework.Metadata}
+	application := &App{Logger: logger, Database: postgres, Transactions: database.NewTxManager(postgres), Health: health.NewChecker(postgres), Runtime: framework}
 	framework.LogStartup(logger)
 	logger.Info("application initialized")
 	return application, nil

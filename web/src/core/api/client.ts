@@ -1,4 +1,4 @@
-import type { EntityMetadata, HealthResponse, ModuleMetadata, PermissionMetadata, ReadinessResponse } from '../../types/api'
+import type { EntityMetadata, HealthResponse, ModuleMetadata, PermissionMetadata, ReadinessResponse } from '../../framework/metadata/types'
 
 const baseURL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
