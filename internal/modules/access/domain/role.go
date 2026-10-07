@@ -13,6 +13,7 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$`)
 
 type Role struct {
 	ID          uuid.UUID
+	WorkspaceID *uuid.UUID
 	Name        string
 	DisplayName string
 	Description string

@@ -8,6 +8,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/runtime"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/access"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
@@ -23,7 +24,9 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	framework := runtime.New()
 	usersModule := users.New(users.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Auth: cfg.Auth})
+	organizationModule := organization.New(organization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Users: usersModule.Service(), Directory: usersModule.Service()})
 	accessModule := access.New(access.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Permissions: framework.Permissions, Users: usersModule.Service(), Authenticator: usersModule.Service()})
+	organizationModule.SetAccess(accessModule.Service())
 	usersModule.SetAuthorizer(accessModule.Service())
 	if err := framework.Modules.Register(core.New(core.Dependencies{Metadata: framework.Metadata})); err != nil {
 		postgres.Close()
@@ -32,6 +35,10 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	if err := framework.Modules.Register(usersModule); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register users module: %w", err)
+	}
+	if err := framework.Modules.Register(organizationModule); err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("register organization module: %w", err)
 	}
 	if err := framework.Modules.Register(accessModule); err != nil {
 		postgres.Close()

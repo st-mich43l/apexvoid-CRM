@@ -32,6 +32,22 @@ The application composition root constructs platform services and compiled-in mo
 
 Module-to-module communication uses either a narrow public contract under `modules/<module>/api` for synchronous reads or the in-process typed event bus for reactions. A module must declare dependencies in its descriptor before using another module's public contract.
 
+## Organization, workspace, and tenant context
+
+The `organization` module owns the Phase 4 ownership boundary:
+
+```text
+User -> workspace_memberships -> workspace_workspaces -> organization_organizations
+```
+
+Users may have active memberships in multiple workspaces. The selected workspace is carried by the `X-ApexVoid-Workspace` request header; when a user has exactly one active workspace, the backend may resolve it without the header. The `organization/api` middleware authenticates the user, resolves the workspace, verifies the active membership and active organization/workspace status, and stores a typed `WorkspaceContext` in the request context. A workspace ID supplied by a client is never trusted without this membership check.
+
+Workspace-owned repositories receive an explicit workspace ID or `WorkspaceContext` and must include it in every lookup. The framework entity metadata supports `global`, `organization`, and `workspace` scopes so future modules can declare ownership without adding ad-hoc tenant behavior.
+
+Platform roles remain installation-wide. Workspace role definitions carry a `workspace_id`, and role assignments are made through `access_workspace_membership_roles`. Workspace authorization resolves global platform roles plus roles assigned to the active membership. The built-in workspace administrator is provisioned transactionally during initial setup; it is separate from the global platform administrator.
+
+Initial setup is authoritative on the backend: `GET /api/v1/setup/status` reports whether an organization exists and `POST /api/v1/setup/organization` creates the organization, default workspace, administrator membership, and workspace administrator role in one transaction. The operation is idempotently rejected after setup is complete. The frontend keeps the selected workspace in local storage only as a convenience; the backend remains the authorization boundary. Query keys for workspace data include the workspace ID, and the central API client adds the workspace header automatically.
+
 ## Persistence and transactions
 
 PostgreSQL is the only external data dependency. Business repositories belong to their owning module under `infrastructure/postgres`; the platform database package owns the pool and transaction boundary helper. Application use cases call `TxManager.WithTransaction`; repositories retrieve the active transaction explicitly from the context and never start nested transactions.

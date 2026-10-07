@@ -32,7 +32,7 @@ func (r *Repository) db(ctx context.Context) querier {
 }
 
 func (r *Repository) CreateRole(ctx context.Context, role *domain.Role) error {
-	_, err := r.db(ctx).Exec(ctx, `INSERT INTO access_roles (id, name, display_name, description, system, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, role.ID, role.Name, role.DisplayName, role.Description, role.System, role.CreatedAt, role.UpdatedAt)
+	_, err := r.db(ctx).Exec(ctx, `INSERT INTO access_roles (id, workspace_id, name, display_name, description, system, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, role.ID, role.WorkspaceID, role.Name, role.DisplayName, role.Description, role.System, role.CreatedAt, role.UpdatedAt)
 	if isUniqueViolation(err) {
 		return domain.ErrDuplicateRole
 	}
@@ -50,9 +50,16 @@ func (r *Repository) FindRoleByName(ctx context.Context, name string) (*domain.R
 	return r.findRole(ctx, `WHERE name = $1`, name)
 }
 
-func (r *Repository) findRole(ctx context.Context, condition string, arg any) (*domain.Role, error) {
+func (r *Repository) FindRoleByWorkspaceAndName(ctx context.Context, workspaceID *uuid.UUID, name string) (*domain.Role, error) {
+	if workspaceID == nil {
+		return r.findRole(ctx, `WHERE workspace_id IS NULL AND name = $1`, name)
+	}
+	return r.findRole(ctx, `WHERE workspace_id = $1 AND name = $2`, *workspaceID, name)
+}
+
+func (r *Repository) findRole(ctx context.Context, condition string, args ...any) (*domain.Role, error) {
 	var role domain.Role
-	if err := r.db(ctx).QueryRow(ctx, `SELECT id, name, display_name, description, system, created_at, updated_at FROM access_roles `+condition, arg).Scan(&role.ID, &role.Name, &role.DisplayName, &role.Description, &role.System, &role.CreatedAt, &role.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
+	if err := r.db(ctx).QueryRow(ctx, `SELECT id, workspace_id, name, display_name, description, system, created_at, updated_at FROM access_roles `+condition, args...).Scan(&role.ID, &role.WorkspaceID, &role.Name, &role.DisplayName, &role.Description, &role.System, &role.CreatedAt, &role.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	} else if err != nil {
 		return nil, fmt.Errorf("find role: %w", err)
@@ -61,7 +68,7 @@ func (r *Repository) findRole(ctx context.Context, condition string, arg any) (*
 }
 
 func (r *Repository) ListRoles(ctx context.Context) ([]domain.Role, error) {
-	rows, err := r.db(ctx).Query(ctx, `SELECT id, name, display_name, description, system, created_at, updated_at FROM access_roles ORDER BY system DESC, name`)
+	rows, err := r.db(ctx).Query(ctx, `SELECT id, workspace_id, name, display_name, description, system, created_at, updated_at FROM access_roles ORDER BY system DESC, name`)
 	if err != nil {
 		return nil, fmt.Errorf("list roles: %w", err)
 	}
@@ -69,7 +76,24 @@ func (r *Repository) ListRoles(ctx context.Context) ([]domain.Role, error) {
 	roles := []domain.Role{}
 	for rows.Next() {
 		var role domain.Role
-		if err := rows.Scan(&role.ID, &role.Name, &role.DisplayName, &role.Description, &role.System, &role.CreatedAt, &role.UpdatedAt); err != nil {
+		if err := rows.Scan(&role.ID, &role.WorkspaceID, &role.Name, &role.DisplayName, &role.Description, &role.System, &role.CreatedAt, &role.UpdatedAt); err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+	}
+	return roles, rows.Err()
+}
+
+func (r *Repository) ListWorkspaceRoles(ctx context.Context, workspaceID uuid.UUID) ([]domain.Role, error) {
+	rows, err := r.db(ctx).Query(ctx, `SELECT id, workspace_id, name, display_name, description, system, created_at, updated_at FROM access_roles WHERE workspace_id = $1 ORDER BY name`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace roles: %w", err)
+	}
+	defer rows.Close()
+	roles := []domain.Role{}
+	for rows.Next() {
+		var role domain.Role
+		if err := rows.Scan(&role.ID, &role.WorkspaceID, &role.Name, &role.DisplayName, &role.Description, &role.System, &role.CreatedAt, &role.UpdatedAt); err != nil {
 			return nil, err
 		}
 		roles = append(roles, role)
@@ -188,6 +212,66 @@ func (r *Repository) EffectivePermissions(ctx context.Context, userID uuid.UUID)
 		result = append(result, permission)
 	}
 	return result, admin, rows.Err()
+}
+
+func (r *Repository) EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, bool, error) {
+	rows, err := r.db(ctx).Query(ctx, `SELECT r.name, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1
+UNION ALL
+SELECT r.name, rp.permission_name FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE m.user_id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2`, userID, workspaceID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	set := map[string]struct{}{}
+	platformAdmin := false
+	for rows.Next() {
+		var roleName string
+		var permission *string
+		if err := rows.Scan(&roleName, &permission); err != nil {
+			return nil, false, err
+		}
+		if roleName == "administrator" {
+			platformAdmin = true
+		}
+		if permission != nil {
+			set[*permission] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(set))
+	for name := range set {
+		result = append(result, name)
+	}
+	return result, platformAdmin, rows.Err()
+}
+
+func (r *Repository) ReplaceMembershipRoles(ctx context.Context, membershipID uuid.UUID, roleIDs []uuid.UUID) error {
+	db := r.db(ctx)
+	if _, err := db.Exec(ctx, `DELETE FROM access_workspace_membership_roles WHERE membership_id = $1`, membershipID); err != nil {
+		return err
+	}
+	for _, roleID := range roleIDs {
+		if _, err := db.Exec(ctx, `INSERT INTO access_workspace_membership_roles (membership_id, role_id) VALUES ($1,$2)`, membershipID, roleID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Repository) MembershipRoleIDs(ctx context.Context, membershipID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db(ctx).Query(ctx, `SELECT role_id FROM access_workspace_membership_roles WHERE membership_id = $1 ORDER BY role_id`, membershipID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, rows.Err()
 }
 
 func (r *Repository) EnsureAdministrator(ctx context.Context) (domain.Role, error) {

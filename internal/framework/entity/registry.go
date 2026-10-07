@@ -13,6 +13,7 @@ type Definition struct {
 	Name         string
 	DisplayName  string
 	Module       string
+	Scope        Scope
 	Fields       []field.Definition
 	Capabilities []string
 }
@@ -32,6 +33,12 @@ func (r *Registry) Register(definition Definition) error {
 	}
 	if strings.TrimSpace(definition.Module) == "" {
 		return fmt.Errorf("entity %q module cannot be empty", definition.Name)
+	}
+	if definition.Scope == "" {
+		definition.Scope = ScopeGlobal
+	}
+	if !definition.Scope.Valid() {
+		return fmt.Errorf("entity %q has invalid scope %q", definition.Name, definition.Scope)
 	}
 	if !strings.HasPrefix(definition.Name, definition.Module+".") {
 		return fmt.Errorf("entity %q must be owned by module %q", definition.Name, definition.Module)
