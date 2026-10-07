@@ -11,6 +11,7 @@ type Repository interface {
 	Create(ctx context.Context, user *User) error
 	FindByID(ctx context.Context, id uuid.UUID) (*User, error)
 	FindByEmail(ctx context.Context, email string) (*User, error)
+	FindByLogin(ctx context.Context, login string) (*User, error)
 	List(ctx context.Context) ([]User, error)
 	Count(ctx context.Context) (int, error)
 	Update(ctx context.Context, user *User) error

@@ -58,6 +58,7 @@ type AuthConfig struct {
 
 type BootstrapConfig struct {
 	AdminEmail    string `yaml:"admin_email"`
+	AdminUsername string `yaml:"admin_username"`
 	AdminPassword string `yaml:"admin_password"`
 }
 
@@ -83,11 +84,12 @@ func Load(path string) (Config, error) {
 
 func defaultConfig() Config {
 	return Config{
-		App:      AppConfig{Name: "apexvoid-crm", Environment: "development"},
-		Server:   ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
-		Database: DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
-		Auth:     AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
-		Logging:  LoggingConfig{Level: "INFO"},
+		App:       AppConfig{Name: "apexvoid-crm", Environment: "development"},
+		Server:    ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
+		Database:  DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
+		Auth:      AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
+		Bootstrap: BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
+		Logging:   LoggingConfig{Level: "INFO"},
 	}
 }
 

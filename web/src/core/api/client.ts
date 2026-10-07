@@ -34,7 +34,7 @@ export const api = {
     refresh: () => request<AuthResponse>('/api/v1/auth/refresh', { method: 'POST' }),
     logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
     me: () => request<AuthResponse>('/api/v1/auth/me'),
-    changePassword: (current_password: string, new_password: string) => request<void>('/api/v1/auth/change-password', json({ current_password, new_password })),
+    changePassword: (current_password: string, new_password: string) => request<AuthResponse>('/api/v1/auth/change-password', json({ current_password, new_password })),
   },
   users: {
     list: () => request<CurrentUser[]>('/api/v1/users'),

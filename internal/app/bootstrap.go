@@ -55,12 +55,8 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 		postgres.Close()
 		return nil, fmt.Errorf("ensure administrator role: %w", err)
 	}
-	if (cfg.Bootstrap.AdminEmail == "") != (cfg.Bootstrap.AdminPassword == "") {
-		postgres.Close()
-		return nil, fmt.Errorf("bootstrap administrator requires both email and password")
-	}
 	if cfg.Bootstrap.AdminEmail != "" {
-		user, created, err := usersModule.Service().BootstrapAdmin(ctx, cfg.Bootstrap.AdminEmail, cfg.Bootstrap.AdminPassword)
+		user, created, err := usersModule.Service().BootstrapAdminWithUsername(ctx, cfg.Bootstrap.AdminEmail, cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
 		if err != nil {
 			postgres.Close()
 			return nil, fmt.Errorf("bootstrap administrator user: %w", err)

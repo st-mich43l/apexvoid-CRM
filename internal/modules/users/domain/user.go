@@ -17,15 +17,16 @@ const (
 )
 
 type User struct {
-	ID           uuid.UUID
-	Email        string
-	Username     string
-	DisplayName  string
-	PasswordHash string
-	Status       Status
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	LastLoginAt  *time.Time
+	ID                 uuid.UUID
+	Email              string
+	Username           string
+	DisplayName        string
+	PasswordHash       string
+	Status             Status
+	MustChangePassword bool
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	LastLoginAt        *time.Time
 }
 
 func NormalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }

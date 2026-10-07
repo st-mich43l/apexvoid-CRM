@@ -25,3 +25,14 @@ func TestPasswordHasherPolicy(t *testing.T) {
 		t.Fatal("expected short password to fail policy")
 	}
 }
+
+func TestPasswordHasherBootstrapCredentialIsHashed(t *testing.T) {
+	hasher := PasswordHasher{MinLength: 12, MaxLength: 128}
+	hash, err := hasher.HashBootstrap("admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash == "admin" || !hasher.Verify(hash, "admin") {
+		t.Fatal("bootstrap password was not hashed correctly")
+	}
+}

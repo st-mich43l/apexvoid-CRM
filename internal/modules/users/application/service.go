@@ -37,10 +37,11 @@ func NewService(dependencies Dependencies) *Service {
 }
 
 type CreateInput struct {
-	Email       string
-	Username    string
-	DisplayName string
-	Password    string
+	Email              string
+	Username           string
+	DisplayName        string
+	Password           string
+	MustChangePassword bool
 }
 
 type UpdateInput struct {
@@ -70,7 +71,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.User, e
 		return domain.User{}, domain.ErrPasswordPolicy
 	}
 	now := time.Now().UTC()
-	user := domain.User{ID: uuid.New(), Email: email, Username: strings.TrimSpace(input.Username), DisplayName: strings.TrimSpace(input.DisplayName), PasswordHash: hash, Status: domain.StatusActive, CreatedAt: now, UpdatedAt: now}
+	user := domain.User{ID: uuid.New(), Email: email, Username: strings.TrimSpace(input.Username), DisplayName: strings.TrimSpace(input.DisplayName), PasswordHash: hash, Status: domain.StatusActive, MustChangePassword: input.MustChangePassword, CreatedAt: now, UpdatedAt: now}
 	if err := user.Validate(); err != nil {
 		return domain.User{}, err
 	}
@@ -81,6 +82,10 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.User, e
 }
 
 func (s *Service) BootstrapAdmin(ctx context.Context, email, password string) (domain.User, bool, error) {
+	return s.BootstrapAdminWithUsername(ctx, email, "admin", password)
+}
+
+func (s *Service) BootstrapAdminWithUsername(ctx context.Context, email, username, password string) (domain.User, bool, error) {
 	count, err := s.users.Count(ctx)
 	if err != nil {
 		return domain.User{}, false, err
@@ -88,7 +93,18 @@ func (s *Service) BootstrapAdmin(ctx context.Context, email, password string) (d
 	if count != 0 || strings.TrimSpace(email) == "" || password == "" {
 		return domain.User{}, false, nil
 	}
-	user, err := s.Create(ctx, CreateInput{Email: email, DisplayName: "Administrator", Password: password})
+	hash, err := s.hasher.HashBootstrap(password)
+	if err != nil {
+		return domain.User{}, false, err
+	}
+	now := time.Now().UTC()
+	user := domain.User{ID: uuid.New(), Email: domain.NormalizeEmail(email), Username: strings.TrimSpace(username), DisplayName: "Administrator", PasswordHash: hash, Status: domain.StatusActive, MustChangePassword: true, CreatedAt: now, UpdatedAt: now}
+	if err := user.Validate(); err != nil {
+		return domain.User{}, false, err
+	}
+	if err := s.users.Create(ctx, &user); err != nil {
+		return domain.User{}, false, err
+	}
 	return user, err == nil, err
 }
 
@@ -151,7 +167,7 @@ func (s *Service) SetStatus(ctx context.Context, id uuid.UUID, status domain.Sta
 }
 
 func (s *Service) Login(ctx context.Context, email, password, userAgent string) (LoginResult, error) {
-	user, err := s.users.FindByEmail(ctx, domain.NormalizeEmail(email))
+	user, err := s.users.FindByLogin(ctx, strings.ToLower(strings.TrimSpace(email)))
 	if err != nil || user == nil || !user.IsUsable() || !s.hasher.Verify(user.PasswordHash, password) {
 		return LoginResult{}, domain.ErrInvalidCredentials
 	}
@@ -173,7 +189,7 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent string) 
 	if err := s.users.Update(ctx, user); err != nil {
 		return LoginResult{}, err
 	}
-	return LoginResult{User: *user, AccessToken: accessToken, RefreshToken: refreshToken, Principal: api.Principal{UserID: user.ID, SessionID: session.ID}, AccessExpiry: session.AccessExpiresAt}, nil
+	return LoginResult{User: *user, AccessToken: accessToken, RefreshToken: refreshToken, Principal: api.Principal{UserID: user.ID, SessionID: session.ID, MustChangePassword: user.MustChangePassword}, AccessExpiry: session.AccessExpiresAt}, nil
 }
 
 func (s *Service) AuthenticateAccess(ctx context.Context, token string) (api.Principal, error) {
@@ -181,7 +197,7 @@ func (s *Service) AuthenticateAccess(ctx context.Context, token string) (api.Pri
 	if err != nil || session == nil || user == nil || session.RevokedAt != nil || time.Now().UTC().After(session.AccessExpiresAt) || !user.IsUsable() {
 		return api.Principal{}, domain.ErrSessionInvalid
 	}
-	return api.Principal{UserID: user.ID, SessionID: session.ID}, nil
+	return api.Principal{UserID: user.ID, SessionID: session.ID, MustChangePassword: user.MustChangePassword}, nil
 }
 
 func (s *Service) Refresh(ctx context.Context, token, userAgent string) (string, string, api.Principal, error) {
@@ -201,7 +217,7 @@ func (s *Service) Refresh(ctx context.Context, token, userAgent string) (string,
 	if err := s.sessions.RotateSession(ctx, session.ID, hashToken(accessToken), hashToken(refreshToken), now.Add(s.accessTokenTTL), now.Add(s.refreshTokenTTL), now); err != nil {
 		return "", "", api.Principal{}, err
 	}
-	return accessToken, refreshToken, api.Principal{UserID: user.ID, SessionID: session.ID}, nil
+	return accessToken, refreshToken, api.Principal{UserID: user.ID, SessionID: session.ID, MustChangePassword: user.MustChangePassword}, nil
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {
@@ -216,7 +232,7 @@ func (s *Service) LogoutAll(ctx context.Context, id uuid.UUID) error {
 	return s.sessions.RevokeUserSessions(ctx, id, nil, time.Now().UTC())
 }
 
-func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, current, next string) error {
+func (s *Service) ChangePassword(ctx context.Context, id, sessionID uuid.UUID, current, next string) error {
 	user, err := s.users.FindByID(ctx, id)
 	if err != nil {
 		return err
@@ -231,13 +247,13 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, current, nex
 	if err := s.users.SetPassword(ctx, id, hash, time.Now().UTC()); err != nil {
 		return err
 	}
-	return s.LogoutAll(ctx, id)
+	return s.sessions.RevokeUserSessions(ctx, id, &sessionID, time.Now().UTC())
 }
 
 func (s *Service) Summary(user domain.User) api.UserSummary { return toSummary(user) }
 
 func toSummary(user domain.User) api.UserSummary {
-	return api.UserSummary{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName, Status: string(user.Status)}
+	return api.UserSummary{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName, Status: string(user.Status), MustChangePassword: user.MustChangePassword}
 }
 
 func randomToken() (string, error) {

@@ -3,14 +3,16 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/httpserver"
 )
 
 type Principal struct {
-	UserID    uuid.UUID
-	SessionID uuid.UUID
+	UserID             uuid.UUID
+	SessionID          uuid.UUID
+	MustChangePassword bool
 }
 
 type Authenticator interface {
@@ -23,10 +25,11 @@ type UserReader interface {
 }
 
 type UserSummary struct {
-	ID          uuid.UUID
-	Email       string
-	DisplayName string
-	Status      string
+	ID                 uuid.UUID
+	Email              string
+	DisplayName        string
+	Status             string
+	MustChangePassword bool
 }
 
 type Authorizer interface {
@@ -68,9 +71,17 @@ func RequireAuthentication(auth Authenticator) func(http.Handler) http.Handler {
 				httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
 				return
 			}
+			if principal.MustChangePassword && !passwordChangeAllowed(r.URL.Path) {
+				httpserver.WriteError(w, r, http.StatusForbidden, "PASSWORD_CHANGE_REQUIRED", "Change your password before continuing")
+				return
+			}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
 		})
 	}
+}
+
+func passwordChangeAllowed(path string) bool {
+	return strings.HasSuffix(path, "/auth/me") || strings.HasSuffix(path, "/auth/change-password") || strings.HasSuffix(path, "/auth/logout") || strings.HasSuffix(path, "/auth/logout-all")
 }
 
 func RequirePermission(authorizer Authorizer, permission string) func(http.Handler) http.Handler {

@@ -61,7 +61,7 @@ make migrate-down
 make test-integration
 ```
 
-For a fresh deployment, set `APEXVOID_BOOTSTRAP_ADMIN_EMAIL` and `APEXVOID_BOOTSTRAP_ADMIN_PASSWORD` in the environment before starting the backend. The administrator is created only when the database has no users; credentials are never logged or reset automatically.
+For a fresh development deployment, the first administrator is created as `admin` / `admin` when the database has no users. The credential is immediately forced through the password-change flow before administration APIs are available. The password is stored as an Argon2id hash, never as reversible plaintext or encryption.
 
 ## Frontend structure
 
