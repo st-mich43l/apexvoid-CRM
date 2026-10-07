@@ -1,0 +1,33 @@
+package core
+
+import (
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/capability"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/extension"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/field"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
+)
+
+type Module struct{}
+
+func New() Module { return Module{} }
+func (Module) Descriptor() module.Descriptor {
+	return module.Descriptor{Name: "core", DisplayName: "ApexVoid Core", Version: "1.0.0"}
+}
+func (Module) Register(ctx *module.Context) error {
+	if err := ctx.Capabilities.Register(capability.Definition{Name: "core.auditable", Module: "core", DisplayName: "Auditable", Description: "Marks an entity as eligible for audit history."}); err != nil {
+		return err
+	}
+	if err := ctx.Entities.Register(entity.Definition{Name: "core.example", DisplayName: "Example Record", Module: "core", Fields: []field.Definition{{Name: "name", DisplayName: "Name", Type: field.String, Required: true}}, Capabilities: []string{"core.auditable"}}); err != nil {
+		return err
+	}
+	if err := ctx.Permissions.Register(permission.Definition{Name: "core.example.read", Module: "core", DisplayName: "Read Example Records", Description: "Allows reading example records."}); err != nil {
+		return err
+	}
+	if err := ctx.Events.Register(event.Definition{Name: "core.example.created", Module: "core", Description: "Published when an example record is created."}); err != nil {
+		return err
+	}
+	return ctx.Extensions.RegisterPoint(extension.Point{Name: "core.navigation", Module: "core", DisplayName: "Navigation Contributors", Description: "Allows modules to contribute navigation metadata."})
+}
