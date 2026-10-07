@@ -68,7 +68,7 @@ func Load(path string) (Config, error) {
 func defaultConfig() Config {
 	return Config{
 		App:      AppConfig{Name: "apexvoid-crm", Environment: "development"},
-		Server:   ServerConfig{Address: ":8080", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:5173"}},
+		Server:   ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
 		Database: DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
 		Logging:  LoggingConfig{Level: "INFO"},
 	}

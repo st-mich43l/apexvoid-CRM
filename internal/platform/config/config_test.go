@@ -8,7 +8,7 @@ import (
 
 func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "application.yaml")
-	contents := []byte("app:\n  name: from-file\n  environment: development\nserver:\n  address: :8080\ndatabase:\n  url: postgres://file\n")
+	contents := []byte("app:\n  name: from-file\n  environment: development\nserver:\n  address: :6868\ndatabase:\n  url: postgres://file\n")
 	if err := os.WriteFile(path, contents, 0o600); err != nil {
 		t.Fatal(err)
 	}

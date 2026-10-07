@@ -11,5 +11,5 @@ WORKDIR /app
 COPY --from=backend-builder /out/apexvoid-server /app/apexvoid-server
 COPY config/application.yaml /app/config/application.yaml
 USER apexvoid
-EXPOSE 8080
+EXPOSE 6868
 ENTRYPOINT ["/app/apexvoid-server"]
