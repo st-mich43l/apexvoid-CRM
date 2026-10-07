@@ -24,12 +24,16 @@ type UserReader interface {
 	FindActiveByID(ctx context.Context, id uuid.UUID) (UserSummary, error)
 }
 
+type UserDirectory interface {
+	ListActive(ctx context.Context) ([]UserSummary, error)
+}
+
 type UserSummary struct {
-	ID                 uuid.UUID
-	Email              string
-	DisplayName        string
-	Status             string
-	MustChangePassword bool
+	ID                 uuid.UUID `json:"id"`
+	Email              string    `json:"email"`
+	DisplayName        string    `json:"display_name"`
+	Status             string    `json:"status"`
+	MustChangePassword bool      `json:"must_change_password"`
 }
 
 type Authorizer interface {

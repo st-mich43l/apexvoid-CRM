@@ -25,7 +25,7 @@ See [docs/architecture.md](docs/architecture.md) for layer responsibilities, tra
 
 The built-in `core` module registers only `core.example`, `core.example.read`, `core.example.created`, `core.auditable`, and `core.navigation` to exercise the framework. Its discovery handlers live under `internal/modules/core/transport/http`; no CRM entities are included.
 
-Phase 3 adds `users` and `access` modules. Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Access roles reference permissions from the framework registry, and the protected `administrator` role grants all registered permissions. No tokens or password hashes are returned by the API.
+Phase 3 adds `users` and `access` modules. Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Phase 4 adds the `organization` module with organizations, workspaces, memberships, workspace context, and workspace-scoped RBAC. Access roles reference permissions from the framework registry; the protected platform `administrator` role grants all registered permissions, while workspace role assignments are resolved through the active membership. No tokens or password hashes are returned by the API.
 
 ## Development
 
@@ -50,6 +50,10 @@ Endpoints:
 - Current user: `GET /api/v1/auth/me`
 - Users: `/api/v1/users`
 - Roles: `/api/v1/access/roles`
+- Setup status: `GET /api/v1/setup/status`
+- Initial setup: `POST /api/v1/setup/organization`
+- Workspaces: `GET /api/v1/workspaces`, current context at `GET /api/v1/workspace`
+- Workspace members and roles: `/api/v1/workspace/members`, `/api/v1/workspace/roles`
 
 Configuration defaults are in `config/application.yaml`; environment variables override them. Use `.env.example` as the local template and do not commit secrets.
 
@@ -65,7 +69,7 @@ For a fresh development deployment, the first administrator is created as `admin
 
 ## Frontend structure
 
-The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. The core module owns login and protected routing, while the administration module provides basic user and role management. A navigation registry provides deterministic ordering without a runtime plugin system.
+The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. The core module owns login, protected routing, setup, workspace selection, and organization settings, while the administration module provides platform user and role management. A navigation registry provides deterministic ordering without a runtime plugin system.
 
 ## Testing
 
@@ -84,11 +88,11 @@ The test suite covers dependency ordering, missing dependencies, cycles, entity/
 cmd/server/          HTTP application entrypoint
 internal/app/        application bootstrap and discovery routes
 internal/framework/  module, entity, field, permission, event, extension, metadata, runtime
-internal/modules/    compiled-in modules: core, users, and access
+internal/modules/    compiled-in modules: core, users, organization, and access
 internal/platform/   config, PostgreSQL, health, logging, HTTP
 web/src/core/        platform API client and application shell
 web/src/framework/   frontend module, navigation, and metadata contracts
 web/src/modules/     compiled-in frontend modules
 ```
 
-Framework definitions are currently held in Go code. There are no framework metadata tables or CRM migrations because no persistent framework state is required yet.
+Framework definitions are held in Go code. Organization, workspace, membership, and workspace-role state is persisted in PostgreSQL; no CRM business entities have been introduced yet.

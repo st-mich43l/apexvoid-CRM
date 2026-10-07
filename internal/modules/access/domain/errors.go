@@ -9,4 +9,5 @@ var (
 	ErrSystemRole           = errors.New("system role cannot be deleted or renamed")
 	ErrAdministratorRole    = errors.New("administrator role cannot be removed")
 	ErrAssignmentNotAllowed = errors.New("assignment is not allowed")
+	ErrWorkspaceRole        = errors.New("role does not belong to this workspace")
 )

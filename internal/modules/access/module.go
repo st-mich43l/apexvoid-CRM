@@ -32,7 +32,7 @@ func New(dependencies Dependencies) *Module {
 }
 
 func (Module) Descriptor() module.Descriptor {
-	return module.Descriptor{Name: "access", DisplayName: "Access Control", Version: "1.0.0", Dependencies: []string{"users"}}
+	return module.Descriptor{Name: "access", DisplayName: "Access Control", Version: "1.0.0", Dependencies: []string{"users", "organization"}}
 }
 func (m *Module) Service() *application.Service      { return m.service }
 func (m *Module) Register(ctx *module.Context) error { return accessmetadata.Register(ctx) }

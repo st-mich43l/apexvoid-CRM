@@ -129,6 +129,20 @@ func (s *Service) FindActiveByID(ctx context.Context, id uuid.UUID) (api.UserSum
 
 func (s *Service) List(ctx context.Context) ([]domain.User, error) { return s.users.List(ctx) }
 
+func (s *Service) ListActive(ctx context.Context) ([]api.UserSummary, error) {
+	users, err := s.users.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]api.UserSummary, 0, len(users))
+	for _, user := range users {
+		if user.IsUsable() {
+			result = append(result, toSummary(user))
+		}
+	}
+	return result, nil
+}
+
 func (s *Service) Update(ctx context.Context, id uuid.UUID, input UpdateInput) (domain.User, error) {
 	user, err := s.users.FindByID(ctx, id)
 	if err != nil {
