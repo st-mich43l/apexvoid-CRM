@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: {
     host: '0.0.0.0',
-    port: 5173,
-    proxy: { '/health': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080', '/ready': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080', '/api': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:8080' },
+    port: 8386,
+    proxy: { '/health': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/ready': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/api': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868' },
   },
 })

@@ -36,8 +36,8 @@ docker compose up -d
 
 Endpoints:
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8080
+- Frontend: http://localhost:8386
+- Backend: http://localhost:6868
 - Health: `GET /health`
 - Readiness: `GET /ready`
 - Modules: `GET /api/v1/framework/modules`

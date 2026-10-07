@@ -3,14 +3,14 @@ app:
   environment: development
 
 server:
-  address: :8080
+  address: :6868
   read_timeout: 10s
   write_timeout: 15s
   idle_timeout: 60s
   request_timeout: 30s
   shutdown_timeout: 10s
   cors_origins:
-    - http://localhost:5173
+    - http://localhost:8386
 
 database:
   url: postgres://USER:PASSWORD@HOST:5432/DATABASE?sslmode=disable

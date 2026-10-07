@@ -14,5 +14,5 @@ EXPOSE 80
 
 FROM dependencies AS dev
 COPY . .
-EXPOSE 5173
+EXPOSE 8386
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
