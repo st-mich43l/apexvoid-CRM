@@ -42,3 +42,9 @@ func (r *Registry) List() []Definition {
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
 }
+
+func (r *Registry) Get(name string) (Definition, bool) {
+	definition, ok := r.definitions[name]
+	return definition, ok
+}
+func (r *Registry) Contains(name string) bool { _, ok := r.definitions[name]; return ok }

@@ -19,5 +19,17 @@ database:
   max_conn_lifetime: 1h
   max_conn_idle_time: 30m
 
+auth:
+  access_token_ttl: 15m
+  refresh_token_ttl: 720h
+  cookie_secure: false
+  cookie_same_site: lax
+  password_min_length: 12
+  password_max_length: 128
+
+bootstrap:
+  admin_email: ""
+  admin_password: ""
+
 logging:
   level: INFO

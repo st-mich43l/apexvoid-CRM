@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/runtime"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/health"
@@ -38,7 +39,14 @@ func (a *App) RegisterRoutes(router chi.Router) error {
 
 type chiRoutes struct{ router chi.Router }
 
-func (r chiRoutes) Get(path string, handler http.HandlerFunc) { r.router.Get(path, handler) }
+func (r chiRoutes) Get(path string, handler http.HandlerFunc)    { r.router.Get(path, handler) }
+func (r chiRoutes) Post(path string, handler http.HandlerFunc)   { r.router.Post(path, handler) }
+func (r chiRoutes) Put(path string, handler http.HandlerFunc)    { r.router.Put(path, handler) }
+func (r chiRoutes) Patch(path string, handler http.HandlerFunc)  { r.router.Patch(path, handler) }
+func (r chiRoutes) Delete(path string, handler http.HandlerFunc) { r.router.Delete(path, handler) }
+func (r chiRoutes) With(middleware ...func(http.Handler) http.Handler) module.RouteRegistry {
+	return chiRoutes{router: r.router.With(middleware...)}
+}
 
 func (a *App) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "apexvoid-crm"})
