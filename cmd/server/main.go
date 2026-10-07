@@ -32,7 +32,11 @@ func main() {
 	}
 	defer application.Close(context.Background())
 
-	server := httpserver.New(cfg.Server, application.Logger, application.RegisterRoutes)
+	server, err := httpserver.New(cfg.Server, application.Logger, application.RegisterRoutes)
+	if err != nil {
+		application.Logger.Error("register HTTP routes", "error", err)
+		os.Exit(1)
+	}
 	serverErrors := make(chan error, 1)
 	go func() {
 		application.Logger.Info("http server starting", "address", cfg.Server.Address)

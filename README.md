@@ -6,11 +6,13 @@ ApexVoid is a modular business application framework built as a Go/React modular
 
 - Backend: Go, chi, `log/slog`, pgx, PostgreSQL
 - Frontend: React, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query
-- Runtime: explicit module registry, dependency resolution, metadata registries, synchronous typed event bus, and extension points
+- Runtime: explicit module registry, dependency resolution, metadata registries, synchronous typed event bus, extension points, and module-owned HTTP transport
 - Infrastructure: PostgreSQL only; no cache or message broker is required
 - API: versioned REST under `/api/v1`
 
 Application startup creates one owned framework runtime, registers built-in modules, resolves dependencies, validates metadata, and only then starts HTTP serving.
+
+See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition.
 
 ## Framework concepts
 
@@ -21,7 +23,7 @@ Application startup creates one owned framework runtime, registers built-in modu
 - Extensions attach named implementations to explicit extension points with deterministic ordering.
 - Metadata aggregates framework definitions for read-only discovery by API clients.
 
-The built-in `core` module registers only `core.example`, `core.example.read`, `core.example.created`, `core.auditable`, and `core.navigation` to exercise the framework. No CRM entities are included.
+The built-in `core` module registers only `core.example`, `core.example.read`, `core.example.created`, `core.auditable`, and `core.navigation` to exercise the framework. Its discovery handlers live under `internal/modules/core/transport/http`; no CRM entities are included.
 
 ## Development
 
@@ -45,9 +47,17 @@ Endpoints:
 
 Configuration defaults are in `config/application.yaml`; environment variables override them. Use `.env.example` as the local template and do not commit secrets.
 
-## Frontend discovery
+Migration metadata is owned by modules and ordered by module dependencies. There are currently no persistent framework migrations. The runner remains available for future module migrations:
 
-The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. A navigation contribution registry exists in Go for future module-driven navigation; dynamic navigation rendering is intentionally deferred.
+```bash
+make migrate-up
+make migrate-down
+make test-integration
+```
+
+## Frontend structure
+
+The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. A navigation registry provides deterministic ordering without a runtime plugin system.
 
 ## Testing
 
@@ -68,7 +78,9 @@ internal/app/        application bootstrap and discovery routes
 internal/framework/  module, entity, field, permission, event, extension, metadata, runtime
 internal/modules/    compiled-in modules, currently only core
 internal/platform/   config, PostgreSQL, health, logging, HTTP
-web/                 React framework shell and typed API client
+web/src/core/        platform API client and application shell
+web/src/framework/   frontend module, navigation, and metadata contracts
+web/src/modules/     compiled-in frontend modules
 ```
 
 Framework definitions are currently held in Go code. There are no framework metadata tables or CRM migrations because no persistent framework state is required yet.

@@ -12,7 +12,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
 )
 
-func New(cfg config.ServerConfig, logger *slog.Logger, register func(chi.Router)) *http.Server {
+func New(cfg config.ServerConfig, logger *slog.Logger, register func(chi.Router) error) (*http.Server, error) {
 	router := chi.NewRouter()
 	router.Use(RequestID)
 	router.Use(middleware.RealIP)
@@ -27,8 +27,10 @@ func New(cfg config.ServerConfig, logger *slog.Logger, register func(chi.Router)
 	router.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "The requested method is not allowed")
 	})
-	register(router)
-	return &http.Server{Addr: cfg.Address, Handler: router, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout}
+	if err := register(router); err != nil {
+		return nil, err
+	}
+	return &http.Server{Addr: cfg.Address, Handler: router, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout}, nil
 }
 
 func RequestID(next http.Handler) http.Handler {
