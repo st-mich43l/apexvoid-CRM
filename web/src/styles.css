@@ -2,6 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: dark; background: #09090b; }
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+  --background: 225 25% 97%;
+  --foreground: 224 30% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 30% 14%;
+  --muted: 225 20% 93%;
+  --muted-foreground: 224 12% 43%;
+  --primary: 258 82% 67%;
+  --primary-foreground: 258 45% 12%;
+  --secondary: 225 18% 90%;
+  --secondary-foreground: 224 25% 20%;
+  --destructive: 0 72% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 60% 36%;
+  --success-foreground: 0 0% 100%;
+  --warning: 35 85% 42%;
+  --warning-foreground: 35 90% 12%;
+  --border: 225 16% 86%;
+  --input: 225 16% 82%;
+  --ring: 258 82% 67%;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 240 10% 4%;
+  --foreground: 240 8% 96%;
+  --card: 240 7% 7%;
+  --card-foreground: 240 8% 96%;
+  --muted: 240 6% 13%;
+  --muted-foreground: 240 5% 63%;
+  --primary: 258 82% 76%;
+  --primary-foreground: 258 45% 12%;
+  --secondary: 240 6% 16%;
+  --secondary-foreground: 240 8% 92%;
+  --destructive: 0 70% 62%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 58% 48%;
+  --success-foreground: 152 60% 10%;
+  --warning: 38 90% 63%;
+  --warning-foreground: 35 80% 12%;
+  --border: 240 6% 18%;
+  --input: 240 6% 23%;
+  --ring: 258 82% 76%;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
+body { margin: 0; min-width: 320px; background: hsl(var(--background)); color: hsl(var(--foreground)); }
+button, input, select { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
