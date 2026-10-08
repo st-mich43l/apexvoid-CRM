@@ -47,7 +47,7 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.contact.archive")).Post("/contacts/{id}/archive", h.archiveContact)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.contact.archive")).Post("/contacts/{id}/restore", h.restoreContact)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.contact.update")).Put("/contacts/{id}/relationships", h.replaceRelationships)
-	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.tag.manage")).Get("/contacts/tags", h.listTags)
+	read.Get("/contacts/tags", h.listTags)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.tag.manage")).Post("/contacts/tags", h.createTag)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.tag.manage")).Patch("/contacts/tags/{tagID}", h.updateTag)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.tag.manage")).Put("/contacts/{id}/tags", h.replaceTags)
@@ -63,8 +63,8 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.attachment.read")).Get("/contacts/{id}/attachments/{attachmentID}", h.downloadAttachment)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.attachment.manage")).Post("/contacts/{id}/attachments", h.uploadAttachment)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.attachment.manage")).Delete("/contacts/{id}/attachments/{attachmentID}", h.deleteAttachment)
+	current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.contact.read")).Get("/contacts/fields", h.listFields)
 	fieldRoutes := current.With(organizationapi.RequireWorkspacePermission(h.access, "contacts.field.manage"))
-	fieldRoutes.Get("/contacts/fields", h.listFields)
 	fieldRoutes.Post("/contacts/fields", h.createField)
 	fieldRoutes.Patch("/contacts/fields/{fieldID}", h.updateField)
 	return nil
