@@ -137,6 +137,7 @@ export const api = {
     convertLead: (id: string, body: { pipeline_id: string; stage_id: string; contact_id?: string; create_contact: boolean; expected_revenue: string; currency: string; version: number }) => request<Opportunity>(`/api/v1/crm/leads/${id}/convert`, json(body)),
     leadHistory: (id: string) => request<LifecycleHistory[]>(`/api/v1/crm/leads/${id}/history`),
     opportunities: (params: Record<string, string | number | boolean | undefined> = {}) => request<CRMList<Opportunity>>(`/api/v1/crm/opportunities?${crmQuery(params)}`),
+    opportunityBoard: (pipelineID: string, params: Record<string, string | number | boolean | undefined> = {}) => request<OpportunityBoard>(`/api/v1/crm/pipelines/${pipelineID}/board?${crmQuery(params)}`),
     opportunity: (id: string) => request<Opportunity>(`/api/v1/crm/opportunities/${id}`),
     createOpportunity: (body: OpportunityCreateInput) => request<OpportunityResponse>('/api/v1/crm/opportunities', json(body)),
     updateOpportunity: (id: string, body: OpportunityPatchInput) => request<OpportunityResponse>(`/api/v1/crm/opportunities/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -189,6 +190,8 @@ export type Lead = { id: string; title: string; description: string; contact_nam
 export type LeadInput = Omit<Lead, 'id' | 'status' | 'converted_opportunity_id' | 'version' | 'created_at'>
 export type LeadPatch = Partial<LeadInput> & { version: number }
 export type Opportunity = { id: string; title: string; description: string; pipeline_id: string; stage_id: string; contact_id?: string; company_id?: string; assigned_user_id?: string; expected_revenue: string; currency: string; expected_close_date?: string; outcome: 'open' | 'won' | 'lost'; loss_reason?: string; custom_values: Record<string, unknown>; original_lead_id?: string; version: number; created_at: string; closed_at?: string }
+export type OpportunityBoardStage = { stage: Stage; count: number; totals_by_currency: Record<string, string>; items: Opportunity[]; next_cursor?: string | null }
+export type OpportunityBoard = { pipeline: Pipeline; stages: OpportunityBoardStage[]; filter: { search: string; view_id?: string; owner_id?: string; outcome: string; stage_id?: string; limit: number } }
 export type OpportunityResponse = Opportunity
 export type OpportunityCreateInput = Omit<Opportunity, 'id' | 'outcome' | 'loss_reason' | 'original_lead_id' | 'version' | 'created_at' | 'closed_at'>
 export type OpportunityPatchInput = Partial<Omit<OpportunityCreateInput, 'pipeline_id' | 'stage_id' | 'expected_close_date'>> & { expected_close_date?: string | null; version: number }

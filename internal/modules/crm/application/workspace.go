@@ -63,6 +63,54 @@ func (s *Service) ListOpportunities(ctx context.Context, workspaceID uuid.UUID, 
 	}
 	return s.r.ListOpportunities(ctx, workspaceID, filter)
 }
+
+func (s *Service) OpportunityBoard(ctx context.Context, workspaceID, pipelineID uuid.UUID, filter domain.OpportunityBoardFilter) (domain.OpportunityBoard, error) {
+	if filter.ViewID != nil {
+		conditions, _, _, _, _, err := s.resolveView(ctx, workspaceID, filter.ViewUserID, *filter.ViewID, "crm.opportunity")
+		if err != nil {
+			return domain.OpportunityBoard{}, err
+		}
+		filter.Conditions = conditions
+	}
+	pipeline, err := s.r.GetPipeline(ctx, workspaceID, pipelineID)
+	if err != nil {
+		return domain.OpportunityBoard{}, err
+	}
+	if pipeline.Status != domain.PipelineActive {
+		return domain.OpportunityBoard{}, fmt.Errorf("archived pipelines cannot be opened as a board")
+	}
+	if filter.Outcome != "" && filter.Outcome != domain.OpportunityOpen && filter.Outcome != domain.OpportunityWon && filter.Outcome != domain.OpportunityLost {
+		return domain.OpportunityBoard{}, fmt.Errorf("unsupported opportunity outcome %q", filter.Outcome)
+	}
+	stages, err := s.r.ListStages(ctx, workspaceID, pipelineID, false)
+	if err != nil {
+		return domain.OpportunityBoard{}, err
+	}
+	category := domain.StageOpen
+	if filter.Outcome == domain.OpportunityWon {
+		category = domain.StageWon
+	} else if filter.Outcome == domain.OpportunityLost {
+		category = domain.StageLost
+	}
+	boardStages := make([]domain.Stage, 0, len(stages))
+	validStage := false
+	for _, stage := range stages {
+		if stage.Active && stage.Category == category {
+			boardStages = append(boardStages, stage)
+			if filter.StageID != nil && stage.ID == *filter.StageID {
+				validStage = true
+			}
+		}
+	}
+	if filter.StageID != nil && !validStage {
+		return domain.OpportunityBoard{}, fmt.Errorf("stage does not belong to the selected board")
+	}
+	items, err := s.r.GetOpportunityBoard(ctx, workspaceID, pipelineID, boardStages, filter)
+	if err != nil {
+		return domain.OpportunityBoard{}, err
+	}
+	return domain.OpportunityBoard{Pipeline: *pipeline, Stages: items}, nil
+}
 func (s *Service) GetOpportunity(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Opportunity, error) {
 	return s.r.GetOpportunity(ctx, workspaceID, id)
 }

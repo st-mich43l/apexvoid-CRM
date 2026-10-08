@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -29,6 +30,7 @@ type Repository interface {
 	GetOpportunity(context.Context, uuid.UUID, uuid.UUID) (*Opportunity, error)
 	GetOpportunityForUpdate(context.Context, uuid.UUID, uuid.UUID) (*Opportunity, error)
 	ListOpportunities(context.Context, uuid.UUID, OpportunityFilter) ([]Opportunity, int, error)
+	GetOpportunityBoard(context.Context, uuid.UUID, uuid.UUID, []Stage, OpportunityBoardFilter) ([]OpportunityBoardStage, error)
 	CreateOpportunity(context.Context, *Opportunity) error
 	UpdateOpportunity(context.Context, *Opportunity, int) error
 	CreateHistory(context.Context, History) error
@@ -68,6 +70,39 @@ type OpportunityFilter struct {
 	Page, Limit                  int
 	Sort                         string
 	Desc                         bool
+}
+
+// OpportunityBoardFilter contains the filters shared by the list and board
+// read models. Board ordering is intentionally fixed to expected close date
+// followed by ID so cards cannot appear to have a persistent arbitrary order.
+type OpportunityBoardFilter struct {
+	Search     string
+	ViewID     *uuid.UUID
+	ViewUserID uuid.UUID
+	Conditions []ViewCondition
+	OwnerID    *uuid.UUID
+	Outcome    OpportunityOutcome
+	Limit      int
+	StageID    *uuid.UUID
+	Cursor     *BoardCursor
+}
+
+type BoardCursor struct {
+	ExpectedCloseDate *time.Time
+	ID                uuid.UUID
+}
+
+type OpportunityBoardStage struct {
+	Stage            Stage
+	Count            int
+	TotalsByCurrency map[string]string
+	Items            []Opportunity
+	NextCursor       *BoardCursor
+}
+
+type OpportunityBoard struct {
+	Pipeline Pipeline
+	Stages   []OpportunityBoardStage
 }
 
 var (
