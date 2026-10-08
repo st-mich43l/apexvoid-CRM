@@ -135,6 +135,11 @@ export const api = {
     closeOpportunity: (id: string, won: boolean, body: { version: number; reason?: string }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/${won ? 'mark-won' : 'mark-lost'}`, json(body)),
     reopenOpportunity: (id: string, body: { stage_id: string; version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/reopen`, json(body)),
   },
+  customization: {
+    schema: (entity: string) => request<EffectiveSchema>(`/api/v1/customization/schema/${entity}`),
+    fields: (entity: string) => request<RuntimeField[]>(`/api/v1/customization/fields/${entity}`),
+    createField: (body: Omit<RuntimeField, 'id' | 'workspace_id' | 'created_at' | 'updated_at'>) => request<RuntimeField>('/api/v1/customization/fields', json(body)),
+  },
 }
 
 const crmQuery = (params: Record<string, string | number | boolean | undefined>) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)) }); return query }
@@ -166,3 +171,6 @@ export type Lead = { id: string; title: string; description: string; contact_nam
 export type LeadInput = Omit<Lead, 'id' | 'status' | 'converted_opportunity_id' | 'version' | 'created_at'>
 export type Opportunity = { id: string; title: string; description: string; pipeline_id: string; stage_id: string; contact_id?: string; company_id?: string; assigned_user_id?: string; expected_revenue: string; currency: string; expected_close_date?: string; outcome: 'open' | 'won' | 'lost'; loss_reason?: string; custom_values: Record<string, unknown>; original_lead_id?: string; version: number; created_at: string; closed_at?: string }
 export type OpportunityInput = Omit<Opportunity, 'id' | 'outcome' | 'loss_reason' | 'original_lead_id' | 'version' | 'created_at' | 'closed_at'>
+export type EffectiveField = { key: string; label: string; type: 'string' | 'text' | 'boolean' | 'integer' | 'decimal' | 'date' | 'enum'; description: string; required: boolean; read_only: boolean; source: 'built_in' | 'custom'; default_value?: unknown; options: string[]; visible: boolean; display_order: number }
+export type EffectiveSchema = { entity: string; fields: EffectiveField[]; sections: { id: string; name: string; description: string; display_order: number }[] }
+export type RuntimeField = { id: string; workspace_id: string; entity: string; key: string; label: string; type: EffectiveField['type']; description: string; required: boolean; default_value?: unknown; options: string[]; visible: boolean; display_order: number; active: boolean; created_at: string; updated_at: string }
