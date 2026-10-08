@@ -269,22 +269,30 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	for pageNumber := 2; cursor != nil && pageNumber <= 5; pageNumber++ {
 		var nextBoard struct {
 			Stages []struct {
-				Stage struct { ID string `json:"id"` } `json:"stage"`
-				Items []crmOpportunity `json:"items"`
-				NextCursor *string `json:"next_cursor"`
+				Stage struct {
+					ID string `json:"id"`
+				} `json:"stage"`
+				Items      []crmOpportunity `json:"items"`
+				NextCursor *string          `json:"next_cursor"`
 			} `json:"stages"`
 		}
 		admin.must("GET", "/api/v1/crm/pipelines/"+pipeline.ID+"/board?stage_id="+openStage+"&limit=1&cursor="+*cursor, workspaceID, nil, &nextBoard, http.StatusOK)
 		found := false
 		for _, column := range nextBoard.Stages {
-			if column.Stage.ID != openStage { continue }
+			if column.Stage.ID != openStage {
+				continue
+			}
 			found = true
-			if len(column.Items) != 1 { t.Fatalf("expected exactly one card on page %d: %#v", pageNumber, column.Items) }
+			if len(column.Items) != 1 {
+				t.Fatalf("expected exactly one card on page %d: %#v", pageNumber, column.Items)
+			}
 			collect(column.Items)
 			cursor = column.NextCursor
 			break
 		}
-		if !found { t.Fatalf("board page %d omitted requested stage", pageNumber) }
+		if !found {
+			t.Fatalf("board page %d omitted requested stage", pageNumber)
+		}
 	}
 	if len(seen) != len(want) || cursor != nil {
 		t.Fatalf("board pagination omitted cards: seen=%v, wanted=%v, next_cursor=%v", seen, want, cursor)
