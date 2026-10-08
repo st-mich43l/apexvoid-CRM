@@ -127,7 +127,7 @@ func (s *Service) DeleteRole(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if role.System || role.Name == "administrator" {
+	if role.System || role.Name == "administrator" || role.Name == "workspace_administrator" {
 		return domain.ErrSystemRole
 	}
 	return s.repository.DeleteRole(ctx, id)
@@ -149,7 +149,7 @@ func (s *Service) ReplaceRolePermissions(ctx context.Context, id uuid.UUID, name
 	if err != nil {
 		return err
 	}
-	if role.System {
+	if role.System || role.Name == "administrator" || role.Name == "workspace_administrator" {
 		return domain.ErrSystemRole
 	}
 	seen := map[string]struct{}{}
@@ -228,7 +228,35 @@ func (s *Service) ReplaceUserRoles(ctx context.Context, userID uuid.UUID, roleID
 		seen[id] = struct{}{}
 		unique = append(unique, id)
 	}
-	return s.withTransaction(ctx, func(txCtx context.Context) error { return s.repository.ReplaceUserRoles(txCtx, userID, unique) })
+	return s.withTransaction(ctx, func(txCtx context.Context) error {
+		if err := s.repository.LockPlatformAdministratorState(txCtx); err != nil {
+			return err
+		}
+		current, err := s.repository.IsPlatformAdministrator(txCtx, userID)
+		if err != nil {
+			return err
+		}
+		willBeAdministrator := false
+		for _, roleID := range unique {
+			role, findErr := s.repository.FindRole(txCtx, roleID)
+			if findErr != nil {
+				return findErr
+			}
+			if role.System && role.Name == "administrator" && role.WorkspaceID == nil {
+				willBeAdministrator = true
+			}
+		}
+		if current && !willBeAdministrator {
+			count, countErr := s.repository.CountActivePlatformAdministrators(txCtx)
+			if countErr != nil {
+				return countErr
+			}
+			if count <= 1 {
+				return domain.ErrLastPlatformAdministrator
+			}
+		}
+		return s.repository.ReplaceUserRoles(txCtx, userID, unique)
+	})
 }
 
 func (s *Service) EffectivePermissions(ctx context.Context, userID uuid.UUID) ([]string, error) {
@@ -316,6 +344,9 @@ func (s *Service) EffectivePermissionsForWorkspace(ctx context.Context, userID, 
 }
 
 func (s *Service) CanInWorkspace(ctx context.Context, userID, workspaceID uuid.UUID, name string) (bool, error) {
+	if _, err := s.users.FindActiveByID(ctx, userID); err != nil {
+		return false, err
+	}
 	permissions, err := s.EffectivePermissionsForWorkspace(ctx, userID, workspaceID)
 	if err != nil {
 		return false, err
@@ -355,6 +386,9 @@ func (s *Service) EnsureWorkspaceAdministrator(ctx context.Context, workspaceID 
 			}
 		}
 	}
+	if role == nil || !role.System || role.Name != "workspace_administrator" || role.WorkspaceID == nil || *role.WorkspaceID != workspaceID {
+		return domain.ErrReservedRoleName
+	}
 	return nil
 }
 
@@ -362,6 +396,9 @@ func (s *Service) AssignWorkspaceAdministrator(ctx context.Context, membershipID
 	role, err := s.repository.FindRoleByWorkspaceAndName(ctx, &workspaceID, "workspace_administrator")
 	if err != nil {
 		return err
+	}
+	if !role.System || role.Name != "workspace_administrator" || role.WorkspaceID == nil || *role.WorkspaceID != workspaceID {
+		return domain.ErrReservedRoleName
 	}
 	return s.repository.ReplaceMembershipRoles(ctx, membershipID, []uuid.UUID{role.ID})
 }
@@ -385,6 +422,9 @@ func (s *Service) ReplaceMembershipRoles(ctx context.Context, membershipID, work
 			return domain.ErrWorkspaceRole
 		}
 		if role.Name == "workspace_administrator" {
+			if !role.System || role.WorkspaceID == nil || *role.WorkspaceID != workspaceID {
+				return domain.ErrWorkspaceRole
+			}
 			willBeAdministrator = true
 		}
 		seen[roleID] = struct{}{}
@@ -394,6 +434,16 @@ func (s *Service) ReplaceMembershipRoles(ctx context.Context, membershipID, work
 		unique = append(unique, roleID)
 	}
 	return s.withTransaction(ctx, func(txCtx context.Context) error {
+		if err := s.repository.LockWorkspaceAdministratorState(txCtx, workspaceID); err != nil {
+			return err
+		}
+		membershipWorkspaceID, err := s.repository.MembershipWorkspaceID(txCtx, membershipID)
+		if err != nil {
+			return err
+		}
+		if membershipWorkspaceID != workspaceID {
+			return domain.ErrWorkspaceRole
+		}
 		isAdministrator, err := s.repository.IsWorkspaceAdministrator(txCtx, membershipID, workspaceID)
 		if err != nil {
 			return err
@@ -409,6 +459,49 @@ func (s *Service) ReplaceMembershipRoles(ctx context.Context, membershipID, work
 		}
 		return s.repository.ReplaceMembershipRoles(txCtx, membershipID, unique)
 	})
+}
+
+func (s *Service) LockWorkspaceAdministratorState(ctx context.Context, workspaceID uuid.UUID) error {
+	return s.repository.LockWorkspaceAdministratorState(ctx, workspaceID)
+}
+
+func (s *Service) ValidateUserStatusChange(ctx context.Context, userID uuid.UUID, status string) error {
+	if status == "active" {
+		return nil
+	}
+	if err := s.repository.LockPlatformAdministratorState(ctx); err != nil {
+		return err
+	}
+	if administrator, err := s.repository.IsPlatformAdministrator(ctx, userID); err != nil {
+		return err
+	} else if administrator {
+		count, err := s.repository.CountActivePlatformAdministrators(ctx)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return domain.ErrLastPlatformAdministrator
+		}
+	}
+	workspaceIDs, err := s.repository.ActiveAdministratorWorkspaceIDs(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, workspaceID := range workspaceIDs {
+		if err := s.repository.LockWorkspaceAdministratorState(ctx, workspaceID); err != nil {
+			return err
+		}
+	}
+	for _, workspaceID := range workspaceIDs {
+		count, err := s.repository.CountActiveWorkspaceAdministrators(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return domain.ErrLastWorkspaceAdministrator
+		}
+	}
+	return nil
 }
 
 func (s *Service) withTransaction(ctx context.Context, fn func(context.Context) error) error {

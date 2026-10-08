@@ -2,6 +2,7 @@ package organization
 
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
+	"log/slog"
 
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
@@ -22,6 +23,7 @@ type Dependencies struct {
 	Users         usersapi.UserReader
 	Directory     usersapi.UserDirectory
 	Events        *event.Bus
+	Logger        *slog.Logger
 }
 
 type Module struct {
@@ -31,7 +33,7 @@ type Module struct {
 }
 
 func New(dependencies Dependencies) *Module {
-	return &Module{service: application.NewService(application.Dependencies{Repository: organizationpostgres.NewRepository(dependencies.Pool), Transactions: dependencies.Transactions, Users: dependencies.Users, Directory: dependencies.Directory, Events: dependencies.Events}), authenticator: dependencies.Authenticator}
+	return &Module{service: application.NewService(application.Dependencies{Repository: organizationpostgres.NewRepository(dependencies.Pool), Transactions: dependencies.Transactions, Users: dependencies.Users, Directory: dependencies.Directory, Events: dependencies.Events, Logger: dependencies.Logger}), authenticator: dependencies.Authenticator}
 }
 
 func (Module) Descriptor() module.Descriptor {

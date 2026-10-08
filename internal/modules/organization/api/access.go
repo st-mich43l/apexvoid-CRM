@@ -28,6 +28,7 @@ type WorkspaceAccess interface {
 	ReplaceMembershipRoles(ctx context.Context, membershipID, workspaceID uuid.UUID, roleIDs []uuid.UUID) error
 	CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error)
 	IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error)
+	LockWorkspaceAdministratorState(ctx context.Context, workspaceID uuid.UUID) error
 }
 
 type WorkspaceProvisioner interface {

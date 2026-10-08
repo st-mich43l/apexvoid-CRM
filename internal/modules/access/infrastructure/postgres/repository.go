@@ -47,7 +47,7 @@ func (r *Repository) FindRole(ctx context.Context, id uuid.UUID) (*domain.Role, 
 }
 
 func (r *Repository) FindRoleByName(ctx context.Context, name string) (*domain.Role, error) {
-	return r.findRole(ctx, `WHERE name = $1`, name)
+	return r.findRole(ctx, `WHERE workspace_id IS NULL AND name = $1`, name)
 }
 
 func (r *Repository) FindRoleByWorkspaceAndName(ctx context.Context, workspaceID *uuid.UUID, name string) (*domain.Role, error) {
@@ -187,7 +187,7 @@ func (r *Repository) UserRoleIDs(ctx context.Context, userID uuid.UUID) ([]uuid.
 }
 
 func (r *Repository) EffectivePermissions(ctx context.Context, userID uuid.UUID) ([]string, bool, error) {
-	rows, err := r.db(ctx).Query(ctx, `SELECT r.name, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1 ORDER BY r.name, rp.permission_name`, userID)
+	rows, err := r.db(ctx).Query(ctx, `SELECT r.name, r.workspace_id, r.system, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1 AND r.workspace_id IS NULL ORDER BY r.name, rp.permission_name`, userID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -196,11 +196,13 @@ func (r *Repository) EffectivePermissions(ctx context.Context, userID uuid.UUID)
 	admin := false
 	for rows.Next() {
 		var roleName string
+		var roleWorkspaceID *uuid.UUID
+		var system bool
 		var permission *string
-		if err := rows.Scan(&roleName, &permission); err != nil {
+		if err := rows.Scan(&roleName, &roleWorkspaceID, &system, &permission); err != nil {
 			return nil, false, err
 		}
-		if roleName == "administrator" {
+		if roleName == "administrator" && roleWorkspaceID == nil && system {
 			admin = true
 		}
 		if permission != nil {
@@ -215,9 +217,9 @@ func (r *Repository) EffectivePermissions(ctx context.Context, userID uuid.UUID)
 }
 
 func (r *Repository) EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, []string, bool, bool, error) {
-	rows, err := r.db(ctx).Query(ctx, `SELECT r.workspace_id, r.name, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1
+	rows, err := r.db(ctx).Query(ctx, `SELECT r.workspace_id, r.name, r.system, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1 AND r.workspace_id IS NULL
 UNION ALL
-SELECT r.workspace_id, r.name, rp.permission_name FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE m.user_id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2`, userID, workspaceID)
+SELECT r.workspace_id, r.name, r.system, rp.permission_name FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id AND wmr.workspace_id = m.workspace_id JOIN access_roles r ON r.id = wmr.role_id AND r.workspace_id = wmr.workspace_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE m.user_id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2`, userID, workspaceID)
 	if err != nil {
 		return nil, nil, false, false, err
 	}
@@ -229,14 +231,15 @@ SELECT r.workspace_id, r.name, rp.permission_name FROM workspace_memberships m J
 	for rows.Next() {
 		var roleWorkspaceID *uuid.UUID
 		var roleName string
+		var system bool
 		var permission *string
-		if err := rows.Scan(&roleWorkspaceID, &roleName, &permission); err != nil {
+		if err := rows.Scan(&roleWorkspaceID, &roleName, &system, &permission); err != nil {
 			return nil, nil, false, false, err
 		}
-		if roleName == "administrator" {
+		if roleName == "administrator" && roleWorkspaceID == nil && system {
 			platformAdmin = true
 		}
-		if roleName == "workspace_administrator" {
+		if roleName == "workspace_administrator" && roleWorkspaceID != nil && *roleWorkspaceID == workspaceID && system {
 			workspaceAdmin = true
 		}
 		if permission != nil {
@@ -260,27 +263,80 @@ SELECT r.workspace_id, r.name, rp.permission_name FROM workspace_memberships m J
 
 func (r *Repository) CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error) {
 	var count int
-	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(DISTINCT m.id) FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id WHERE m.workspace_id = $1 AND m.status = 'active' AND r.workspace_id = $1 AND r.name = 'workspace_administrator'`, workspaceID).Scan(&count)
+	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(DISTINCT m.id) FROM workspace_memberships m JOIN workspace_workspaces w ON w.id = m.workspace_id JOIN organization_organizations o ON o.id = w.organization_id JOIN users_users u ON u.id = m.user_id JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id AND wmr.workspace_id = m.workspace_id JOIN access_roles r ON r.id = wmr.role_id AND r.workspace_id = m.workspace_id WHERE m.workspace_id = $1 AND w.status = 'active' AND o.status = 'active' AND m.status = 'active' AND u.status = 'active' AND r.name = 'workspace_administrator' AND r.system = TRUE`, workspaceID).Scan(&count)
 	return count, err
 }
 
 func (r *Repository) IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error) {
 	var exists bool
-	err := r.db(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id WHERE m.id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2 AND r.name = 'workspace_administrator')`, membershipID, workspaceID).Scan(&exists)
+	err := r.db(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_memberships m JOIN workspace_workspaces w ON w.id = m.workspace_id JOIN organization_organizations o ON o.id = w.organization_id JOIN users_users u ON u.id = m.user_id JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id AND wmr.workspace_id = m.workspace_id JOIN access_roles r ON r.id = wmr.role_id AND r.workspace_id = m.workspace_id WHERE m.id = $1 AND m.workspace_id = $2 AND w.status = 'active' AND o.status = 'active' AND m.status = 'active' AND u.status = 'active' AND r.name = 'workspace_administrator' AND r.system = TRUE)`, membershipID, workspaceID).Scan(&exists)
 	return exists, err
 }
 
 func (r *Repository) ReplaceMembershipRoles(ctx context.Context, membershipID uuid.UUID, roleIDs []uuid.UUID) error {
 	db := r.db(ctx)
+	workspaceID, err := r.MembershipWorkspaceID(ctx, membershipID)
+	if err != nil {
+		return err
+	}
 	if _, err := db.Exec(ctx, `DELETE FROM access_workspace_membership_roles WHERE membership_id = $1`, membershipID); err != nil {
 		return err
 	}
 	for _, roleID := range roleIDs {
-		if _, err := db.Exec(ctx, `INSERT INTO access_workspace_membership_roles (membership_id, role_id) VALUES ($1,$2)`, membershipID, roleID); err != nil {
+		if _, err := db.Exec(ctx, `INSERT INTO access_workspace_membership_roles (membership_id, role_id, workspace_id) VALUES ($1,$2,$3)`, membershipID, roleID, workspaceID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (r *Repository) MembershipWorkspaceID(ctx context.Context, membershipID uuid.UUID) (uuid.UUID, error) {
+	var workspaceID uuid.UUID
+	if err := r.db(ctx).QueryRow(ctx, `SELECT workspace_id FROM workspace_memberships WHERE id = $1`, membershipID).Scan(&workspaceID); errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, domain.ErrNotFound
+	} else if err != nil {
+		return uuid.Nil, err
+	}
+	return workspaceID, nil
+}
+
+func (r *Repository) LockWorkspaceAdministratorState(ctx context.Context, workspaceID uuid.UUID) error {
+	var locked uuid.UUID
+	return r.db(ctx).QueryRow(ctx, `SELECT id FROM workspace_workspaces WHERE id = $1 FOR UPDATE`, workspaceID).Scan(&locked)
+}
+
+func (r *Repository) LockPlatformAdministratorState(ctx context.Context) error {
+	var id uuid.UUID
+	return r.db(ctx).QueryRow(ctx, `SELECT id FROM access_roles WHERE workspace_id IS NULL AND name = 'administrator' AND system = TRUE FOR UPDATE`).Scan(&id)
+}
+
+func (r *Repository) CountActivePlatformAdministrators(ctx context.Context) (int, error) {
+	var count int
+	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(DISTINCT u.id) FROM users_users u JOIN access_user_roles ur ON ur.user_id = u.id JOIN access_roles r ON r.id = ur.role_id WHERE u.status = 'active' AND r.workspace_id IS NULL AND r.name = 'administrator' AND r.system = TRUE`).Scan(&count)
+	return count, err
+}
+
+func (r *Repository) IsPlatformAdministrator(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users_users u JOIN access_user_roles ur ON ur.user_id = u.id JOIN access_roles r ON r.id = ur.role_id WHERE u.id = $1 AND u.status = 'active' AND r.workspace_id IS NULL AND r.name = 'administrator' AND r.system = TRUE)`, userID).Scan(&exists)
+	return exists, err
+}
+
+func (r *Repository) ActiveAdministratorWorkspaceIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db(ctx).Query(ctx, `SELECT DISTINCT m.workspace_id FROM workspace_memberships m JOIN workspace_workspaces w ON w.id = m.workspace_id JOIN organization_organizations o ON o.id = w.organization_id JOIN users_users u ON u.id = m.user_id JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id AND wmr.workspace_id = m.workspace_id JOIN access_roles r ON r.id = wmr.role_id AND r.workspace_id = m.workspace_id WHERE m.user_id = $1 AND w.status = 'active' AND o.status = 'active' AND m.status = 'active' AND u.status = 'active' AND r.name = 'workspace_administrator' AND r.system = TRUE ORDER BY m.workspace_id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, rows.Err()
 }
 
 func (r *Repository) MembershipRoleIDs(ctx context.Context, membershipID uuid.UUID) ([]uuid.UUID, error) {
@@ -303,6 +359,9 @@ func (r *Repository) MembershipRoleIDs(ctx context.Context, membershipID uuid.UU
 func (r *Repository) EnsureAdministrator(ctx context.Context) (domain.Role, error) {
 	role, err := r.FindRoleByName(ctx, "administrator")
 	if err == nil {
+		if !role.System || role.WorkspaceID != nil || role.Name != "administrator" {
+			return domain.Role{}, domain.ErrReservedRoleName
+		}
 		return *role, nil
 	}
 	if !errors.Is(err, domain.ErrNotFound) {
@@ -313,8 +372,11 @@ func (r *Repository) EnsureAdministrator(ctx context.Context) (domain.Role, erro
 	if err := r.CreateRole(ctx, role); err != nil {
 		if errors.Is(err, domain.ErrDuplicateRole) {
 			role, err = r.FindRoleByName(ctx, "administrator")
-			if err == nil {
+			if err == nil && role.System && role.WorkspaceID == nil && role.Name == "administrator" {
 				return *role, nil
+			}
+			if err == nil {
+				return domain.Role{}, domain.ErrReservedRoleName
 			}
 		}
 		return domain.Role{}, err

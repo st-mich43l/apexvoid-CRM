@@ -27,5 +27,11 @@ type Repository interface {
 	EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, []string, bool, bool, error)
 	CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error)
 	IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error)
+	LockWorkspaceAdministratorState(ctx context.Context, workspaceID uuid.UUID) error
+	LockPlatformAdministratorState(ctx context.Context) error
+	CountActivePlatformAdministrators(ctx context.Context) (int, error)
+	IsPlatformAdministrator(ctx context.Context, userID uuid.UUID) (bool, error)
+	ActiveAdministratorWorkspaceIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	MembershipWorkspaceID(ctx context.Context, membershipID uuid.UUID) (uuid.UUID, error)
 	TouchRole(ctx context.Context, id uuid.UUID, now time.Time) error
 }

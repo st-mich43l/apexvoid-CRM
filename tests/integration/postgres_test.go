@@ -11,11 +11,15 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/st-mich43l/apexvoid-CRM/internal/app"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
 )
@@ -35,6 +39,10 @@ func newAPIClient(t *testing.T, baseURL string) *apiClient {
 }
 
 func (c *apiClient) request(method, path string, workspaceID string, body any, target any) int {
+	return c.requestContext(context.Background(), method, path, workspaceID, body, target)
+}
+
+func (c *apiClient) requestContext(ctx context.Context, method, path string, workspaceID string, body any, target any) int {
 	c.t.Helper()
 	var reader io.Reader
 	if body != nil {
@@ -44,7 +52,7 @@ func (c *apiClient) request(method, path string, workspaceID string, body any, t
 		}
 		reader = bytes.NewReader(encoded)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), method, c.baseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -116,7 +124,8 @@ type workspaceContext struct {
 }
 
 func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
-	databaseURL := testDatabaseURL(t)
+	databaseURL, cleanup := isolatedDatabaseURL(t)
+	defer cleanup()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -138,7 +147,7 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 		t.Fatal(err)
 	}
 	if users != 1 {
-		t.Skipf("integration database is not empty; expected only the bootstrap user, found %d", users)
+		t.Fatalf("isolated integration database contains unexpected users: %d", users)
 	}
 
 	router := chi.NewRouter()
@@ -179,12 +188,32 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	admin.must("POST", "/api/v1/workspaces", primaryWorkspaceID, map[string]string{"name": "Secondary", "timezone": "UTC"}, &secondary, http.StatusCreated)
 	var secondaryRole role
 	admin.must("POST", "/api/v1/workspace/roles", secondary.ID, map[string]string{"name": "secondary_role", "display_name": "Secondary Role"}, &secondaryRole, http.StatusCreated)
+	admin.must("POST", "/api/v1/workspace/roles", secondary.ID, map[string]string{"name": "administrator", "display_name": "Spoofed Administrator"}, nil, http.StatusConflict)
+	admin.must("POST", "/api/v1/access/roles", "", map[string]string{"name": "administrator", "display_name": "Spoofed Administrator"}, nil, http.StatusConflict)
 	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/roles/%s/permissions", secondaryRole.ID), primaryWorkspaceID, map[string][]string{"permissions": []string{"workspace.member.read"}}, nil, http.StatusBadRequest)
 
 	var createdUser struct {
 		ID string `json:"id"`
 	}
 	admin.must("POST", "/api/v1/users", "", map[string]string{"email": "member@localhost", "username": "member", "display_name": "Workspace Member", "password": "member-password-123"}, &createdUser, http.StatusCreated)
+	var platformRoles []role
+	admin.must("GET", "/api/v1/access/roles", "", nil, &platformRoles, http.StatusOK)
+	var platformAdministratorID string
+	for _, item := range platformRoles {
+		if item.Name == "administrator" {
+			platformAdministratorID = item.ID
+		}
+	}
+	if platformAdministratorID == "" {
+		t.Fatal("platform administrator role was not provisioned")
+	}
+	var secondPlatformAdministrator struct {
+		ID string `json:"id"`
+	}
+	admin.must("POST", "/api/v1/users", "", map[string]string{"email": "platform2@localhost", "username": "platform2", "display_name": "Second Platform Administrator", "password": "platform2-password-123"}, &secondPlatformAdministrator, http.StatusCreated)
+	admin.must("PUT", fmt.Sprintf("/api/v1/users/%s/roles", secondPlatformAdministrator.ID), "", map[string][]string{"role_ids": []string{platformAdministratorID}}, nil, http.StatusOK)
+	admin.must("POST", fmt.Sprintf("/api/v1/users/%s/disable", secondPlatformAdministrator.ID), "", nil, nil, http.StatusOK)
+	admin.must("POST", fmt.Sprintf("/api/v1/users/%s/disable", adminLogin.User.ID), "", nil, nil, http.StatusConflict)
 
 	var added member
 	admin.must("POST", "/api/v1/workspace/members", primaryWorkspaceID, map[string]string{"user_id": createdUser.ID}, &added, http.StatusCreated)
@@ -208,10 +237,23 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 		t.Fatalf("initial workspace administrator role was not assigned: %#v", primaryRoles.RoleIDs)
 	}
 
+	admin.must("PATCH", fmt.Sprintf("/api/v1/workspace/members/%s", primaryMembershipID), primaryWorkspaceID, map[string]string{"status": "suspended"}, nil, http.StatusConflict)
 	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/members/%s/roles", primaryMembershipID), primaryWorkspaceID, map[string][]string{"role_ids": []string{}}, nil, http.StatusConflict)
 	admin.must("DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", primaryMembershipID), primaryWorkspaceID, nil, nil, http.StatusConflict)
 	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/members/%s/roles", added.ID), primaryWorkspaceID, map[string][]string{"role_ids": []string{workspaceAdministratorID}}, nil, http.StatusOK)
 	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/members/%s/roles", added.ID), primaryWorkspaceID, map[string][]string{"role_ids": []string{secondaryRole.ID}}, nil, http.StatusBadRequest)
+	malformedRoleID := uuid.New()
+	if _, err := application.Database.Exec(ctx, `ALTER TABLE access_roles DISABLE TRIGGER access_protected_role_identity`); err != nil {
+		t.Fatal(err)
+	}
+	_, insertErr := application.Database.Exec(ctx, `INSERT INTO access_roles (id, workspace_id, name, display_name, description, system, created_at, updated_at) VALUES ($1,$2,'administrator','Malformed Administrator','',TRUE,NOW(),NOW())`, malformedRoleID, secondary.ID)
+	_, enableErr := application.Database.Exec(ctx, `ALTER TABLE access_roles ENABLE TRIGGER access_protected_role_identity`)
+	if insertErr != nil || enableErr != nil {
+		t.Fatalf("create malformed role fixture: insert=%v enable=%v", insertErr, enableErr)
+	}
+	if _, err := application.Database.Exec(ctx, `INSERT INTO access_user_roles (user_id, role_id) VALUES ($1,$2)`, createdUser.ID, malformedRoleID); err != nil {
+		t.Fatal(err)
+	}
 
 	memberClient := newAPIClient(t, server.URL)
 	memberClient.must("POST", "/api/v1/auth/login", "", map[string]string{"email": "member@localhost", "password": "member-password-123"}, &authResponse{}, http.StatusOK)
@@ -228,17 +270,56 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	}
 	memberClient.must("GET", "/api/v1/users", "", nil, nil, http.StatusForbidden)
 
-	admin.must("DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", primaryMembershipID), primaryWorkspaceID, nil, nil, http.StatusNoContent)
-	memberClient.must("PATCH", fmt.Sprintf("/api/v1/workspace/members/%s", added.ID), primaryWorkspaceID, map[string]string{"status": "suspended"}, nil, http.StatusConflict)
-	memberClient.must("DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", added.ID), primaryWorkspaceID, nil, nil, http.StatusConflict)
+	concurrentCtx, concurrentCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer concurrentCancel()
+	results := make(chan int, 2)
+	go func() {
+		results <- admin.requestContext(concurrentCtx, "DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", primaryMembershipID), primaryWorkspaceID, nil, nil)
+	}()
+	go func() {
+		results <- admin.requestContext(concurrentCtx, "DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", added.ID), primaryWorkspaceID, nil, nil)
+	}()
+	first, second := <-results, <-results
+	if !((first == http.StatusNoContent && second == http.StatusConflict) || (first == http.StatusConflict && second == http.StatusNoContent)) {
+		t.Fatalf("concurrent administrator removals returned %d and %d", first, second)
+	}
+	var remainingAdministrators int
+	if err := application.Database.QueryRow(ctx, `SELECT COUNT(DISTINCT m.id) FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id WHERE m.workspace_id = $1 AND m.status = 'active' AND r.workspace_id = $1 AND r.name = 'workspace_administrator' AND r.system = TRUE`, primaryWorkspaceID).Scan(&remainingAdministrators); err != nil {
+		t.Fatal(err)
+	}
+	if remainingAdministrators != 1 {
+		t.Fatalf("concurrent removals left %d administrators, want exactly one", remainingAdministrators)
+	}
 }
 
-func testDatabaseURL(t *testing.T) string {
+func isolatedDatabaseURL(t *testing.T) (string, func()) {
 	url := os.Getenv("APEXVOID_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("set APEXVOID_TEST_DATABASE_URL to run PostgreSQL integration tests")
 	}
-	return url
+	adminPool, err := pgxpool.New(context.Background(), url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "apexvoid_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := adminPool.Exec(context.Background(), `CREATE SCHEMA `+schema); err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+	parsed, err := neturl.Parse(url)
+	if err != nil {
+		adminPool.Close()
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	query.Set("options", "-c search_path="+schema+",public")
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), func() {
+		defer adminPool.Close()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = adminPool.Exec(cleanupCtx, `DROP SCHEMA `+schema+` CASCADE`)
+	}
 }
 
 func contains(items []string, expected string) bool {

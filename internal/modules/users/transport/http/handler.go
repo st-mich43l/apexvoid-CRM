@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	frameworkerrors "github.com/st-mich43l/apexvoid-CRM/internal/framework/errors"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
+	accessdomain "github.com/st-mich43l/apexvoid-CRM/internal/modules/access/domain"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users/domain"
@@ -282,6 +283,10 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusConflict, "CONFLICT", "A user with that email already exists")
 	case errors.Is(err, domain.ErrCurrentPassword), errors.Is(err, domain.ErrPasswordPolicy):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "The password is invalid")
+	case errors.Is(err, accessdomain.ErrLastPlatformAdministrator):
+		httpserver.WriteError(w, r, http.StatusConflict, "LAST_PLATFORM_ADMINISTRATOR", "A platform must have at least one active administrator")
+	case errors.Is(err, accessdomain.ErrLastWorkspaceAdministrator):
+		httpserver.WriteError(w, r, http.StatusConflict, "LAST_WORKSPACE_ADMINISTRATOR", "A workspace must have at least one active administrator")
 	case errors.Is(err, domain.ErrNotFound):
 		httpserver.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "User not found")
 	default:
