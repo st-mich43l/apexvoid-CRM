@@ -9,6 +9,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/access"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/customization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
@@ -32,6 +33,7 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 		postgres.Close()
 		return nil, fmt.Errorf("create contacts module: %w", err)
 	}
+	customizationModule := customization.New(customization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Metadata: framework.Metadata, Contacts: contactsModule.Service(), Access: accessModule.Service(), Workspace: organizationModule.Service(), Authenticator: usersModule.Service()})
 	organizationModule.SetAccess(accessModule.Service())
 	usersModule.SetAuthorizer(accessModule.Service())
 	usersModule.SetStatusGuard(accessModule.Service())
@@ -54,6 +56,10 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	if err := framework.Modules.Register(contactsModule); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register contacts module: %w", err)
+	}
+	if err := framework.Modules.Register(customizationModule); err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("register customization module: %w", err)
 	}
 	if err := framework.Initialize(ctx); err != nil {
 		postgres.Close()

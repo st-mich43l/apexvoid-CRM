@@ -10,3 +10,9 @@ import (
 type ContactReader interface {
 	GetByID(context.Context, uuid.UUID, uuid.UUID) (domain.ContactSummary, error)
 }
+
+// CustomFieldReader exposes the established Contacts field store to shared
+// configuration consumers without creating a second source of truth.
+type CustomFieldReader interface {
+	ListCustomFields(context.Context, uuid.UUID, bool) ([]domain.CustomFieldDefinition, error)
+}

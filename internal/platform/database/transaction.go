@@ -16,6 +16,9 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager { return &TxManager{pool: pool}
 // Repositories can retrieve the active pgx transaction explicitly through
 // TransactionFromContext without starting nested transactions themselves.
 func (m *TxManager) WithTransaction(ctx context.Context, fn func(context.Context) error) error {
+	if _, active := TransactionFromContext(ctx); active {
+		return fn(ctx)
+	}
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
