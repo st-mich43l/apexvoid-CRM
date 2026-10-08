@@ -80,6 +80,20 @@ type Opportunity struct {
 	Version           int                `json:"version"`
 }
 
+// History is durable audit data for lifecycle operations; events remain a
+// post-commit integration notification rather than the audit source of truth.
+type History struct {
+	ID            uuid.UUID  `json:"id"`
+	WorkspaceID   uuid.UUID  `json:"workspace_id"`
+	LeadID        *uuid.UUID `json:"lead_id,omitempty"`
+	OpportunityID *uuid.UUID `json:"opportunity_id,omitempty"`
+	EventType     string     `json:"event_type"`
+	FromStageID   *uuid.UUID `json:"from_stage_id,omitempty"`
+	ToStageID     *uuid.UUID `json:"to_stage_id,omitempty"`
+	ActorID       uuid.UUID  `json:"actor_id"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
 var decimalAmount = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$`)
 
 func (l Lead) Validate() error {
@@ -113,6 +127,21 @@ func (l *Lead) Transition(next LeadStatus, reason string) error {
 		}
 	}
 	return fmt.Errorf("lead transition from %s to %s is not allowed", l.Status, next)
+}
+
+// Convert is deliberately separate from Transition: conversion is the only
+// lifecycle change that has mandatory reciprocal persistence state.
+func (l *Lead) Convert(opportunityID uuid.UUID, convertedAt time.Time) error {
+	if l.Status != LeadQualified {
+		return fmt.Errorf("only qualified leads can be converted")
+	}
+	if opportunityID == uuid.Nil || convertedAt.IsZero() {
+		return fmt.Errorf("converted lead requires opportunity and timestamp")
+	}
+	l.Status = LeadConverted
+	l.ConvertedOpportunityID = &opportunityID
+	l.ConvertedAt = &convertedAt
+	return l.Validate()
 }
 
 func (o Opportunity) Validate() error {

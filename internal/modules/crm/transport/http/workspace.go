@@ -1,9 +1,11 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -14,6 +16,57 @@ import (
 	usersapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/httpserver"
 )
+
+type leadCreateRequest struct {
+	Title          string         `json:"title"`
+	Description    string         `json:"description"`
+	ContactName    string         `json:"contact_name"`
+	CompanyName    string         `json:"company_name"`
+	Email          string         `json:"email"`
+	Phone          string         `json:"phone"`
+	Source         string         `json:"source"`
+	AssignedUserID *uuid.UUID     `json:"assigned_user_id"`
+	ContactID      *uuid.UUID     `json:"contact_id"`
+	CustomValues   map[string]any `json:"custom_values"`
+}
+type leadPatchRequest struct {
+	Version        int             `json:"version"`
+	Title          *string         `json:"title"`
+	Description    *string         `json:"description"`
+	ContactName    *string         `json:"contact_name"`
+	CompanyName    *string         `json:"company_name"`
+	Email          *string         `json:"email"`
+	Phone          *string         `json:"phone"`
+	Source         *string         `json:"source"`
+	AssignedUserID json.RawMessage `json:"assigned_user_id"`
+	ContactID      json.RawMessage `json:"contact_id"`
+	CustomValues   json.RawMessage `json:"custom_values"`
+}
+type opportunityCreateRequest struct {
+	Title             string         `json:"title"`
+	Description       string         `json:"description"`
+	PipelineID        uuid.UUID      `json:"pipeline_id"`
+	StageID           uuid.UUID      `json:"stage_id"`
+	ContactID         *uuid.UUID     `json:"contact_id"`
+	CompanyID         *uuid.UUID     `json:"company_id"`
+	AssignedUserID    *uuid.UUID     `json:"assigned_user_id"`
+	ExpectedRevenue   string         `json:"expected_revenue"`
+	Currency          string         `json:"currency"`
+	ExpectedCloseDate *time.Time     `json:"expected_close_date"`
+	CustomValues      map[string]any `json:"custom_values"`
+}
+type opportunityPatchRequest struct {
+	Version           int             `json:"version"`
+	Title             *string         `json:"title"`
+	Description       *string         `json:"description"`
+	ExpectedRevenue   *string         `json:"expected_revenue"`
+	Currency          *string         `json:"currency"`
+	ExpectedCloseDate json.RawMessage `json:"expected_close_date"`
+	AssignedUserID    json.RawMessage `json:"assigned_user_id"`
+	ContactID         json.RawMessage `json:"contact_id"`
+	CompanyID         json.RawMessage `json:"company_id"`
+	CustomValues      json.RawMessage `json:"custom_values"`
+}
 
 func (h *Handler) registerWorkspaceRoutes(r module.RouteRegistry) {
 	c := r.With(usersapi.RequireAuthentication(h.a), organizationapi.RequireWorkspace(h.w))
@@ -78,6 +131,48 @@ func routeID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 func listOut[T any](w http.ResponseWriter, items []T, page, limit, total int) {
 	out(w, 200, map[string]any{"items": items, "page": page, "limit": limit, "total": total})
 }
+func nullableUUID(raw json.RawMessage) (*uuid.UUID, bool, error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return nil, true, nil
+	}
+	var value uuid.UUID
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, true, err
+	}
+	return &value, true, nil
+}
+func nullableDate(raw json.RawMessage) (*time.Time, bool, error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return nil, true, nil
+	}
+	var value time.Time
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, true, err
+	}
+	return &value, true, nil
+}
+func patchValues(raw json.RawMessage) (map[string]any, bool, error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return map[string]any{}, true, nil
+	}
+	var values map[string]any
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, true, err
+	}
+	return values, true, nil
+}
+func patchError(w http.ResponseWriter, r *http.Request) {
+	httpserver.WriteError(w, r, 400, "VALIDATION_ERROR", "Patch value is invalid")
+}
 
 func (h *Handler) listLeads(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := ctx(r)
@@ -107,12 +202,12 @@ func (h *Handler) getLead(w http.ResponseWriter, r *http.Request) {
 	out(w, 200, item)
 }
 func (h *Handler) createLead(w http.ResponseWriter, r *http.Request) {
-	var item domain.Lead
-	if !decode(w, r, &item) {
+	var body leadCreateRequest
+	if !decode(w, r, &body) {
 		return
 	}
 	workspace, actor := ctx(r)
-	item.WorkspaceID, item.CreatedBy, item.UpdatedBy = workspace, actor, actor
+	item := domain.Lead{WorkspaceID: workspace, Title: body.Title, Description: body.Description, ContactName: body.ContactName, CompanyName: body.CompanyName, Email: body.Email, Phone: body.Phone, Source: body.Source, AssignedUserID: body.AssignedUserID, ContactID: body.ContactID, CustomValues: body.CustomValues, CreatedBy: actor, UpdatedBy: actor}
 	created, err := h.s.CreateLead(r.Context(), item)
 	if err != nil {
 		fail(w, r, err)
@@ -121,8 +216,8 @@ func (h *Handler) createLead(w http.ResponseWriter, r *http.Request) {
 	out(w, 201, created)
 }
 func (h *Handler) updateLead(w http.ResponseWriter, r *http.Request) {
-	var item domain.Lead
-	if !decode(w, r, &item) {
+	var body leadPatchRequest
+	if !decode(w, r, &body) {
 		return
 	}
 	workspace, actor := ctx(r)
@@ -130,8 +225,22 @@ func (h *Handler) updateLead(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item.ID, item.WorkspaceID, item.UpdatedBy = identifier, workspace, actor
-	updated, err := h.s.UpdateLead(r.Context(), item, item.Version)
+	assigned, setAssigned, err := nullableUUID(body.AssignedUserID)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	contact, setContact, err := nullableUUID(body.ContactID)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	custom, setCustom, err := patchValues(body.CustomValues)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	updated, err := h.s.PatchLead(r.Context(), workspace, actor, identifier, body.Version, application.LeadPatch{Title: body.Title, Description: body.Description, ContactName: body.ContactName, CompanyName: body.CompanyName, Email: body.Email, Phone: body.Phone, Source: body.Source, AssignedUserID: assigned, ContactID: contact, SetAssignedUser: setAssigned, SetContact: setContact, CustomValues: custom, SetCustomValues: setCustom})
 	if err != nil {
 		fail(w, r, err)
 		return
@@ -223,12 +332,12 @@ func (h *Handler) getOpportunity(w http.ResponseWriter, r *http.Request) {
 	out(w, 200, item)
 }
 func (h *Handler) createOpportunity(w http.ResponseWriter, r *http.Request) {
-	var item domain.Opportunity
-	if !decode(w, r, &item) {
+	var body opportunityCreateRequest
+	if !decode(w, r, &body) {
 		return
 	}
 	workspace, actor := ctx(r)
-	item.WorkspaceID, item.CreatedBy, item.UpdatedBy = workspace, actor, actor
+	item := domain.Opportunity{WorkspaceID: workspace, Title: body.Title, Description: body.Description, PipelineID: body.PipelineID, StageID: body.StageID, ContactID: body.ContactID, CompanyID: body.CompanyID, AssignedUserID: body.AssignedUserID, ExpectedRevenue: body.ExpectedRevenue, Currency: body.Currency, ExpectedCloseDate: body.ExpectedCloseDate, CustomValues: body.CustomValues, CreatedBy: actor, UpdatedBy: actor}
 	created, err := h.s.CreateOpportunity(r.Context(), item)
 	if err != nil {
 		fail(w, r, err)
@@ -237,8 +346,8 @@ func (h *Handler) createOpportunity(w http.ResponseWriter, r *http.Request) {
 	out(w, 201, created)
 }
 func (h *Handler) updateOpportunity(w http.ResponseWriter, r *http.Request) {
-	var item domain.Opportunity
-	if !decode(w, r, &item) {
+	var body opportunityPatchRequest
+	if !decode(w, r, &body) {
 		return
 	}
 	workspace, actor := ctx(r)
@@ -246,8 +355,32 @@ func (h *Handler) updateOpportunity(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item.ID, item.WorkspaceID, item.UpdatedBy = identifier, workspace, actor
-	updated, err := h.s.UpdateOpportunity(r.Context(), item, item.Version)
+	closeDate, setCloseDate, err := nullableDate(body.ExpectedCloseDate)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	assigned, setAssigned, err := nullableUUID(body.AssignedUserID)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	contact, setContact, err := nullableUUID(body.ContactID)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	company, setCompany, err := nullableUUID(body.CompanyID)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	custom, setCustom, err := patchValues(body.CustomValues)
+	if err != nil {
+		patchError(w, r)
+		return
+	}
+	updated, err := h.s.PatchOpportunity(r.Context(), workspace, actor, identifier, body.Version, application.OpportunityPatch{Title: body.Title, Description: body.Description, ExpectedRevenue: body.ExpectedRevenue, Currency: body.Currency, ExpectedCloseDate: closeDate, SetExpectedCloseDate: setCloseDate, AssignedUserID: assigned, SetAssignedUser: setAssigned, ContactID: contact, SetContact: setContact, CompanyID: company, SetCompany: setCompany, CustomValues: custom, SetCustomValues: setCustom})
 	if err != nil {
 		fail(w, r, err)
 		return

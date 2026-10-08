@@ -25,9 +25,12 @@ type Repository interface {
 	CreateLead(context.Context, *Lead) error
 	UpdateLead(context.Context, *Lead, int) error
 	GetOpportunity(context.Context, uuid.UUID, uuid.UUID) (*Opportunity, error)
+	GetOpportunityForUpdate(context.Context, uuid.UUID, uuid.UUID) (*Opportunity, error)
 	ListOpportunities(context.Context, uuid.UUID, OpportunityFilter) ([]Opportunity, int, error)
 	CreateOpportunity(context.Context, *Opportunity) error
 	UpdateOpportunity(context.Context, *Opportunity, int) error
+	CreateHistory(context.Context, History) error
+	ListHistory(context.Context, uuid.UUID, *uuid.UUID, *uuid.UUID) ([]History, error)
 }
 
 type LeadFilter struct {

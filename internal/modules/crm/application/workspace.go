@@ -22,6 +22,24 @@ type ConvertInput struct {
 	Currency        string
 }
 
+type LeadPatch struct {
+	Title, Description, ContactName, CompanyName, Email, Phone, Source *string
+	AssignedUserID, ContactID                                          *uuid.UUID
+	SetAssignedUser, SetContact                                        bool
+	CustomValues                                                       map[string]any
+	SetCustomValues                                                    bool
+}
+
+type OpportunityPatch struct {
+	Title, Description, ExpectedRevenue, Currency *string
+	ExpectedCloseDate                             *time.Time
+	AssignedUserID, ContactID, CompanyID          *uuid.UUID
+	SetExpectedCloseDate, SetAssignedUser         bool
+	SetContact, SetCompany                        bool
+	CustomValues                                  map[string]any
+	SetCustomValues                               bool
+}
+
 func (s *Service) ListLeads(ctx context.Context, workspaceID uuid.UUID, filter domain.LeadFilter) ([]domain.Lead, int, error) {
 	return s.r.ListLeads(ctx, workspaceID, filter)
 }
@@ -77,6 +95,63 @@ func (s *Service) UpdateLead(ctx context.Context, item domain.Lead, expectedVers
 	return item, nil
 }
 
+func (s *Service) PatchLead(ctx context.Context, workspaceID, actor, id uuid.UUID, expectedVersion int, patch LeadPatch) (domain.Lead, error) {
+	var item *domain.Lead
+	err := s.with(ctx, func(tx context.Context) error {
+		var err error
+		item, err = s.r.GetLeadForUpdate(tx, workspaceID, id)
+		if err != nil {
+			return err
+		}
+		if item.Status == domain.LeadConverted {
+			return fmt.Errorf("converted leads cannot be edited")
+		}
+		if item.Version != expectedVersion {
+			return domain.ErrConflict
+		}
+		if patch.Title != nil {
+			item.Title = strings.TrimSpace(*patch.Title)
+		}
+		if patch.Description != nil {
+			item.Description = *patch.Description
+		}
+		if patch.ContactName != nil {
+			item.ContactName = *patch.ContactName
+		}
+		if patch.CompanyName != nil {
+			item.CompanyName = *patch.CompanyName
+		}
+		if patch.Email != nil {
+			item.Email = *patch.Email
+		}
+		if patch.Phone != nil {
+			item.Phone = *patch.Phone
+		}
+		if patch.Source != nil {
+			item.Source = *patch.Source
+		}
+		if patch.SetAssignedUser {
+			item.AssignedUserID = patch.AssignedUserID
+		}
+		if patch.SetContact {
+			item.ContactID = patch.ContactID
+		}
+		if patch.SetCustomValues {
+			item.CustomValues = mergeCustomValues(item.CustomValues, patch.CustomValues)
+		}
+		item.UpdatedBy, item.UpdatedAt = actor, time.Now().UTC()
+		if err = s.validateLead(tx, item); err != nil {
+			return err
+		}
+		return s.r.UpdateLead(tx, item, expectedVersion)
+	})
+	if err != nil {
+		return domain.Lead{}, err
+	}
+	s.publish(ctx, "crm.lead.updated", workspaceID, id)
+	return *item, nil
+}
+
 func (s *Service) TransitionLead(ctx context.Context, workspaceID, actor, id uuid.UUID, next domain.LeadStatus, reason string, version int) (domain.Lead, error) {
 	var item *domain.Lead
 	err := s.with(ctx, func(tx context.Context) error {
@@ -89,7 +164,10 @@ func (s *Service) TransitionLead(ctx context.Context, workspaceID, actor, id uui
 			return err
 		}
 		item.UpdatedBy, item.UpdatedAt = actor, time.Now().UTC()
-		return s.r.UpdateLead(tx, item, version)
+		if err = s.r.UpdateLead(tx, item, version); err != nil {
+			return err
+		}
+		return s.recordHistory(tx, workspaceID, actor, &id, nil, "lead."+string(next), nil, nil)
 	})
 	if err != nil {
 		return domain.Lead{}, err
@@ -143,19 +221,79 @@ func (s *Service) UpdateOpportunity(ctx context.Context, item domain.Opportunity
 	return item, nil
 }
 
-func (s *Service) MoveOpportunity(ctx context.Context, workspaceID, actor, id, pipelineID, stageID uuid.UUID, version int) (domain.Opportunity, error) {
-	item, err := s.r.GetOpportunity(ctx, workspaceID, id)
+func (s *Service) PatchOpportunity(ctx context.Context, workspaceID, actor, id uuid.UUID, expectedVersion int, patch OpportunityPatch) (domain.Opportunity, error) {
+	var item *domain.Opportunity
+	err := s.with(ctx, func(tx context.Context) error {
+		var err error
+		item, err = s.r.GetOpportunityForUpdate(tx, workspaceID, id)
+		if err != nil {
+			return err
+		}
+		if item.Version != expectedVersion {
+			return domain.ErrConflict
+		}
+		if patch.Title != nil {
+			item.Title = strings.TrimSpace(*patch.Title)
+		}
+		if patch.Description != nil {
+			item.Description = *patch.Description
+		}
+		if patch.ExpectedRevenue != nil {
+			item.ExpectedRevenue = strings.TrimSpace(*patch.ExpectedRevenue)
+		}
+		if patch.Currency != nil {
+			item.Currency = strings.ToUpper(strings.TrimSpace(*patch.Currency))
+		}
+		if patch.SetExpectedCloseDate {
+			item.ExpectedCloseDate = patch.ExpectedCloseDate
+		}
+		if patch.SetAssignedUser {
+			item.AssignedUserID = patch.AssignedUserID
+		}
+		if patch.SetContact {
+			item.ContactID = patch.ContactID
+		}
+		if patch.SetCompany {
+			item.CompanyID = patch.CompanyID
+		}
+		if patch.SetCustomValues {
+			item.CustomValues = mergeCustomValues(item.CustomValues, patch.CustomValues)
+		}
+		item.UpdatedBy, item.UpdatedAt = actor, time.Now().UTC()
+		if err = s.validateOpportunity(tx, item); err != nil {
+			return err
+		}
+		return s.r.UpdateOpportunity(tx, item, expectedVersion)
+	})
 	if err != nil {
 		return domain.Opportunity{}, err
 	}
-	if item.Outcome != domain.OpportunityOpen {
-		return domain.Opportunity{}, fmt.Errorf("closed opportunity cannot move stages")
-	}
-	item.PipelineID, item.StageID, item.UpdatedBy, item.UpdatedAt = pipelineID, stageID, actor, time.Now().UTC()
-	if err = s.validateOpportunity(ctx, item); err != nil {
-		return domain.Opportunity{}, err
-	}
-	if err = s.with(ctx, func(tx context.Context) error { return s.r.UpdateOpportunity(tx, item, version) }); err != nil {
+	s.publish(ctx, "crm.opportunity.updated", workspaceID, id)
+	return *item, nil
+}
+
+func (s *Service) MoveOpportunity(ctx context.Context, workspaceID, actor, id, pipelineID, stageID uuid.UUID, version int) (domain.Opportunity, error) {
+	var item *domain.Opportunity
+	err := s.with(ctx, func(tx context.Context) error {
+		var err error
+		item, err = s.r.GetOpportunityForUpdate(tx, workspaceID, id)
+		if err != nil {
+			return err
+		}
+		if item.Outcome != domain.OpportunityOpen {
+			return fmt.Errorf("closed opportunity cannot move stages")
+		}
+		from := item.StageID
+		item.PipelineID, item.StageID, item.UpdatedBy, item.UpdatedAt = pipelineID, stageID, actor, time.Now().UTC()
+		if err = s.validateOpportunity(tx, item); err != nil {
+			return err
+		}
+		if err = s.r.UpdateOpportunity(tx, item, version); err != nil {
+			return err
+		}
+		return s.recordHistory(tx, workspaceID, actor, nil, &id, "opportunity.stage_changed", &from, &stageID)
+	})
+	if err != nil {
 		return domain.Opportunity{}, err
 	}
 	s.publish(ctx, "crm.opportunity.stage_changed", workspaceID, id)
@@ -314,14 +452,15 @@ func (s *Service) ConvertLead(ctx context.Context, workspaceID, actor, leadID uu
 		if err = s.r.CreateOpportunity(tx, &opportunity); err != nil {
 			return err
 		}
-		if err = lead.Transition(domain.LeadConverted, ""); err != nil {
+		if err = lead.Convert(opportunity.ID, now); err != nil {
 			return err
 		}
-		lead.ConvertedOpportunityID = &opportunity.ID
-		lead.ConvertedAt = &now
 		lead.ContactID = contactID
 		lead.UpdatedBy, lead.UpdatedAt = actor, now
-		return s.r.UpdateLead(tx, lead, version)
+		if err = s.r.UpdateLead(tx, lead, version); err != nil {
+			return err
+		}
+		return s.recordHistory(tx, workspaceID, actor, &leadID, &opportunity.ID, "lead.converted", nil, &input.StageID)
 	})
 	if err != nil {
 		return domain.Opportunity{}, err
@@ -407,6 +546,23 @@ func values(input map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return input
+}
+func mergeCustomValues(current, changes map[string]any) map[string]any {
+	merged := make(map[string]any, len(current)+len(changes))
+	for key, value := range current {
+		merged[key] = value
+	}
+	for key, value := range changes {
+		if value == nil {
+			delete(merged, key)
+		} else {
+			merged[key] = value
+		}
+	}
+	return merged
+}
+func (s *Service) recordHistory(ctx context.Context, workspaceID, actor uuid.UUID, leadID, opportunityID *uuid.UUID, eventType string, fromStageID, toStageID *uuid.UUID) error {
+	return s.r.CreateHistory(ctx, domain.History{ID: uuid.New(), WorkspaceID: workspaceID, LeadID: leadID, OpportunityID: opportunityID, EventType: eventType, FromStageID: fromStageID, ToStageID: toStageID, ActorID: actor, CreatedAt: time.Now().UTC()})
 }
 func (s *Service) publish(ctx context.Context, name string, workspaceID, id uuid.UUID) {
 	if s.events == nil {
