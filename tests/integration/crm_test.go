@@ -11,12 +11,50 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/st-mich43l/apexvoid-CRM/internal/app"
+	crmmigrations "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/migrations"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
+	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 )
 
 type crmPipeline struct {
 	ID string `json:"id"`
 }
+
+func TestCRMMigrationRollbackAndReapply(t *testing.T) {
+	url, cleanup := isolatedDatabaseURL(t)
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	application, err := app.Bootstrap(ctx, config.Config{App: config.AppConfig{Name: "crm-migration", Environment: "test"}, Server: config.ServerConfig{Address: ":0"}, Database: config.DatabaseConfig{URL: url, MaxConns: 10, MinConns: 1}, Auth: config.AuthConfig{AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128}, Logging: config.LoggingConfig{Level: "ERROR"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer application.Close(context.Background())
+	runner := database.NewMigrationRunner(application.Database, crmmigrations.All())
+	if err := runner.Down(ctx); err != nil {
+		t.Fatalf("rollback lifecycle history: %v", err)
+	}
+	if err := runner.Down(ctx); err != nil {
+		t.Fatalf("rollback leads/opportunities: %v", err)
+	}
+	var leadTable *string
+	if err := application.Database.QueryRow(ctx, "SELECT to_regclass(current_schema() || '.crm_leads')").Scan(&leadTable); err != nil {
+		t.Fatal(err)
+	}
+	if leadTable != nil {
+		t.Fatalf("crm_leads remained after rollback: %s", *leadTable)
+	}
+	if err := runner.Up(ctx); err != nil {
+		t.Fatalf("reapply CRM migrations: %v", err)
+	}
+	if err := application.Database.QueryRow(ctx, "SELECT to_regclass(current_schema() || '.crm_lifecycle_history')").Scan(&leadTable); err != nil {
+		t.Fatal(err)
+	}
+	if leadTable == nil {
+		t.Fatal("crm_lifecycle_history was not restored")
+	}
+}
+
 type crmStage struct {
 	ID       string `json:"id"`
 	Category string `json:"category"`
