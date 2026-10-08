@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
 	contactsapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts/api"
+	customdomain "github.com/st-mich43l/apexvoid-CRM/internal/modules/customization/domain"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/domain"
 	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
@@ -18,6 +19,8 @@ type Service struct {
 	tx     *database.TxManager
 	custom interface {
 		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+		ListViews(context.Context, uuid.UUID, uuid.UUID, string) ([]customdomain.SavedView, error)
+		EffectiveSchema(context.Context, uuid.UUID, string) (customdomain.EffectiveSchema, error)
 	}
 	contacts interface {
 		contactsapi.ContactReader
@@ -35,6 +38,8 @@ type Dependencies struct {
 	Transactions *database.TxManager
 	CustomValues interface {
 		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+		ListViews(context.Context, uuid.UUID, uuid.UUID, string) ([]customdomain.SavedView, error)
+		EffectiveSchema(context.Context, uuid.UUID, string) (customdomain.EffectiveSchema, error)
 	}
 	Contacts interface {
 		contactsapi.ContactReader

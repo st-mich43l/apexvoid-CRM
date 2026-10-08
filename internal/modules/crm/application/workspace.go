@@ -41,13 +41,23 @@ type OpportunityPatch struct {
 }
 
 func (s *Service) ListLeads(ctx context.Context, workspaceID uuid.UUID, filter domain.LeadFilter) ([]domain.Lead, int, error) {
-	return s.r.ListLeads(ctx, workspaceID, filter)
+	if filter.ViewID != nil {
+        conditions, sort, desc, custom, kind, err := s.resolveView(ctx, workspaceID, filter.ViewUserID, *filter.ViewID, "crm.lead")
+        if err != nil { return nil, 0, err }
+        filter.Conditions, filter.Sort, filter.Desc, filter.SortCustom, filter.SortType = conditions, sort, desc, custom, kind
+    }
+    return s.r.ListLeads(ctx, workspaceID, filter)
 }
 func (s *Service) GetLead(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Lead, error) {
 	return s.r.GetLead(ctx, workspaceID, id)
 }
 func (s *Service) ListOpportunities(ctx context.Context, workspaceID uuid.UUID, filter domain.OpportunityFilter) ([]domain.Opportunity, int, error) {
-	return s.r.ListOpportunities(ctx, workspaceID, filter)
+	if filter.ViewID != nil {
+        conditions, sort, desc, custom, kind, err := s.resolveView(ctx, workspaceID, filter.ViewUserID, *filter.ViewID, "crm.opportunity")
+        if err != nil { return nil, 0, err }
+        filter.Conditions, filter.Sort, filter.Desc, filter.SortCustom, filter.SortType = conditions, sort, desc, custom, kind
+    }
+    return s.r.ListOpportunities(ctx, workspaceID, filter)
 }
 func (s *Service) GetOpportunity(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Opportunity, error) {
 	return s.r.GetOpportunity(ctx, workspaceID, id)

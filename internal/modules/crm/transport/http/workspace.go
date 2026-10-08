@@ -223,13 +223,15 @@ func patchError(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listLeads(w http.ResponseWriter, r *http.Request) {
-	workspace, _ := ctx(r)
+	workspace, actor := ctx(r)
 	p, l := page(r)
+	viewID := optionalID(w, r, "view_id")
+	if r.URL.Query().Get("view_id") != "" && viewID == nil { return }
 	owner := optionalID(w, r, "owner_id")
 	if r.URL.Query().Get("owner_id") != "" && owner == nil {
 		return
 	}
-	items, total, err := h.s.ListLeads(r.Context(), workspace, domain.LeadFilter{Search: r.URL.Query().Get("search"), Status: domain.LeadStatus(r.URL.Query().Get("status")), OwnerID: owner, Page: p, Limit: l, Sort: r.URL.Query().Get("sort"), Desc: r.URL.Query().Get("desc") == "true"})
+	items, total, err := h.s.ListLeads(r.Context(), workspace, domain.LeadFilter{Search: r.URL.Query().Get("search"), ViewID: viewID, ViewUserID: actor, Status: domain.LeadStatus(r.URL.Query().Get("status")), OwnerID: owner, Page: p, Limit: l, Sort: r.URL.Query().Get("sort"), Desc: r.URL.Query().Get("desc") == "true"})
 	if err != nil {
 		fail(w, r, err)
 		return
@@ -366,13 +368,15 @@ func (h *Handler) convertLead(w http.ResponseWriter, r *http.Request) {
 	writeOpportunity(w, 201, item)
 }
 func (h *Handler) listOpportunities(w http.ResponseWriter, r *http.Request) {
-	workspace, _ := ctx(r)
+	workspace, actor := ctx(r)
 	p, l := page(r)
+	viewID := optionalID(w, r, "view_id")
+	if r.URL.Query().Get("view_id") != "" && viewID == nil { return }
 	pipeline, stage, owner := optionalID(w, r, "pipeline_id"), optionalID(w, r, "stage_id"), optionalID(w, r, "owner_id")
 	if (r.URL.Query().Get("pipeline_id") != "" && pipeline == nil) || (r.URL.Query().Get("stage_id") != "" && stage == nil) || (r.URL.Query().Get("owner_id") != "" && owner == nil) {
 		return
 	}
-	items, total, err := h.s.ListOpportunities(r.Context(), workspace, domain.OpportunityFilter{Search: r.URL.Query().Get("search"), PipelineID: pipeline, StageID: stage, OwnerID: owner, Outcome: domain.OpportunityOutcome(r.URL.Query().Get("outcome")), Page: p, Limit: l, Sort: r.URL.Query().Get("sort"), Desc: r.URL.Query().Get("desc") == "true"})
+	items, total, err := h.s.ListOpportunities(r.Context(), workspace, domain.OpportunityFilter{Search: r.URL.Query().Get("search"), ViewID: viewID, ViewUserID: actor, PipelineID: pipeline, StageID: stage, OwnerID: owner, Outcome: domain.OpportunityOutcome(r.URL.Query().Get("outcome")), Page: p, Limit: l, Sort: r.URL.Query().Get("sort"), Desc: r.URL.Query().Get("desc") == "true"})
 	if err != nil {
 		fail(w, r, err)
 		return
