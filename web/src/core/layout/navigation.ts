@@ -19,6 +19,7 @@ const sectionOrder = [
 
 function sectionFor(item: NavigationItem): string {
   if (item.path.startsWith('/contacts')) return item.path.includes('/settings') ? 'settings' : 'workspace'
+  if (item.path.startsWith('/crm')) return item.path.includes('/settings') ? 'settings' : 'workspace'
   if (item.path.startsWith('/admin') || item.path.startsWith('/framework')) return 'administration'
   if (item.path.startsWith('/settings')) return 'settings'
   return 'overview'

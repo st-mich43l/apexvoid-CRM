@@ -19,6 +19,32 @@ type Repository interface {
 	SetStagesActive(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, bool) error
 	SetTemporaryStagePositions(context.Context, uuid.UUID, uuid.UUID) error
 	SetStagePositions(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID) error
+	GetLead(context.Context, uuid.UUID, uuid.UUID) (*Lead, error)
+	GetLeadForUpdate(context.Context, uuid.UUID, uuid.UUID) (*Lead, error)
+	ListLeads(context.Context, uuid.UUID, LeadFilter) ([]Lead, int, error)
+	CreateLead(context.Context, *Lead) error
+	UpdateLead(context.Context, *Lead, int) error
+	GetOpportunity(context.Context, uuid.UUID, uuid.UUID) (*Opportunity, error)
+	ListOpportunities(context.Context, uuid.UUID, OpportunityFilter) ([]Opportunity, int, error)
+	CreateOpportunity(context.Context, *Opportunity) error
+	UpdateOpportunity(context.Context, *Opportunity, int) error
+}
+
+type LeadFilter struct {
+	Search      string
+	Status      LeadStatus
+	OwnerID     *uuid.UUID
+	Page, Limit int
+	Sort        string
+	Desc        bool
+}
+type OpportunityFilter struct {
+	Search                       string
+	PipelineID, StageID, OwnerID *uuid.UUID
+	Outcome                      OpportunityOutcome
+	Page, Limit                  int
+	Sort                         string
+	Desc                         bool
 }
 
 var (

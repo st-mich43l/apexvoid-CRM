@@ -112,7 +112,37 @@ export const api = {
     download: async (id: string, attachmentID: string) => { const workspaceID = window.localStorage.getItem('apexvoid.active_workspace'); const headers = new Headers(); if (workspaceID) headers.set('X-ApexVoid-Workspace', workspaceID); const response = await fetch(`${baseURL}/api/v1/contacts/${id}/attachments/${attachmentID}`, { headers, credentials: 'include' }); if (!response.ok) throw new Error(`Download failed with status ${response.status}`); return response.blob() },
     removeAttachment: (id: string, attachmentID: string) => request<void>(`/api/v1/contacts/${id}/attachments/${attachmentID}`, { method: 'DELETE' }),
   },
+  crm: {
+    pipelines: () => request<Pipeline[]>('/api/v1/crm/pipelines'),
+    stages: (pipelineID: string) => request<Stage[]>(`/api/v1/crm/pipelines/${pipelineID}/stages`),
+    templates: () => request<PipelineTemplate[]>('/api/v1/crm/pipeline-templates'),
+    initializePipeline: (template: string) => request<Pipeline>('/api/v1/crm/pipelines/initialize', json({ template })),
+    createPipeline: (body: { name: string; description: string; color: string }) => request<Pipeline>('/api/v1/crm/pipelines', json(body)),
+    setDefaultPipeline: (id: string) => request<void>(`/api/v1/crm/pipelines/${id}/set-default`, { method: 'POST' }),
+    addStage: (pipelineID: string, body: { key: string; name: string; probability: number }) => request<Stage>(`/api/v1/crm/pipelines/${pipelineID}/stages`, json(body)),
+    reorderStages: (pipelineID: string, stage_ids: string[]) => request<void>(`/api/v1/crm/pipelines/${pipelineID}/stages/reorder`, json({ stage_ids })),
+    leads: (params: Record<string, string | number | boolean | undefined> = {}) => request<CRMList<Lead>>(`/api/v1/crm/leads?${crmQuery(params)}`),
+    lead: (id: string) => request<Lead>(`/api/v1/crm/leads/${id}`),
+    createLead: (body: LeadInput) => request<Lead>('/api/v1/crm/leads', json(body)),
+    updateLead: (id: string, body: LeadInput & { version: number }) => request<Lead>(`/api/v1/crm/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    leadTransition: (id: string, action: 'contact' | 'qualify' | 'disqualify' | 'reopen', body: { version: number; reason?: string }) => request<Lead>(`/api/v1/crm/leads/${id}/${action}`, json(body)),
+    convertLead: (id: string, body: { pipeline_id: string; stage_id: string; contact_id?: string; create_contact: boolean; expected_revenue: string; currency: string; version: number }) => request<Opportunity>(`/api/v1/crm/leads/${id}/convert`, json(body)),
+    opportunities: (params: Record<string, string | number | boolean | undefined> = {}) => request<CRMList<Opportunity>>(`/api/v1/crm/opportunities?${crmQuery(params)}`),
+    opportunity: (id: string) => request<Opportunity>(`/api/v1/crm/opportunities/${id}`),
+    createOpportunity: (body: OpportunityInput) => request<Opportunity>('/api/v1/crm/opportunities', json(body)),
+    updateOpportunity: (id: string, body: OpportunityInput & { version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    moveOpportunity: (id: string, body: { pipeline_id: string; stage_id: string; version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/move-stage`, json(body)),
+    closeOpportunity: (id: string, won: boolean, body: { version: number; reason?: string }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/${won ? 'mark-won' : 'mark-lost'}`, json(body)),
+    reopenOpportunity: (id: string, body: { stage_id: string; version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/reopen`, json(body)),
+  },
+  customization: {
+    schema: (entity: string) => request<EffectiveSchema>(`/api/v1/customization/schema/${entity}`),
+    fields: (entity: string) => request<RuntimeField[]>(`/api/v1/customization/fields/${entity}`),
+    createField: (body: Omit<RuntimeField, 'id' | 'workspace_id' | 'created_at' | 'updated_at'>) => request<RuntimeField>('/api/v1/customization/fields', json(body)),
+  },
 }
+
+const crmQuery = (params: Record<string, string | number | boolean | undefined>) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)) }); return query }
 
 export type Role = { id: string; name: string; display_name: string; description: string; system: boolean; permissions: string[] }
 export type Organization = { id: string; name: string; slug: string; status: string; created_at: string; updated_at: string }
@@ -133,3 +163,14 @@ export type ActivityInput = Pick<Activity, 'title' | 'description' | 'activity_t
 export type Relationship = { id: string; person_id: string; company_id: string; relationship_type: string; job_title: string; is_primary: boolean; person_name?: string; company_name?: string }
 export type Attachment = { id: string; contact_id: string; file_name: string; size: number; content_type: string; uploaded_by: string; created_at: string }
 export type CustomField = { id: string; workspace_id: string; entity: string; key: string; label: string; type: string; description: string; required: boolean; options: string[]; display_order: number; active: boolean; created_at: string; updated_at: string }
+export type Pipeline = { id: string; workspace_id: string; name: string; slug: string; description: string; color: string; status: 'active' | 'archived'; default: boolean; version: number }
+export type Stage = { id: string; pipeline_id: string; key: string; name: string; category: 'open' | 'won' | 'lost'; probability: number; position: number; active: boolean; version: number }
+export type PipelineTemplate = { key: string; name: string; description: string }
+export type CRMList<T> = { items: T[]; page: number; limit: number; total: number }
+export type Lead = { id: string; title: string; description: string; contact_name: string; company_name: string; email: string; phone: string; source: string; assigned_user_id?: string; contact_id?: string; status: 'new' | 'contacted' | 'qualified' | 'converted' | 'disqualified'; disqualification_reason?: string; custom_values: Record<string, unknown>; converted_opportunity_id?: string; version: number; created_at: string }
+export type LeadInput = Omit<Lead, 'id' | 'status' | 'converted_opportunity_id' | 'version' | 'created_at'>
+export type Opportunity = { id: string; title: string; description: string; pipeline_id: string; stage_id: string; contact_id?: string; company_id?: string; assigned_user_id?: string; expected_revenue: string; currency: string; expected_close_date?: string; outcome: 'open' | 'won' | 'lost'; loss_reason?: string; custom_values: Record<string, unknown>; original_lead_id?: string; version: number; created_at: string; closed_at?: string }
+export type OpportunityInput = Omit<Opportunity, 'id' | 'outcome' | 'loss_reason' | 'original_lead_id' | 'version' | 'created_at' | 'closed_at'>
+export type EffectiveField = { key: string; label: string; type: 'string' | 'text' | 'boolean' | 'integer' | 'decimal' | 'date' | 'enum'; description: string; required: boolean; read_only: boolean; source: 'built_in' | 'custom'; default_value?: unknown; options: string[]; visible: boolean; display_order: number }
+export type EffectiveSchema = { entity: string; fields: EffectiveField[]; sections: { id: string; name: string; description: string; display_order: number }[] }
+export type RuntimeField = { id: string; workspace_id: string; entity: string; key: string; label: string; type: EffectiveField['type']; description: string; required: boolean; default_value?: unknown; options: string[]; visible: boolean; display_order: number; active: boolean; created_at: string; updated_at: string }

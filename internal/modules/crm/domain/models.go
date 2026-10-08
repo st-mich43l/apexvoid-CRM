@@ -2,11 +2,146 @@ package domain
 
 import (
 	"fmt"
+	"math/big"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type LeadStatus string
+
+const (
+	LeadNew          LeadStatus = "new"
+	LeadContacted    LeadStatus = "contacted"
+	LeadQualified    LeadStatus = "qualified"
+	LeadConverted    LeadStatus = "converted"
+	LeadDisqualified LeadStatus = "disqualified"
+)
+
+type OpportunityOutcome string
+
+const (
+	OpportunityOpen OpportunityOutcome = "open"
+	OpportunityWon  OpportunityOutcome = "won"
+	OpportunityLost OpportunityOutcome = "lost"
+)
+
+// Lead retains its history after conversion; it is never replaced by an opportunity.
+type Lead struct {
+	ID                     uuid.UUID      `json:"id"`
+	WorkspaceID            uuid.UUID      `json:"workspace_id"`
+	Title                  string         `json:"title"`
+	Description            string         `json:"description"`
+	ContactName            string         `json:"contact_name"`
+	CompanyName            string         `json:"company_name"`
+	Email                  string         `json:"email"`
+	Phone                  string         `json:"phone"`
+	Source                 string         `json:"source"`
+	AssignedUserID         *uuid.UUID     `json:"assigned_user_id,omitempty"`
+	ContactID              *uuid.UUID     `json:"contact_id,omitempty"`
+	ConvertedOpportunityID *uuid.UUID     `json:"converted_opportunity_id,omitempty"`
+	Status                 LeadStatus     `json:"status"`
+	DisqualificationReason string         `json:"disqualification_reason,omitempty"`
+	CustomValues           map[string]any `json:"custom_values"`
+	CreatedBy              uuid.UUID      `json:"created_by"`
+	UpdatedBy              uuid.UUID      `json:"updated_by"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
+	ConvertedAt            *time.Time     `json:"converted_at,omitempty"`
+	Version                int            `json:"version"`
+}
+
+// Opportunity uses a canonical decimal string for money. PostgreSQL persists it as
+// NUMERIC(20,2); clients never exchange binary floating point values for revenue.
+type Opportunity struct {
+	ID                uuid.UUID          `json:"id"`
+	WorkspaceID       uuid.UUID          `json:"workspace_id"`
+	Title             string             `json:"title"`
+	Description       string             `json:"description"`
+	PipelineID        uuid.UUID          `json:"pipeline_id"`
+	StageID           uuid.UUID          `json:"stage_id"`
+	ContactID         *uuid.UUID         `json:"contact_id,omitempty"`
+	CompanyID         *uuid.UUID         `json:"company_id,omitempty"`
+	AssignedUserID    *uuid.UUID         `json:"assigned_user_id,omitempty"`
+	ExpectedRevenue   string             `json:"expected_revenue"`
+	Currency          string             `json:"currency"`
+	ExpectedCloseDate *time.Time         `json:"expected_close_date,omitempty"`
+	Outcome           OpportunityOutcome `json:"outcome"`
+	LossReason        string             `json:"loss_reason,omitempty"`
+	CustomValues      map[string]any     `json:"custom_values"`
+	OriginalLeadID    *uuid.UUID         `json:"original_lead_id,omitempty"`
+	CreatedBy         uuid.UUID          `json:"created_by"`
+	UpdatedBy         uuid.UUID          `json:"updated_by"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	ClosedAt          *time.Time         `json:"closed_at,omitempty"`
+	Version           int                `json:"version"`
+}
+
+var decimalAmount = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$`)
+
+func (l Lead) Validate() error {
+	if strings.TrimSpace(l.Title) == "" {
+		return fmt.Errorf("lead title is required")
+	}
+	if l.Status != LeadNew && l.Status != LeadContacted && l.Status != LeadQualified && l.Status != LeadConverted && l.Status != LeadDisqualified {
+		return fmt.Errorf("lead status is invalid")
+	}
+	if l.Status == LeadDisqualified && strings.TrimSpace(l.DisqualificationReason) == "" {
+		return fmt.Errorf("disqualification reason is required")
+	}
+	if l.Status == LeadConverted && (l.ConvertedOpportunityID == nil || l.ConvertedAt == nil) {
+		return fmt.Errorf("converted lead requires opportunity and timestamp")
+	}
+	return nil
+}
+
+func (l *Lead) Transition(next LeadStatus, reason string) error {
+	allowed := map[LeadStatus][]LeadStatus{LeadNew: {LeadContacted, LeadDisqualified}, LeadContacted: {LeadQualified, LeadDisqualified}, LeadQualified: {LeadConverted, LeadDisqualified}, LeadDisqualified: {LeadNew}, LeadConverted: {}}
+	for _, candidate := range allowed[l.Status] {
+		if candidate == next {
+			l.Status = next
+			if next == LeadDisqualified {
+				l.DisqualificationReason = strings.TrimSpace(reason)
+			}
+			if next == LeadNew {
+				l.DisqualificationReason = ""
+			}
+			return l.Validate()
+		}
+	}
+	return fmt.Errorf("lead transition from %s to %s is not allowed", l.Status, next)
+}
+
+func (o Opportunity) Validate() error {
+	if strings.TrimSpace(o.Title) == "" {
+		return fmt.Errorf("opportunity title is required")
+	}
+	if o.PipelineID == uuid.Nil || o.StageID == uuid.Nil {
+		return fmt.Errorf("pipeline and stage are required")
+	}
+	if !decimalAmount.MatchString(o.ExpectedRevenue) {
+		return fmt.Errorf("expected revenue must be a non-negative decimal with at most two places")
+	}
+	amount, ok := new(big.Rat).SetString(o.ExpectedRevenue)
+	if !ok || amount.Sign() < 0 {
+		return fmt.Errorf("expected revenue is invalid")
+	}
+	if _, ok := supportedCurrencies[strings.ToUpper(o.Currency)]; !ok {
+		return fmt.Errorf("currency is unsupported")
+	}
+	if o.Outcome != OpportunityOpen && o.Outcome != OpportunityWon && o.Outcome != OpportunityLost {
+		return fmt.Errorf("opportunity outcome is invalid")
+	}
+	if o.Outcome == OpportunityLost && strings.TrimSpace(o.LossReason) == "" {
+		return fmt.Errorf("loss reason is required")
+	}
+	return nil
+}
+
+var supportedCurrencies = map[string]struct{}{"USD": {}, "EUR": {}, "GBP": {}, "JPY": {}, "AUD": {}, "CAD": {}, "CHF": {}, "CNY": {}, "THB": {}, "SGD": {}}
 
 type PipelineStatus string
 
@@ -24,21 +159,36 @@ const (
 )
 
 type Pipeline struct {
-	ID, WorkspaceID                uuid.UUID
-	Name, Slug, Description, Color string
-	Status                         PipelineStatus
-	Default                        bool
-	DisplayOrder, Version          int
-	CreatedBy, UpdatedBy           uuid.UUID
-	CreatedAt, UpdatedAt           time.Time
+	ID           uuid.UUID      `json:"id"`
+	WorkspaceID  uuid.UUID      `json:"workspace_id"`
+	Name         string         `json:"name"`
+	Slug         string         `json:"slug"`
+	Description  string         `json:"description"`
+	Color        string         `json:"color"`
+	Status       PipelineStatus `json:"status"`
+	Default      bool           `json:"default"`
+	DisplayOrder int            `json:"display_order"`
+	Version      int            `json:"version"`
+	CreatedBy    uuid.UUID      `json:"created_by"`
+	UpdatedBy    uuid.UUID      `json:"updated_by"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 }
 type Stage struct {
-	ID, WorkspaceID, PipelineID    uuid.UUID
-	Key, Name, Description, Color  string
-	Category                       StageCategory
-	Position, Probability, Version int
-	Active                         bool
-	CreatedAt, UpdatedAt           time.Time
+	ID          uuid.UUID     `json:"id"`
+	WorkspaceID uuid.UUID     `json:"workspace_id"`
+	PipelineID  uuid.UUID     `json:"pipeline_id"`
+	Key         string        `json:"key"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Color       string        `json:"color"`
+	Category    StageCategory `json:"category"`
+	Position    int           `json:"position"`
+	Probability int           `json:"probability"`
+	Version     int           `json:"version"`
+	Active      bool          `json:"active"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
 }
 type Template struct {
 	Key, Name, Description string

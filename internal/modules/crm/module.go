@@ -1,8 +1,13 @@
 package crm
 
 import (
+	"context"
+
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
+	contactsapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/application"
 	crmpostgres "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/infrastructure/postgres"
 	crmmetadata "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/metadata"
@@ -13,6 +18,22 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 )
 
+type Dependencies struct {
+	Pool          *pgxpool.Pool
+	Transactions  *database.TxManager
+	Authenticator usersapi.Authenticator
+	Workspace     organizationapi.WorkspaceResolver
+	Access        organizationapi.WorkspaceAccess
+	Contacts      interface {
+		contactsapi.ContactReader
+		contactsapi.ContactCreator
+	}
+	Customization interface {
+		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+	}
+	Events *event.Bus
+}
+
 type Module struct {
 	service       *application.Service
 	authenticator usersapi.Authenticator
@@ -20,8 +41,8 @@ type Module struct {
 	access        organizationapi.WorkspaceAccess
 }
 
-func New(pool *pgxpool.Pool, tx *database.TxManager, authenticator usersapi.Authenticator, workspace organizationapi.WorkspaceResolver, access organizationapi.WorkspaceAccess) *Module {
-	return &Module{service: application.New(crmpostgres.New(pool), tx), authenticator: authenticator, workspace: workspace, access: access}
+func New(d Dependencies) *Module {
+	return &Module{service: application.NewWithDependencies(application.Dependencies{Repository: crmpostgres.New(d.Pool), Transactions: d.Transactions, CustomValues: d.Customization, Contacts: d.Contacts, Workspace: d.Workspace, Access: d.Access, Events: d.Events}), authenticator: d.Authenticator, workspace: d.Workspace, access: d.Access}
 }
 func (m *Module) Service() *application.Service { return m.service }
 func (Module) Descriptor() module.Descriptor {
