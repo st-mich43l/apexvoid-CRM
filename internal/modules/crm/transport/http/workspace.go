@@ -226,7 +226,9 @@ func (h *Handler) listLeads(w http.ResponseWriter, r *http.Request) {
 	workspace, actor := ctx(r)
 	p, l := page(r)
 	viewID := optionalID(w, r, "view_id")
-	if r.URL.Query().Get("view_id") != "" && viewID == nil { return }
+	if r.URL.Query().Get("view_id") != "" && viewID == nil {
+		return
+	}
 	owner := optionalID(w, r, "owner_id")
 	if r.URL.Query().Get("owner_id") != "" && owner == nil {
 		return
@@ -371,7 +373,9 @@ func (h *Handler) listOpportunities(w http.ResponseWriter, r *http.Request) {
 	workspace, actor := ctx(r)
 	p, l := page(r)
 	viewID := optionalID(w, r, "view_id")
-	if r.URL.Query().Get("view_id") != "" && viewID == nil { return }
+	if r.URL.Query().Get("view_id") != "" && viewID == nil {
+		return
+	}
 	pipeline, stage, owner := optionalID(w, r, "pipeline_id"), optionalID(w, r, "stage_id"), optionalID(w, r, "owner_id")
 	if (r.URL.Query().Get("pipeline_id") != "" && pipeline == nil) || (r.URL.Query().Get("stage_id") != "" && stage == nil) || (r.URL.Query().Get("owner_id") != "" && owner == nil) {
 		return

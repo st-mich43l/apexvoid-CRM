@@ -48,7 +48,7 @@ func (s *Service) ListLeads(ctx context.Context, workspaceID uuid.UUID, filter d
 		}
 		filter.Conditions, filter.Sort, filter.Desc, filter.SortCustom, filter.SortType = conditions, sort, desc, custom, kind
 	}
-    return s.r.ListLeads(ctx, workspaceID, filter)
+	return s.r.ListLeads(ctx, workspaceID, filter)
 }
 func (s *Service) GetLead(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Lead, error) {
 	return s.r.GetLead(ctx, workspaceID, id)
@@ -61,7 +61,7 @@ func (s *Service) ListOpportunities(ctx context.Context, workspaceID uuid.UUID, 
 		}
 		filter.Conditions, filter.Sort, filter.Desc, filter.SortCustom, filter.SortType = conditions, sort, desc, custom, kind
 	}
-    return s.r.ListOpportunities(ctx, workspaceID, filter)
+	return s.r.ListOpportunities(ctx, workspaceID, filter)
 }
 func (s *Service) GetOpportunity(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Opportunity, error) {
 	return s.r.GetOpportunity(ctx, workspaceID, id)

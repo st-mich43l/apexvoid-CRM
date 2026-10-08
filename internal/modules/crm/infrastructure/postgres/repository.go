@@ -288,7 +288,7 @@ func (r *Repository) ListLeads(ctx context.Context, w uuid.UUID, f domain.LeadFi
 		return nil, 0, err
 	}
 	sort := map[string]string{"title": "title", "created_at": "created_at", "updated_at": "updated_at", "status": "status"}[f.Sort]
-if f.SortCustom {
+	if f.SortCustom {
 		args = append(args, f.Sort)
 		sort = viewExpression("custom_values->>$"+fmt.Sprint(len(args)), f.SortType)
 	} else if f.Sort != "" && sort == "" {
@@ -383,7 +383,7 @@ func (r *Repository) ListOpportunities(ctx context.Context, w uuid.UUID, f domai
 		return nil, 0, err
 	}
 	sort := map[string]string{"title": "title", "created_at": "created_at", "updated_at": "updated_at", "expected_revenue": "expected_revenue", "expected_close_date": "expected_close_date", "outcome": "outcome", "currency": "currency"}[f.Sort]
-if f.SortCustom {
+	if f.SortCustom {
 		args = append(args, f.Sort)
 		sort = viewExpression("custom_values->>$"+fmt.Sprint(len(args)), f.SortType)
 	} else if f.Sort != "" && sort == "" {
