@@ -40,6 +40,12 @@ type Authorizer interface {
 	Can(ctx context.Context, userID uuid.UUID, permission string) (bool, error)
 }
 
+// UserStatusGuard lets the access/organization boundary validate a deactivation
+// before the users module commits the identity change.
+type UserStatusGuard interface {
+	ValidateUserStatusChange(ctx context.Context, userID uuid.UUID, status string) error
+}
+
 type PermissionReader interface {
 	EffectivePermissions(ctx context.Context, userID uuid.UUID) ([]string, error)
 }

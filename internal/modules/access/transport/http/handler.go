@@ -248,6 +248,10 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusConflict, "CONFLICT", "A role with that name already exists")
 	case errors.Is(err, domain.ErrSystemRole), errors.Is(err, domain.ErrAdministratorRole):
 		httpserver.WriteError(w, r, http.StatusConflict, "CONFLICT", "System roles are protected")
+	case errors.Is(err, domain.ErrReservedRoleName):
+		httpserver.WriteError(w, r, http.StatusConflict, "RESERVED_ROLE_NAME", "Administrator role names are reserved for protected system roles")
+	case errors.Is(err, domain.ErrLastPlatformAdministrator):
+		httpserver.WriteError(w, r, http.StatusConflict, "LAST_PLATFORM_ADMINISTRATOR", "A platform must have at least one active administrator")
 	case errors.Is(err, domain.ErrUnknownPermission):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "One or more permissions are not registered")
 	case errors.Is(err, domain.ErrPermissionScope):

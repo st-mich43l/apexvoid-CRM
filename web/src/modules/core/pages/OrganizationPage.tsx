@@ -3,13 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../core/api/client'
 import { useAuth } from '../../../core/auth/context'
 import { useWorkspace } from '../../../core/workspace/context'
-import { workspaceQueryKey } from '../../../core/workspace/query'
+import { userWorkspaceQueryKey } from '../../../core/workspace/query'
 
 export function OrganizationPage() {
   const queryClient = useQueryClient()
-  const { platformCan } = useAuth()
+  const { platformCan, user } = useAuth()
   const { activeWorkspaceId, activeWorkspace, workspaces, can: workspaceCan, reload, selectWorkspace } = useWorkspace()
-  const current = useQuery({ queryKey: workspaceQueryKey(activeWorkspaceId, 'current'), queryFn: api.workspaces.current, enabled: Boolean(activeWorkspaceId) })
+  const current = useQuery({ queryKey: userWorkspaceQueryKey(user?.id, activeWorkspaceId, 'current'), queryFn: api.workspaces.current, enabled: Boolean(activeWorkspaceId) })
   const [organizationName, setOrganizationName] = useState('')
   const [workspaceName, setWorkspaceName] = useState('')
   const [timezone, setTimezone] = useState('UTC')
@@ -31,7 +31,7 @@ export function OrganizationPage() {
     try {
       if (platformCan('organization.organization.update')) await api.workspaces.organization({ name: organizationName })
       if (workspaceCan('workspace.workspace.update')) await api.workspaces.update({ name: workspaceName, timezone })
-      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey(activeWorkspaceId) })
+      await queryClient.invalidateQueries({ queryKey: userWorkspaceQueryKey(user?.id, activeWorkspaceId) })
       setMessage('Saved')
       window.setTimeout(() => setMessage(''), 2200)
     } catch (reason) {

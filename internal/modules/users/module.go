@@ -27,15 +27,16 @@ type Module struct {
 
 func New(dependencies Dependencies) *Module {
 	repository := userspostgres.NewRepository(dependencies.Pool)
-	return &Module{service: application.NewService(application.Dependencies{Users: repository, Sessions: repository, PasswordMinLen: dependencies.Auth.PasswordMinLen, PasswordMaxLen: dependencies.Auth.PasswordMaxLen, AccessTokenTTL: dependencies.Auth.AccessTokenTTL, RefreshTokenTTL: dependencies.Auth.RefreshTokenTTL}), auth: dependencies.Auth}
+	return &Module{service: application.NewService(application.Dependencies{Users: repository, Sessions: repository, Transactions: dependencies.Transactions, PasswordMinLen: dependencies.Auth.PasswordMinLen, PasswordMaxLen: dependencies.Auth.PasswordMaxLen, AccessTokenTTL: dependencies.Auth.AccessTokenTTL, RefreshTokenTTL: dependencies.Auth.RefreshTokenTTL}), auth: dependencies.Auth}
 }
 
 func (Module) Descriptor() module.Descriptor {
 	return module.Descriptor{Name: "users", DisplayName: "Users", Version: "1.0.0", Dependencies: []string{"core"}}
 }
-func (m *Module) Service() *application.Service           { return m.service }
-func (m *Module) SetAuthorizer(authorizer api.Authorizer) { m.authorizer = authorizer }
-func (m *Module) Register(ctx *module.Context) error      { return usersmetadata.Register(ctx) }
+func (m *Module) Service() *application.Service            { return m.service }
+func (m *Module) SetAuthorizer(authorizer api.Authorizer)  { m.authorizer = authorizer }
+func (m *Module) SetStatusGuard(guard api.UserStatusGuard) { m.service.SetStatusGuard(guard) }
+func (m *Module) Register(ctx *module.Context) error       { return usersmetadata.Register(ctx) }
 func (m *Module) RegisterRoutes(routes module.RouteRegistry) error {
 	return usershttp.NewHandler(m.service, m.authorizer, m.auth).RegisterRoutes(routes)
 }

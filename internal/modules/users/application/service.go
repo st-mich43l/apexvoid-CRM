@@ -13,11 +13,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users/domain"
+	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 )
 
 type Service struct {
 	users           domain.Repository
 	sessions        domain.SessionRepository
+	transactions    *database.TxManager
+	statusGuard     api.UserStatusGuard
 	hasher          PasswordHasher
 	accessTokenTTL  time.Duration
 	refreshTokenTTL time.Duration
@@ -30,11 +33,14 @@ type Dependencies struct {
 	PasswordMaxLen  int
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
+	Transactions    *database.TxManager
 }
 
 func NewService(dependencies Dependencies) *Service {
-	return &Service{users: dependencies.Users, sessions: dependencies.Sessions, hasher: PasswordHasher{MinLength: dependencies.PasswordMinLen, MaxLength: dependencies.PasswordMaxLen}, accessTokenTTL: dependencies.AccessTokenTTL, refreshTokenTTL: dependencies.RefreshTokenTTL}
+	return &Service{users: dependencies.Users, sessions: dependencies.Sessions, transactions: dependencies.Transactions, hasher: PasswordHasher{MinLength: dependencies.PasswordMinLen, MaxLength: dependencies.PasswordMaxLen}, accessTokenTTL: dependencies.AccessTokenTTL, refreshTokenTTL: dependencies.RefreshTokenTTL}
 }
+
+func (s *Service) SetStatusGuard(guard api.UserStatusGuard) { s.statusGuard = guard }
 
 type CreateInput struct {
 	Email              string
@@ -171,13 +177,31 @@ func (s *Service) SetStatus(ctx context.Context, id uuid.UUID, status domain.Sta
 	}
 	user.Status = status
 	user.UpdatedAt = time.Now().UTC()
-	if err := s.users.Update(ctx, user); err != nil {
+	err = s.withTransaction(ctx, func(txCtx context.Context) error {
+		if s.statusGuard != nil {
+			if err := s.statusGuard.ValidateUserStatusChange(txCtx, id, string(status)); err != nil {
+				return err
+			}
+		}
+		if err := s.users.Update(txCtx, user); err != nil {
+			return err
+		}
+		if status != domain.StatusActive {
+			return s.sessions.RevokeUserSessions(txCtx, id, nil, time.Now().UTC())
+		}
+		return nil
+	})
+	if err != nil {
 		return domain.User{}, err
 	}
-	if status != domain.StatusActive {
-		_ = s.sessions.RevokeUserSessions(ctx, id, nil, time.Now().UTC())
-	}
 	return *user, nil
+}
+
+func (s *Service) withTransaction(ctx context.Context, fn func(context.Context) error) error {
+	if s.transactions == nil {
+		return fn(ctx)
+	}
+	return s.transactions.WithTransaction(ctx, fn)
 }
 
 func (s *Service) Login(ctx context.Context, email, password, userAgent string) (LoginResult, error) {

@@ -24,10 +24,11 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	framework := runtime.New()
 	usersModule := users.New(users.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Auth: cfg.Auth})
-	organizationModule := organization.New(organization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Users: usersModule.Service(), Directory: usersModule.Service(), Events: framework.Events})
+	organizationModule := organization.New(organization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Users: usersModule.Service(), Directory: usersModule.Service(), Events: framework.Events, Logger: logger})
 	accessModule := access.New(access.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Permissions: framework.Permissions, Users: usersModule.Service(), Authenticator: usersModule.Service()})
 	organizationModule.SetAccess(accessModule.Service())
 	usersModule.SetAuthorizer(accessModule.Service())
+	usersModule.SetStatusGuard(accessModule.Service())
 	if err := framework.Modules.Register(core.New(core.Dependencies{Metadata: framework.Metadata})); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register built-in modules: %w", err)

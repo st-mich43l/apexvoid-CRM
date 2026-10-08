@@ -29,6 +29,12 @@ func (r Role) Validate() error {
 	if !namePattern.MatchString(r.Name) {
 		return fmt.Errorf("role name must be lowercase and machine friendly")
 	}
+	if r.Name == "administrator" || r.Name == "workspace_administrator" {
+		validSystemIdentity := r.System && ((r.Name == "administrator" && r.WorkspaceID == nil) || (r.Name == "workspace_administrator" && r.WorkspaceID != nil))
+		if !validSystemIdentity {
+			return ErrReservedRoleName
+		}
+	}
 	if strings.TrimSpace(r.DisplayName) == "" {
 		return fmt.Errorf("role display name is required")
 	}

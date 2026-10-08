@@ -488,6 +488,10 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusForbidden, "WORKSPACE_FORBIDDEN", "This workspace is not available")
 	case errors.Is(err, domain.ErrLastWorkspaceAdministrator), errors.Is(err, accessdomain.ErrLastWorkspaceAdministrator):
 		writeError(w, r, http.StatusConflict, "LAST_WORKSPACE_ADMINISTRATOR", "A workspace must have at least one active administrator. Assign another administrator before removing this access.")
+	case errors.Is(err, accessdomain.ErrLastPlatformAdministrator):
+		writeError(w, r, http.StatusConflict, "LAST_PLATFORM_ADMINISTRATOR", "A platform must have at least one active administrator")
+	case errors.Is(err, accessdomain.ErrReservedRoleName):
+		writeError(w, r, http.StatusConflict, "RESERVED_ROLE_NAME", "Administrator role names are reserved for protected system roles")
 	case errors.Is(err, usersdomain.ErrUserDisabled):
 		writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "The selected user is not active")
 	default:
