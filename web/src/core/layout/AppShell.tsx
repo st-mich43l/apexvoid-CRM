@@ -1,4 +1,4 @@
-import { Boxes, Building2, ChevronDown, ChevronRight, Command, LogOut, Moon, PanelLeft, PanelLeftClose, ShieldCheck, Sun } from 'lucide-react'
+import { Boxes, Building2, ChevronDown, ChevronRight, Command, LogOut, Moon, PanelLeftClose, ShieldCheck, Sun } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
@@ -28,13 +28,13 @@ export function AppShell({ navigation }: { navigation: NavigationItem[] }) {
   const sections = groupNavigation(visible)
 
   return <div className="flex min-h-screen overflow-x-hidden bg-background text-foreground">
-    <aside className={`relative sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] shadow-[8px_0_30px_-24px_rgba(16,10,45,0.65)] transition-[width,padding] duration-300 md:flex ${collapsed ? 'w-[84px] px-3' : 'w-72 px-4'}`}>
+    <aside onClick={event => { if (collapsed && !(event.target as HTMLElement).closest('a,button,select')) setCollapsed(false) }} onKeyDown={event => { if (collapsed && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setCollapsed(false) } }} tabIndex={collapsed ? 0 : undefined} aria-label={collapsed ? 'Click to expand sidebar' : undefined} className={`relative sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] shadow-[8px_0_30px_-24px_rgba(16,10,45,0.65)] transition-[width,padding] duration-300 md:flex ${collapsed ? 'w-[84px] cursor-e-resize px-3' : 'w-72 px-4'}`}>
       <div className={`flex h-20 shrink-0 items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-400 via-primary to-indigo-600 text-white shadow-lg shadow-violet-950/20"><Boxes size={20} strokeWidth={2.4} /></div>
           {!collapsed && <div className="min-w-0"><p className="truncate text-[15px] font-semibold tracking-tight">ApexVoid</p><p className="truncate text-xs text-[hsl(var(--sidebar-muted))]">CRM foundation</p></div>}
         </div>
-        <button type="button" onClick={() => setCollapsed(value => !value)} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className={`rounded-lg p-2 text-[hsl(var(--sidebar-muted))] transition hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))] ${collapsed ? 'absolute -right-3 top-5 z-10 bg-[hsl(var(--sidebar))] shadow-md' : ''}`}>{collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}</button>
+        {!collapsed && <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar" className="rounded-lg p-2 text-[hsl(var(--sidebar-muted))] transition hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]"><PanelLeftClose size={16} /></button>}
       </div>
 
       {!collapsed && <div className="mb-5 rounded-2xl border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-card))] p-2 shadow-inner shadow-white/[0.03]"><label className="relative block"><span className="sr-only">Switch workspace</span><Building2 className="pointer-events-none absolute left-3 top-3 text-primary" size={16} /><select value={activeWorkspace?.id ?? ''} onChange={event => selectWorkspace(event.target.value)} className="w-full appearance-none rounded-xl bg-transparent py-2.5 pl-9 pr-9 text-sm font-medium text-[hsl(var(--sidebar-foreground))] outline-none"><option value="">{activeWorkspace?.name ?? 'Select workspace'}</option>{workspaces.filter(workspace => workspace.id !== activeWorkspace?.id).map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-3 text-[hsl(var(--sidebar-muted))]" size={16} /></label><div className="mt-1 flex items-center gap-2 px-3 text-[11px] text-[hsl(var(--sidebar-muted))]"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Workspace active</div></div>}
@@ -47,7 +47,7 @@ export function AppShell({ navigation }: { navigation: NavigationItem[] }) {
       </nav>
 
       <div className={`mt-5 shrink-0 border-t border-[hsl(var(--sidebar-border))] pt-4 ${collapsed ? 'flex justify-center' : ''}`}>
-        {!collapsed ? <div className="rounded-2xl border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-card))] p-3"><div className="mb-2 flex items-center gap-2 text-xs font-medium"><ShieldCheck size={15} className="text-primary" />Environment</div><div className="flex items-center justify-between"><span className="text-[11px] text-[hsl(var(--sidebar-muted))]">Development</span><span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] font-medium text-emerald-400">Healthy</span></div></div> : <div title="Development · Healthy" className="grid h-9 w-9 place-items-center rounded-xl border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-card))] text-emerald-400"><ShieldCheck size={16} /></div>}
+        <div title={collapsed ? 'System status: healthy' : undefined} className={`flex items-center ${collapsed ? 'h-9 w-9 justify-center rounded-xl bg-emerald-400/10 text-emerald-400' : 'gap-3 rounded-xl bg-[hsl(var(--sidebar-card))] px-3 py-2.5'}`}><span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-400/10 text-emerald-400"><ShieldCheck size={15} /><span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-[hsl(var(--sidebar-card))] bg-emerald-400" /></span>{!collapsed && <div className="min-w-0"><p className="text-xs font-medium text-[hsl(var(--sidebar-foreground))]">System status</p><p className="mt-0.5 truncate text-[11px] text-[hsl(var(--sidebar-muted))]">All systems operational</p></div>}</div>
       </div>
     </aside>
 
