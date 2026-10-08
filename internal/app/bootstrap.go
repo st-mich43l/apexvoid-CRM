@@ -9,6 +9,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/access"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/customization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users"
@@ -60,6 +61,10 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	if err := framework.Modules.Register(customizationModule); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register customization module: %w", err)
+	}
+	if err := framework.Modules.Register(crm.New(postgres, database.NewTxManager(postgres), usersModule.Service(), organizationModule.Service(), accessModule.Service())); err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("register crm module: %w", err)
 	}
 	if err := framework.Initialize(ctx); err != nil {
 		postgres.Close()
