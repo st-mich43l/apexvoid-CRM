@@ -101,7 +101,9 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var v struct {
-		Name, Description, Color string `json:"name"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Color       string `json:"color"`
 	}
 	if !decode(w, r, &v) {
 		return
