@@ -13,6 +13,7 @@ type WorkspaceRole struct {
 	DisplayName string     `json:"display_name"`
 	Description string     `json:"description"`
 	System      bool       `json:"system"`
+	Permissions []string   `json:"permissions"`
 }
 
 type WorkspaceAccess interface {
@@ -25,6 +26,8 @@ type WorkspaceAccess interface {
 	ReplaceWorkspaceRolePermissions(ctx context.Context, roleID, workspaceID uuid.UUID, permissions []string) error
 	MembershipRoleIDs(ctx context.Context, membershipID uuid.UUID) ([]uuid.UUID, error)
 	ReplaceMembershipRoles(ctx context.Context, membershipID, workspaceID uuid.UUID, roleIDs []uuid.UUID) error
+	CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error)
+	IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error)
 }
 
 type WorkspaceProvisioner interface {

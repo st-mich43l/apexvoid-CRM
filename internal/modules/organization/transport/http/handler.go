@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
+	accessdomain "github.com/st-mich43l/apexvoid-CRM/internal/modules/access/domain"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/domain"
@@ -37,8 +38,8 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current := protected.With(api.RequireWorkspace(h.service))
 	current.Get("/workspace", h.currentWorkspace)
 	current.With(api.RequireWorkspacePermission(h.access, "organization.organization.read")).Get("/organization", h.getOrganization)
-	current.With(api.RequireWorkspacePermission(h.access, "organization.organization.update")).Patch("/organization", h.updateOrganization)
-	current.With(api.RequireWorkspacePermission(h.access, "workspace.workspace.update")).Post("/workspaces", h.createWorkspace)
+	current.With(usersapi.RequirePermission(h.access, "organization.organization.update")).Patch("/organization", h.updateOrganization)
+	current.With(api.RequireWorkspacePermission(h.access, "workspace.workspace.create")).Post("/workspaces", h.createWorkspace)
 	current.With(api.RequireWorkspacePermission(h.access, "workspace.workspace.update")).Patch("/workspace", h.updateWorkspace)
 	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.read")).Get("/workspace/members", h.listMembers)
 	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.add")).Post("/workspace/members", h.addMember)
@@ -46,10 +47,10 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.update")).Patch("/workspace/members/{id}", h.updateMember)
 	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.remove")).Delete("/workspace/members/{id}", h.removeMember)
 	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.read")).Get("/workspace/members/{id}/roles", h.memberRoles)
-	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.update")).Put("/workspace/members/{id}/roles", h.replaceMemberRoles)
-	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.read")).Get("/workspace/roles", h.listRoles)
-	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.update")).Post("/workspace/roles", h.createRole)
-	current.With(api.RequireWorkspacePermission(h.access, "workspace.member.update")).Put("/workspace/roles/{id}/permissions", h.replaceRolePermissions)
+	current.With(api.RequireWorkspacePermission(h.access, "workspace.role.assign")).Put("/workspace/members/{id}/roles", h.replaceMemberRoles)
+	current.With(api.RequireWorkspacePermission(h.access, "workspace.role.read")).Get("/workspace/roles", h.listRoles)
+	current.With(api.RequireWorkspacePermission(h.access, "workspace.role.manage")).Post("/workspace/roles", h.createRole)
+	current.With(api.RequireWorkspacePermission(h.access, "workspace.role.manage")).Put("/workspace/roles/{id}/permissions", h.replaceRolePermissions)
 	explicit := current.With(h.verifyWorkspacePath)
 	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.workspace.read")).Get("/workspaces/{workspaceID}", h.explicitWorkspace)
 	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.workspace.update")).Patch("/workspaces/{workspaceID}", h.updateWorkspace)
@@ -58,7 +59,7 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.member.update")).Patch("/workspaces/{workspaceID}/members/{id}", h.updateMember)
 	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.member.remove")).Delete("/workspaces/{workspaceID}/members/{id}", h.removeMember)
 	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.member.read")).Get("/workspaces/{workspaceID}/members/{id}/roles", h.memberRoles)
-	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.member.update")).Put("/workspaces/{workspaceID}/members/{id}/roles", h.replaceMemberRoles)
+	explicit.With(api.RequireWorkspacePermission(h.access, "workspace.role.assign")).Put("/workspaces/{workspaceID}/members/{id}/roles", h.replaceMemberRoles)
 	return nil
 }
 
@@ -485,6 +486,8 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Resource not found")
 	case errors.Is(err, domain.ErrWorkspaceInactive), errors.Is(err, domain.ErrOrganizationInactive), errors.Is(err, domain.ErrMembershipSuspended):
 		writeError(w, r, http.StatusForbidden, "WORKSPACE_FORBIDDEN", "This workspace is not available")
+	case errors.Is(err, domain.ErrLastWorkspaceAdministrator), errors.Is(err, accessdomain.ErrLastWorkspaceAdministrator):
+		writeError(w, r, http.StatusConflict, "LAST_WORKSPACE_ADMINISTRATOR", "A workspace must have at least one active administrator. Assign another administrator before removing this access.")
 	case errors.Is(err, usersdomain.ErrUserDisabled):
 		writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "The selected user is not active")
 	default:

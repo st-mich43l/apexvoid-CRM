@@ -40,9 +40,6 @@ func (r *Registry) Register(definition Definition) error {
 	if !definition.Scope.Valid() {
 		return fmt.Errorf("entity %q has invalid scope %q", definition.Name, definition.Scope)
 	}
-	if !strings.HasPrefix(definition.Name, definition.Module+".") {
-		return fmt.Errorf("entity %q must be owned by module %q", definition.Name, definition.Module)
-	}
 	if _, exists := r.definitions[definition.Name]; exists {
 		return fmt.Errorf("entity %q is already registered", definition.Name)
 	}

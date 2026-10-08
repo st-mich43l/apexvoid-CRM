@@ -1,6 +1,9 @@
 package metadata
 
-import "github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
+import (
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
+)
 
 type ModuleMetadata struct {
 	Name         string
@@ -12,6 +15,7 @@ type ModuleMetadata struct {
 type PermissionMetadata struct {
 	Name        string
 	Module      string
+	Scope       permission.Scope
 	DisplayName string
 	Description string
 }

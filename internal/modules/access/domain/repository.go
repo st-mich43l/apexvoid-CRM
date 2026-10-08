@@ -24,6 +24,8 @@ type Repository interface {
 	FindRoleByWorkspaceAndName(ctx context.Context, workspaceID *uuid.UUID, name string) (*Role, error)
 	ReplaceMembershipRoles(ctx context.Context, membershipID uuid.UUID, roleIDs []uuid.UUID) error
 	MembershipRoleIDs(ctx context.Context, membershipID uuid.UUID) ([]uuid.UUID, error)
-	EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, bool, error)
+	EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, []string, bool, bool, error)
+	CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error)
+	IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error)
 	TouchRole(ctx context.Context, id uuid.UUID, now time.Time) error
 }

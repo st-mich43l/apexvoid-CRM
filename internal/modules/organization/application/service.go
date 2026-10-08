@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
 	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/domain"
 	usersapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
@@ -19,6 +20,7 @@ type Service struct {
 	access       organizationapi.WorkspaceAccess
 	users        usersapi.UserReader
 	directory    usersapi.UserDirectory
+	events       *event.Bus
 }
 
 type Dependencies struct {
@@ -27,10 +29,11 @@ type Dependencies struct {
 	Access       organizationapi.WorkspaceAccess
 	Users        usersapi.UserReader
 	Directory    usersapi.UserDirectory
+	Events       *event.Bus
 }
 
 func NewService(dependencies Dependencies) *Service {
-	return &Service{repository: dependencies.Repository, transactions: dependencies.Transactions, access: dependencies.Access, users: dependencies.Users, directory: dependencies.Directory}
+	return &Service{repository: dependencies.Repository, transactions: dependencies.Transactions, access: dependencies.Access, users: dependencies.Users, directory: dependencies.Directory, events: dependencies.Events}
 }
 
 func (s *Service) SetAccess(access organizationapi.WorkspaceAccess) { s.access = access }
@@ -115,6 +118,15 @@ func (s *Service) Setup(ctx context.Context, userID uuid.UUID, input SetupInput)
 	if err != nil {
 		return domain.Organization{}, domain.Workspace{}, domain.Membership{}, err
 	}
+	if err := s.publish(ctx, "organization.organization.created", domain.OrganizationCreated{OrganizationID: organization.ID}); err != nil {
+		return domain.Organization{}, domain.Workspace{}, domain.Membership{}, err
+	}
+	if err := s.publish(ctx, "workspace.workspace.created", domain.WorkspaceCreated{WorkspaceID: workspace.ID, OrganizationID: organization.ID}); err != nil {
+		return domain.Organization{}, domain.Workspace{}, domain.Membership{}, err
+	}
+	if err := s.publish(ctx, "workspace.member.added", domain.MemberAdded{WorkspaceID: workspace.ID, MembershipID: membership.ID, UserID: membership.UserID}); err != nil {
+		return domain.Organization{}, domain.Workspace{}, domain.Membership{}, err
+	}
 	return organization, workspace, membership, nil
 }
 
@@ -178,7 +190,10 @@ func (s *Service) UpdateOrganization(ctx context.Context, workspaceID uuid.UUID,
 	if err := organization.Validate(); err != nil {
 		return domain.Organization{}, err
 	}
-	if err := s.repository.UpdateOrganization(ctx, organization); err != nil {
+	if err := s.withTransaction(ctx, func(txCtx context.Context) error { return s.repository.UpdateOrganization(txCtx, organization) }); err != nil {
+		return domain.Organization{}, err
+	}
+	if err := s.publish(ctx, "organization.organization.updated", domain.OrganizationUpdated{OrganizationID: organization.ID}); err != nil {
 		return domain.Organization{}, err
 	}
 	return *organization, nil
@@ -220,6 +235,12 @@ func (s *Service) CreateWorkspace(ctx context.Context, current domain.WorkspaceC
 	if err != nil {
 		return domain.Workspace{}, err
 	}
+	if err := s.publish(ctx, "workspace.workspace.created", domain.WorkspaceCreated{WorkspaceID: workspace.ID, OrganizationID: workspace.OrganizationID}); err != nil {
+		return domain.Workspace{}, err
+	}
+	if err := s.publish(ctx, "workspace.member.added", domain.MemberAdded{WorkspaceID: workspace.ID, MembershipID: membership.ID, UserID: membership.UserID}); err != nil {
+		return domain.Workspace{}, err
+	}
 	return workspace, nil
 }
 
@@ -246,7 +267,10 @@ func (s *Service) UpdateWorkspace(ctx context.Context, id uuid.UUID, name, timez
 	if err := workspace.Validate(); err != nil {
 		return domain.Workspace{}, err
 	}
-	if err := s.repository.UpdateWorkspace(ctx, workspace); err != nil {
+	if err := s.withTransaction(ctx, func(txCtx context.Context) error { return s.repository.UpdateWorkspace(txCtx, workspace) }); err != nil {
+		return domain.Workspace{}, err
+	}
+	if err := s.publish(ctx, "workspace.workspace.updated", domain.WorkspaceUpdated{WorkspaceID: workspace.ID, OrganizationID: workspace.OrganizationID}); err != nil {
 		return domain.Workspace{}, err
 	}
 	return *workspace, nil
@@ -267,11 +291,14 @@ func (s *Service) AddMember(ctx context.Context, workspaceID, userID uuid.UUID) 
 	if err := membership.Validate(); err != nil {
 		return domain.Membership{}, err
 	}
-	if err := s.repository.CreateMembership(ctx, &membership); err != nil {
+	if err := s.withTransaction(ctx, func(txCtx context.Context) error { return s.repository.CreateMembership(txCtx, &membership) }); err != nil {
 		return domain.Membership{}, err
 	}
 	result, err := s.repository.FindMembershipByID(ctx, membership.ID)
 	if err != nil {
+		return domain.Membership{}, err
+	}
+	if err := s.publish(ctx, "workspace.member.added", domain.MemberAdded{WorkspaceID: result.WorkspaceID, MembershipID: result.ID, UserID: result.UserID}); err != nil {
 		return domain.Membership{}, err
 	}
 	return *result, nil
@@ -292,12 +319,30 @@ func (s *Service) UpdateMembership(ctx context.Context, workspaceID, id uuid.UUI
 	if membership.WorkspaceID != workspaceID {
 		return domain.Membership{}, domain.ErrMembershipNotFound
 	}
+	if membership.Status == domain.StatusActive && status != domain.StatusActive && s.access != nil {
+		isAdministrator, err := s.access.IsWorkspaceAdministrator(ctx, id, workspaceID)
+		if err != nil {
+			return domain.Membership{}, err
+		}
+		if isAdministrator {
+			count, err := s.access.CountActiveWorkspaceAdministrators(ctx, workspaceID)
+			if err != nil {
+				return domain.Membership{}, err
+			}
+			if count <= 1 {
+				return domain.Membership{}, domain.ErrLastWorkspaceAdministrator
+			}
+		}
+	}
 	membership.Status = status
 	membership.UpdatedAt = time.Now().UTC()
 	if err := membership.Validate(); err != nil {
 		return domain.Membership{}, err
 	}
-	if err := s.repository.UpdateMembership(ctx, membership); err != nil {
+	if err := s.withTransaction(ctx, func(txCtx context.Context) error { return s.repository.UpdateMembership(txCtx, membership) }); err != nil {
+		return domain.Membership{}, err
+	}
+	if err := s.publish(ctx, "workspace.member.updated", domain.MemberUpdated{WorkspaceID: membership.WorkspaceID, MembershipID: membership.ID, UserID: membership.UserID}); err != nil {
 		return domain.Membership{}, err
 	}
 	return *membership, nil
@@ -311,7 +356,25 @@ func (s *Service) RemoveMember(ctx context.Context, workspaceID, id uuid.UUID) e
 	if membership.WorkspaceID != workspaceID {
 		return domain.ErrMembershipNotFound
 	}
-	return s.repository.DeleteMembership(ctx, id)
+	if membership.Status == domain.StatusActive && s.access != nil {
+		isAdministrator, err := s.access.IsWorkspaceAdministrator(ctx, id, workspaceID)
+		if err != nil {
+			return err
+		}
+		if isAdministrator {
+			count, err := s.access.CountActiveWorkspaceAdministrators(ctx, workspaceID)
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return domain.ErrLastWorkspaceAdministrator
+			}
+		}
+	}
+	if err := s.withTransaction(ctx, func(txCtx context.Context) error { return s.repository.DeleteMembership(txCtx, id) }); err != nil {
+		return err
+	}
+	return s.publish(ctx, "workspace.member.removed", domain.MemberRemoved{WorkspaceID: membership.WorkspaceID, MembershipID: membership.ID, UserID: membership.UserID})
 }
 
 func (s *Service) EnsureMembership(ctx context.Context, workspaceID, id uuid.UUID) error {
@@ -330,4 +393,28 @@ func (s *Service) withTransaction(ctx context.Context, fn func(context.Context) 
 		return fn(ctx)
 	}
 	return s.transactions.WithTransaction(ctx, fn)
+}
+
+func (s *Service) publish(ctx context.Context, name string, payload any) error {
+	if s.events == nil {
+		return nil
+	}
+	switch typed := payload.(type) {
+	case domain.OrganizationCreated:
+		return event.Publish(s.events, ctx, name, typed)
+	case domain.OrganizationUpdated:
+		return event.Publish(s.events, ctx, name, typed)
+	case domain.WorkspaceCreated:
+		return event.Publish(s.events, ctx, name, typed)
+	case domain.WorkspaceUpdated:
+		return event.Publish(s.events, ctx, name, typed)
+	case domain.MemberAdded:
+		return event.Publish(s.events, ctx, name, typed)
+	case domain.MemberUpdated:
+		return event.Publish(s.events, ctx, name, typed)
+	case domain.MemberRemoved:
+		return event.Publish(s.events, ctx, name, typed)
+	default:
+		return errors.New("unsupported organization event payload")
+	}
 }

@@ -6,8 +6,10 @@ export type WorkspaceContextValue = {
   activeWorkspace: Workspace | null
   activeWorkspaceId: string | null
   setup: SetupStatus | null
+  workspacePermissions: string[]
   loading: boolean
   selectWorkspace: (id: string) => void
+  can: (permission: string) => boolean
   reload: () => Promise<void>
 }
 

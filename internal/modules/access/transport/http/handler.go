@@ -250,6 +250,10 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusConflict, "CONFLICT", "System roles are protected")
 	case errors.Is(err, domain.ErrUnknownPermission):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "One or more permissions are not registered")
+	case errors.Is(err, domain.ErrPermissionScope):
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Permission scope does not match the role scope")
+	case errors.Is(err, domain.ErrLastWorkspaceAdministrator):
+		httpserver.WriteError(w, r, http.StatusConflict, "LAST_WORKSPACE_ADMINISTRATOR", "A workspace must have at least one active administrator. Assign another administrator before removing this access.")
 	default:
 		if strings.Contains(err.Error(), "required") {
 			httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())

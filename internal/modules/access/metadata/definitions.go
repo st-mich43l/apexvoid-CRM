@@ -10,12 +10,12 @@ import (
 
 func Register(ctx *module.Context) error {
 	for _, item := range []permission.Definition{
-		{Name: "access.role.read", Module: "access", DisplayName: "Read Roles", Description: "Allows viewing roles."},
-		{Name: "access.role.create", Module: "access", DisplayName: "Create Roles", Description: "Allows creating roles."},
-		{Name: "access.role.update", Module: "access", DisplayName: "Update Roles", Description: "Allows updating roles and permissions."},
-		{Name: "access.role.delete", Module: "access", DisplayName: "Delete Roles", Description: "Allows deleting non-system roles."},
-		{Name: "access.role.assign", Module: "access", DisplayName: "Assign Roles", Description: "Allows assigning roles to users."},
-		{Name: "access.permission.read", Module: "access", DisplayName: "Read Permissions", Description: "Allows viewing registered permissions."},
+		{Name: "access.role.read", Module: "access", Scope: permission.ScopePlatform, DisplayName: "Read Roles", Description: "Allows viewing roles."},
+		{Name: "access.role.create", Module: "access", Scope: permission.ScopePlatform, DisplayName: "Create Roles", Description: "Allows creating roles."},
+		{Name: "access.role.update", Module: "access", Scope: permission.ScopePlatform, DisplayName: "Update Roles", Description: "Allows updating roles and permissions."},
+		{Name: "access.role.delete", Module: "access", Scope: permission.ScopePlatform, DisplayName: "Delete Roles", Description: "Allows deleting non-system roles."},
+		{Name: "access.role.assign", Module: "access", Scope: permission.ScopePlatform, DisplayName: "Assign Roles", Description: "Allows assigning roles to users."},
+		{Name: "access.permission.read", Module: "access", Scope: permission.ScopePlatform, DisplayName: "Read Permissions", Description: "Allows viewing registered permissions."},
 	} {
 		if err := ctx.Permissions.Register(item); err != nil {
 			return err

@@ -25,7 +25,7 @@ See [docs/architecture.md](docs/architecture.md) for layer responsibilities, tra
 
 The built-in `core` module registers only `core.example`, `core.example.read`, `core.example.created`, `core.auditable`, and `core.navigation` to exercise the framework. Its discovery handlers live under `internal/modules/core/transport/http`; no CRM entities are included.
 
-Phase 3 adds `users` and `access` modules. Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Phase 4 adds the `organization` module with organizations, workspaces, memberships, workspace context, and workspace-scoped RBAC. Access roles reference permissions from the framework registry; the protected platform `administrator` role grants all registered permissions, while workspace role assignments are resolved through the active membership. No tokens or password hashes are returned by the API.
+Phase 3 adds `users` and `access` modules. Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Phase 4 adds the `organization` module with organizations, workspaces, memberships, workspace context, and workspace-scoped RBAC. Permission definitions explicitly declare platform or workspace scope: the protected platform `administrator` role dynamically grants platform permissions, while the protected workspace administrator dynamically grants workspace permissions for its active membership. No tokens or password hashes are returned by the API.
 
 ## Development
 
@@ -54,6 +54,7 @@ Endpoints:
 - Initial setup: `POST /api/v1/setup/organization`
 - Workspaces: `GET /api/v1/workspaces`, current context at `GET /api/v1/workspace`
 - Workspace members and roles: `/api/v1/workspace/members`, `/api/v1/workspace/roles`
+- Workspace context is selected with `X-ApexVoid-Workspace`; the API verifies active membership before resolving any workspace-scoped operation.
 
 Configuration defaults are in `config/application.yaml`; environment variables override them. Use `.env.example` as the local template and do not commit secrets.
 
@@ -80,7 +81,7 @@ make fmt
 make build
 ```
 
-The test suite covers dependency ordering, missing dependencies, cycles, entity/field validation, permission validation, typed event delivery, extension ordering, and metadata discovery routes. CI additionally runs Go formatting validation and the frontend production build.
+The test suite covers dependency ordering, missing dependencies, cycles, entity/field validation, permission validation, typed event delivery, extension ordering, metadata discovery routes, and frontend theme/navigation/workspace-RBAC behavior. PostgreSQL integration tests exercise setup idempotency, tenant isolation, workspace role boundaries, administrator semantics, and last-administrator protection. CI runs Go formatting, vet/tests/build, frontend lint/typecheck/tests/build, and the PostgreSQL integration suite.
 
 ## Repository structure
 

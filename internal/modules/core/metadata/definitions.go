@@ -17,7 +17,10 @@ func Register(ctx *module.Context) error {
 	if err := ctx.Entities.Register(entity.Definition{Name: "core.example", DisplayName: "Example Record", Module: "core", Fields: []field.Definition{{Name: "name", DisplayName: "Name", Type: field.String, Required: true}}, Capabilities: []string{"core.auditable"}}); err != nil {
 		return err
 	}
-	if err := ctx.Permissions.Register(permission.Definition{Name: "core.example.read", Module: "core", DisplayName: "Read Example Records", Description: "Allows reading example records."}); err != nil {
+	if err := ctx.Permissions.Register(permission.Definition{Name: "core.example.read", Module: "core", Scope: permission.ScopePlatform, DisplayName: "Read Example Records", Description: "Allows reading example records."}); err != nil {
+		return err
+	}
+	if err := ctx.Permissions.Register(permission.Definition{Name: "core.framework.read", Module: "core", Scope: permission.ScopePlatform, DisplayName: "Read Framework Metadata", Description: "Allows viewing technical framework metadata."}); err != nil {
 		return err
 	}
 	if err := ctx.Events.Register(event.Definition{Name: "core.example.created", Module: "core", Description: "Published when an example record is created."}); err != nil {

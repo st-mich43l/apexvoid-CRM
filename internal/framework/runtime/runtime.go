@@ -43,6 +43,25 @@ func (r *Runtime) Initialize(ctx context.Context) error {
 }
 
 func (r *Runtime) Validate() error {
+	modules := make(map[string]struct{})
+	for _, descriptor := range r.Modules.Descriptors() {
+		modules[descriptor.Name] = struct{}{}
+	}
+	for _, definition := range r.Entities.List() {
+		if _, ok := modules[definition.Module]; !ok {
+			return fmt.Errorf("entity %q references unregistered module %q", definition.Name, definition.Module)
+		}
+	}
+	for _, definition := range r.Permissions.List() {
+		if _, ok := modules[definition.Module]; !ok {
+			return fmt.Errorf("permission %q references unregistered module %q", definition.Name, definition.Module)
+		}
+	}
+	for _, definition := range r.Metadata.Snapshot().Events {
+		if _, ok := modules[definition.Module]; !ok {
+			return fmt.Errorf("event %q references unregistered module %q", definition.Name, definition.Module)
+		}
+	}
 	if err := r.Entities.ValidateCapabilities(r.Capabilities.Contains); err != nil {
 		return err
 	}
