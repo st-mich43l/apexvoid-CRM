@@ -72,7 +72,11 @@ func (s *Service) ListWorkspaceRoles(ctx context.Context, workspaceID uuid.UUID)
 	}
 	result := make([]organizationapi.WorkspaceRole, 0, len(roles))
 	for _, role := range roles {
-		result = append(result, organizationapi.WorkspaceRole{ID: role.ID, WorkspaceID: role.WorkspaceID, Name: role.Name, DisplayName: role.DisplayName, Description: role.Description, System: role.System})
+		permissions, permissionErr := s.repository.RolePermissions(ctx, role.ID)
+		if permissionErr != nil {
+			return nil, permissionErr
+		}
+		result = append(result, organizationapi.WorkspaceRole{ID: role.ID, WorkspaceID: role.WorkspaceID, Name: role.Name, DisplayName: role.DisplayName, Description: role.Description, System: role.System, Permissions: permissions})
 	}
 	return result, nil
 }
@@ -82,7 +86,7 @@ func (s *Service) CreateWorkspaceRole(ctx context.Context, workspaceID uuid.UUID
 	if err != nil {
 		return organizationapi.WorkspaceRole{}, err
 	}
-	return organizationapi.WorkspaceRole{ID: role.ID, WorkspaceID: role.WorkspaceID, Name: role.Name, DisplayName: role.DisplayName, Description: role.Description, System: role.System}, nil
+	return organizationapi.WorkspaceRole{ID: role.ID, WorkspaceID: role.WorkspaceID, Name: role.Name, DisplayName: role.DisplayName, Description: role.Description, System: role.System, Permissions: []string{}}, nil
 }
 func (s *Service) GetRole(ctx context.Context, id uuid.UUID) (domain.Role, error) {
 	role, err := s.repository.FindRole(ctx, id)
@@ -157,6 +161,10 @@ func (s *Service) ReplaceRolePermissions(ctx context.Context, id uuid.UUID, name
 		if s.permissions == nil || !s.permissions.Contains(name) {
 			return domain.ErrUnknownPermission
 		}
+		definition, _ := s.permissions.Get(name)
+		if definition.Scope != permission.ScopePlatform {
+			return domain.ErrPermissionScope
+		}
 		seen[name] = struct{}{}
 	}
 	unique := make([]string, 0, len(seen))
@@ -183,6 +191,10 @@ func (s *Service) ReplaceWorkspaceRolePermissions(ctx context.Context, id, works
 		if s.permissions == nil || !s.permissions.Contains(name) {
 			return domain.ErrUnknownPermission
 		}
+		definition, _ := s.permissions.Get(name)
+		if definition.Scope != permission.ScopeWorkspace {
+			return domain.ErrPermissionScope
+		}
 		seen[name] = struct{}{}
 	}
 	unique := make([]string, 0, len(seen))
@@ -206,8 +218,12 @@ func (s *Service) ReplaceUserRoles(ctx context.Context, userID uuid.UUID, roleID
 		if _, ok := seen[id]; ok {
 			continue
 		}
-		if _, err := s.repository.FindRole(ctx, id); err != nil {
+		role, err := s.repository.FindRole(ctx, id)
+		if err != nil {
 			return err
+		}
+		if role.WorkspaceID != nil {
+			return domain.ErrAssignmentNotAllowed
 		}
 		seen[id] = struct{}{}
 		unique = append(unique, id)
@@ -220,9 +236,20 @@ func (s *Service) EffectivePermissions(ctx context.Context, userID uuid.UUID) ([
 	if err != nil {
 		return nil, err
 	}
+	filtered := make([]string, 0, len(permissions))
+	if s.permissions != nil {
+		for _, name := range permissions {
+			if definition, ok := s.permissions.Get(name); ok && definition.Scope == permission.ScopePlatform {
+				filtered = append(filtered, name)
+			}
+		}
+	}
+	permissions = filtered
 	if administrator && s.permissions != nil {
 		for _, definition := range s.permissions.List() {
-			permissions = append(permissions, definition.Name)
+			if definition.Scope == permission.ScopePlatform {
+				permissions = append(permissions, definition.Name)
+			}
 		}
 	}
 	set := map[string]struct{}{}
@@ -253,13 +280,28 @@ func (s *Service) Can(ctx context.Context, userID uuid.UUID, name string) (bool,
 }
 
 func (s *Service) EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, error) {
-	permissions, administrator, err := s.repository.EffectivePermissionsForWorkspace(ctx, userID, workspaceID)
+	platformPermissions, workspacePermissions, administrator, workspaceAdministrator, err := s.repository.EffectivePermissionsForWorkspace(ctx, userID, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	if administrator && s.permissions != nil {
+	permissions := make([]string, 0, len(platformPermissions)+len(workspacePermissions))
+	if s.permissions != nil {
+		for _, name := range platformPermissions {
+			if definition, ok := s.permissions.Get(name); ok && definition.Scope == permission.ScopePlatform {
+				permissions = append(permissions, name)
+			}
+		}
+		for _, name := range workspacePermissions {
+			if definition, ok := s.permissions.Get(name); ok && definition.Scope == permission.ScopeWorkspace {
+				permissions = append(permissions, name)
+			}
+		}
+	}
+	if s.permissions != nil {
 		for _, definition := range s.permissions.List() {
-			permissions = append(permissions, definition.Name)
+			if administrator && definition.Scope == permission.ScopePlatform || workspaceAdministrator && definition.Scope == permission.ScopeWorkspace {
+				permissions = append(permissions, definition.Name)
+			}
 		}
 	}
 	set := map[string]struct{}{}
@@ -286,6 +328,14 @@ func (s *Service) CanInWorkspace(ctx context.Context, userID, workspaceID uuid.U
 	return false, nil
 }
 
+func (s *Service) CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error) {
+	return s.repository.CountActiveWorkspaceAdministrators(ctx, workspaceID)
+}
+
+func (s *Service) IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error) {
+	return s.repository.IsWorkspaceAdministrator(ctx, membershipID, workspaceID)
+}
+
 func (s *Service) EnsureWorkspaceAdministrator(ctx context.Context, workspaceID uuid.UUID) error {
 	role, err := s.repository.FindRoleByWorkspaceAndName(ctx, &workspaceID, "workspace_administrator")
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -305,13 +355,7 @@ func (s *Service) EnsureWorkspaceAdministrator(ctx context.Context, workspaceID 
 			}
 		}
 	}
-	permissions := []string{}
-	if s.permissions != nil {
-		for _, definition := range s.permissions.List() {
-			permissions = append(permissions, definition.Name)
-		}
-	}
-	return s.repository.ReplaceRolePermissions(ctx, role.ID, permissions)
+	return nil
 }
 
 func (s *Service) AssignWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) error {
@@ -328,6 +372,7 @@ func (s *Service) MembershipRoleIDs(ctx context.Context, membershipID uuid.UUID)
 
 func (s *Service) ReplaceMembershipRoles(ctx context.Context, membershipID, workspaceID uuid.UUID, roleIDs []uuid.UUID) error {
 	seen := map[uuid.UUID]struct{}{}
+	willBeAdministrator := false
 	for _, roleID := range roleIDs {
 		if _, ok := seen[roleID]; ok {
 			continue
@@ -339,6 +384,9 @@ func (s *Service) ReplaceMembershipRoles(ctx context.Context, membershipID, work
 		if role.WorkspaceID == nil || *role.WorkspaceID != workspaceID {
 			return domain.ErrWorkspaceRole
 		}
+		if role.Name == "workspace_administrator" {
+			willBeAdministrator = true
+		}
 		seen[roleID] = struct{}{}
 	}
 	unique := make([]uuid.UUID, 0, len(seen))
@@ -346,6 +394,19 @@ func (s *Service) ReplaceMembershipRoles(ctx context.Context, membershipID, work
 		unique = append(unique, roleID)
 	}
 	return s.withTransaction(ctx, func(txCtx context.Context) error {
+		isAdministrator, err := s.repository.IsWorkspaceAdministrator(txCtx, membershipID, workspaceID)
+		if err != nil {
+			return err
+		}
+		if isAdministrator && !willBeAdministrator {
+			count, err := s.repository.CountActiveWorkspaceAdministrators(txCtx, workspaceID)
+			if err != nil {
+				return err
+			}
+			if count <= 1 {
+				return domain.ErrLastWorkspaceAdministrator
+			}
+		}
 		return s.repository.ReplaceMembershipRoles(txCtx, membershipID, unique)
 	})
 }

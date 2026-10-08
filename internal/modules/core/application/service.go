@@ -27,7 +27,7 @@ func (s *Service) Permissions(_ context.Context) []metadata.PermissionMetadata {
 	snapshot := s.reader.Snapshot()
 	result := make([]metadata.PermissionMetadata, 0, len(snapshot.Permissions))
 	for _, item := range snapshot.Permissions {
-		result = append(result, metadata.PermissionMetadata{Name: item.Name, Module: item.Module, DisplayName: item.DisplayName, Description: item.Description})
+		result = append(result, metadata.PermissionMetadata{Name: item.Name, Module: item.Module, Scope: item.Scope, DisplayName: item.DisplayName, Description: item.Description})
 	}
 	return result
 }

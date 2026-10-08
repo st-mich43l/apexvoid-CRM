@@ -34,8 +34,8 @@ func (r *Registry) Register(definition Definition) error {
 	if !namePattern.MatchString(definition.Name) {
 		return fmt.Errorf("event name %q must be lowercase and namespaced", definition.Name)
 	}
-	if strings.TrimSpace(definition.Module) == "" || !strings.HasPrefix(definition.Name, definition.Module+".") {
-		return fmt.Errorf("event %q must have an owning module matching its namespace", definition.Name)
+	if strings.TrimSpace(definition.Module) == "" {
+		return fmt.Errorf("event %q must have an owning module", definition.Name)
 	}
 	if _, exists := r.definitions[definition.Name]; exists {
 		return fmt.Errorf("event %q is already registered", definition.Name)

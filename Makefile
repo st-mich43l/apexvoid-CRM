@@ -11,6 +11,7 @@ build:
 test:
 	go test ./...
 	npm --prefix web run typecheck
+	npm --prefix web run test
 
 test-integration:
 	go test -tags=integration ./tests/integration

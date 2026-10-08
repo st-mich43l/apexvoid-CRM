@@ -3,27 +3,249 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/go-chi/chi/v5"
+	"github.com/st-mich43l/apexvoid-CRM/internal/app"
+	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
 )
 
-func TestPostgresConnectivity(t *testing.T) {
+type apiClient struct {
+	t       *testing.T
+	client  *http.Client
+	baseURL string
+}
+
+func newAPIClient(t *testing.T, baseURL string) *apiClient {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &apiClient{t: t, client: &http.Client{Jar: jar}, baseURL: baseURL}
+}
+
+func (c *apiClient) request(method, path string, workspaceID string, body any, target any) int {
+	c.t.Helper()
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			c.t.Fatal(err)
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), method, c.baseURL+path, reader)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if workspaceID != "" {
+		req.Header.Set("X-ApexVoid-Workspace", workspaceID)
+	}
+	response, err := c.client.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer response.Body.Close()
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if target != nil && len(bodyBytes) > 0 {
+		if err := json.Unmarshal(bodyBytes, target); err != nil {
+			c.t.Fatalf("decode %s %s response (%d): %v", method, path, response.StatusCode, err)
+		}
+	}
+	if response.StatusCode >= 400 {
+		c.t.Logf("%s %s returned %d: %s", method, path, response.StatusCode, string(bodyBytes))
+	}
+	return response.StatusCode
+}
+
+func (c *apiClient) must(method, path, workspaceID string, body any, target any, status int) {
+	c.t.Helper()
+	got := c.request(method, path, workspaceID, body, target)
+	if got != status {
+		c.t.Fatalf("expected %s %s to return %d, got %d", method, path, status, got)
+	}
+}
+
+type authResponse struct {
+	User struct {
+		ID string `json:"id"`
+	} `json:"user"`
+	Permissions []string `json:"permissions"`
+}
+
+type setupResponse struct {
+	Workspace struct {
+		ID string `json:"id"`
+	} `json:"workspace"`
+	Membership struct {
+		ID string `json:"id"`
+	} `json:"membership"`
+}
+
+type workspace struct {
+	ID string `json:"id"`
+}
+
+type member struct {
+	ID string `json:"id"`
+}
+
+type role struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type workspaceContext struct {
+	Permissions []string `json:"permissions"`
+}
+
+func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
+	databaseURL := testDatabaseURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	application, err := app.Bootstrap(ctx, config.Config{
+		App:       config.AppConfig{Name: "integration", Environment: "test"},
+		Server:    config.ServerConfig{Address: ":0"},
+		Database:  config.DatabaseConfig{URL: databaseURL, MaxConns: 10, MinConns: 1},
+		Auth:      config.AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 24 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
+		Bootstrap: config.BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
+		Logging:   config.LoggingConfig{Level: "ERROR"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer application.Close(context.Background())
+
+	var users int
+	if err := application.Database.QueryRow(ctx, "SELECT COUNT(*) FROM users_users").Scan(&users); err != nil {
+		t.Fatal(err)
+	}
+	if users != 1 {
+		t.Skipf("integration database is not empty; expected only the bootstrap user, found %d", users)
+	}
+
+	router := chi.NewRouter()
+	if err := application.RegisterRoutes(router); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	admin := newAPIClient(t, server.URL)
+	adminLogin := authResponse{}
+	admin.must("POST", "/api/v1/auth/login", "", map[string]string{"email": "admin@localhost", "password": "admin"}, &adminLogin, http.StatusOK)
+	if !contains(adminLogin.Permissions, "organization.organization.update") {
+		t.Fatalf("bootstrap administrator permissions did not include organization update: %#v", adminLogin.Permissions)
+	}
+	admin.must("POST", "/api/v1/auth/change-password", "", map[string]string{"current_password": "admin", "new_password": "admin-password-123"}, &authResponse{}, http.StatusOK)
+
+	setup := setupResponse{}
+	admin.must("POST", "/api/v1/setup/organization", "", map[string]string{"organization_name": "Integration Org", "workspace_name": "Primary", "timezone": "UTC"}, &setup, http.StatusCreated)
+	primaryWorkspaceID := setup.Workspace.ID
+	primaryMembershipID := setup.Membership.ID
+	admin.must("POST", "/api/v1/setup/organization", "", map[string]string{"organization_name": "Duplicate", "workspace_name": "Duplicate", "timezone": "UTC"}, nil, http.StatusConflict)
+	var organizations, workspaces, memberships int
+	if err := application.Database.QueryRow(ctx, "SELECT COUNT(*) FROM organization_organizations").Scan(&organizations); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.Database.QueryRow(ctx, "SELECT COUNT(*) FROM workspace_workspaces").Scan(&workspaces); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.Database.QueryRow(ctx, "SELECT COUNT(*) FROM workspace_memberships").Scan(&memberships); err != nil {
+		t.Fatal(err)
+	}
+	if organizations != 1 || workspaces != 1 || memberships != 1 {
+		t.Fatalf("idempotent setup created duplicate records: organizations=%d workspaces=%d memberships=%d", organizations, workspaces, memberships)
+	}
+
+	var secondary workspace
+	admin.must("POST", "/api/v1/workspaces", primaryWorkspaceID, map[string]string{"name": "Secondary", "timezone": "UTC"}, &secondary, http.StatusCreated)
+	var secondaryRole role
+	admin.must("POST", "/api/v1/workspace/roles", secondary.ID, map[string]string{"name": "secondary_role", "display_name": "Secondary Role"}, &secondaryRole, http.StatusCreated)
+	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/roles/%s/permissions", secondaryRole.ID), primaryWorkspaceID, map[string][]string{"permissions": []string{"workspace.member.read"}}, nil, http.StatusBadRequest)
+
+	var createdUser struct {
+		ID string `json:"id"`
+	}
+	admin.must("POST", "/api/v1/users", "", map[string]string{"email": "member@localhost", "username": "member", "display_name": "Workspace Member", "password": "member-password-123"}, &createdUser, http.StatusCreated)
+
+	var added member
+	admin.must("POST", "/api/v1/workspace/members", primaryWorkspaceID, map[string]string{"user_id": createdUser.ID}, &added, http.StatusCreated)
+
+	var roles []role
+	admin.must("GET", "/api/v1/workspace/roles", primaryWorkspaceID, nil, &roles, http.StatusOK)
+	var workspaceAdministratorID string
+	for _, item := range roles {
+		if item.Name == "workspace_administrator" {
+			workspaceAdministratorID = item.ID
+		}
+	}
+	if workspaceAdministratorID == "" {
+		t.Fatal("workspace administrator role was not provisioned")
+	}
+	var primaryRoles struct {
+		RoleIDs []string `json:"role_ids"`
+	}
+	admin.must("GET", fmt.Sprintf("/api/v1/workspace/members/%s/roles", primaryMembershipID), primaryWorkspaceID, nil, &primaryRoles, http.StatusOK)
+	if !contains(primaryRoles.RoleIDs, workspaceAdministratorID) {
+		t.Fatalf("initial workspace administrator role was not assigned: %#v", primaryRoles.RoleIDs)
+	}
+
+	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/members/%s/roles", primaryMembershipID), primaryWorkspaceID, map[string][]string{"role_ids": []string{}}, nil, http.StatusConflict)
+	admin.must("DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", primaryMembershipID), primaryWorkspaceID, nil, nil, http.StatusConflict)
+	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/members/%s/roles", added.ID), primaryWorkspaceID, map[string][]string{"role_ids": []string{workspaceAdministratorID}}, nil, http.StatusOK)
+	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/members/%s/roles", added.ID), primaryWorkspaceID, map[string][]string{"role_ids": []string{secondaryRole.ID}}, nil, http.StatusBadRequest)
+
+	memberClient := newAPIClient(t, server.URL)
+	memberClient.must("POST", "/api/v1/auth/login", "", map[string]string{"email": "member@localhost", "password": "member-password-123"}, &authResponse{}, http.StatusOK)
+	var memberWorkspaces []workspace
+	memberClient.must("GET", "/api/v1/workspaces", "", nil, &memberWorkspaces, http.StatusOK)
+	if len(memberWorkspaces) != 1 || memberWorkspaces[0].ID != primaryWorkspaceID {
+		t.Fatalf("member can access unexpected workspaces: %#v", memberWorkspaces)
+	}
+	memberClient.must("GET", "/api/v1/workspace", secondary.ID, nil, nil, http.StatusForbidden)
+	var current workspaceContext
+	memberClient.must("GET", "/api/v1/workspace", primaryWorkspaceID, nil, &current, http.StatusOK)
+	if !contains(current.Permissions, "workspace.member.read") {
+		t.Fatalf("workspace administrator did not receive dynamic workspace permissions: %#v", current.Permissions)
+	}
+	memberClient.must("GET", "/api/v1/users", "", nil, nil, http.StatusForbidden)
+
+	admin.must("DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", primaryMembershipID), primaryWorkspaceID, nil, nil, http.StatusNoContent)
+	memberClient.must("PATCH", fmt.Sprintf("/api/v1/workspace/members/%s", added.ID), primaryWorkspaceID, map[string]string{"status": "suspended"}, nil, http.StatusConflict)
+	memberClient.must("DELETE", fmt.Sprintf("/api/v1/workspace/members/%s", added.ID), primaryWorkspaceID, nil, nil, http.StatusConflict)
+}
+
+func testDatabaseURL(t *testing.T) string {
 	url := os.Getenv("APEXVOID_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("set APEXVOID_TEST_DATABASE_URL to run PostgreSQL integration tests")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Fatal(err)
+	return url
+}
+
+func contains(items []string, expected string) bool {
+	for _, item := range items {
+		if item == expected {
+			return true
+		}
 	}
-	defer pool.Close()
-	if err := pool.Ping(ctx); err != nil {
-		t.Fatal(err)
-	}
+	return false
 }

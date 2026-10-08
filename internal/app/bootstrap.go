@@ -24,7 +24,7 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 	framework := runtime.New()
 	usersModule := users.New(users.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Auth: cfg.Auth})
-	organizationModule := organization.New(organization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Users: usersModule.Service(), Directory: usersModule.Service()})
+	organizationModule := organization.New(organization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Users: usersModule.Service(), Directory: usersModule.Service(), Events: framework.Events})
 	accessModule := access.New(access.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Permissions: framework.Permissions, Users: usersModule.Service(), Authenticator: usersModule.Service()})
 	organizationModule.SetAccess(accessModule.Service())
 	usersModule.SetAuthorizer(accessModule.Service())

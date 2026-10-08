@@ -10,10 +10,10 @@ import (
 
 func Register(ctx *module.Context) error {
 	for _, item := range []permission.Definition{
-		{Name: "users.user.read", Module: "users", DisplayName: "Read Users", Description: "Allows viewing users."},
-		{Name: "users.user.create", Module: "users", DisplayName: "Create Users", Description: "Allows creating users."},
-		{Name: "users.user.update", Module: "users", DisplayName: "Update Users", Description: "Allows updating users."},
-		{Name: "users.user.disable", Module: "users", DisplayName: "Enable or Disable Users", Description: "Allows changing user status."},
+		{Name: "users.user.read", Module: "users", Scope: permission.ScopePlatform, DisplayName: "Read Users", Description: "Allows viewing users."},
+		{Name: "users.user.create", Module: "users", Scope: permission.ScopePlatform, DisplayName: "Create Users", Description: "Allows creating users."},
+		{Name: "users.user.update", Module: "users", Scope: permission.ScopePlatform, DisplayName: "Update Users", Description: "Allows updating users."},
+		{Name: "users.user.disable", Module: "users", Scope: permission.ScopePlatform, DisplayName: "Enable or Disable Users", Description: "Allows changing user status."},
 	} {
 		if err := ctx.Permissions.Register(item); err != nil {
 			return err

@@ -10,6 +10,7 @@ import (
 type Definition struct {
 	Name        string
 	Module      string
+	Scope       Scope
 	DisplayName string
 	Description string
 }
@@ -25,8 +26,11 @@ func (r *Registry) Register(definition Definition) error {
 	if strings.TrimSpace(definition.Module) == "" || strings.TrimSpace(definition.DisplayName) == "" {
 		return fmt.Errorf("permission %q requires module and display name", definition.Name)
 	}
-	if !strings.HasPrefix(definition.Name, definition.Module+".") {
-		return fmt.Errorf("permission %q must be owned by module %q", definition.Name, definition.Module)
+	if definition.Scope == "" {
+		definition.Scope = ScopePlatform
+	}
+	if !definition.Scope.Valid() {
+		return fmt.Errorf("permission %q has invalid scope %q", definition.Name, definition.Scope)
 	}
 	if _, exists := r.definitions[definition.Name]; exists {
 		return fmt.Errorf("permission %q is already registered", definition.Name)

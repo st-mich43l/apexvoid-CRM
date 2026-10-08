@@ -214,34 +214,60 @@ func (r *Repository) EffectivePermissions(ctx context.Context, userID uuid.UUID)
 	return result, admin, rows.Err()
 }
 
-func (r *Repository) EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, bool, error) {
-	rows, err := r.db(ctx).Query(ctx, `SELECT r.name, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1
+func (r *Repository) EffectivePermissionsForWorkspace(ctx context.Context, userID, workspaceID uuid.UUID) ([]string, []string, bool, bool, error) {
+	rows, err := r.db(ctx).Query(ctx, `SELECT r.workspace_id, r.name, rp.permission_name FROM access_user_roles ur JOIN access_roles r ON r.id = ur.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE ur.user_id = $1
 UNION ALL
-SELECT r.name, rp.permission_name FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE m.user_id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2`, userID, workspaceID)
+SELECT r.workspace_id, r.name, rp.permission_name FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id LEFT JOIN access_role_permissions rp ON rp.role_id = r.id WHERE m.user_id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2`, userID, workspaceID)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, false, err
 	}
 	defer rows.Close()
-	set := map[string]struct{}{}
+	platformSet := map[string]struct{}{}
+	workspaceSet := map[string]struct{}{}
 	platformAdmin := false
+	workspaceAdmin := false
 	for rows.Next() {
+		var roleWorkspaceID *uuid.UUID
 		var roleName string
 		var permission *string
-		if err := rows.Scan(&roleName, &permission); err != nil {
-			return nil, false, err
+		if err := rows.Scan(&roleWorkspaceID, &roleName, &permission); err != nil {
+			return nil, nil, false, false, err
 		}
 		if roleName == "administrator" {
 			platformAdmin = true
 		}
+		if roleName == "workspace_administrator" {
+			workspaceAdmin = true
+		}
 		if permission != nil {
-			set[*permission] = struct{}{}
+			if roleWorkspaceID == nil {
+				platformSet[*permission] = struct{}{}
+			} else {
+				workspaceSet[*permission] = struct{}{}
+			}
 		}
 	}
-	result := make([]string, 0, len(set))
-	for name := range set {
-		result = append(result, name)
+	platformPermissions := make([]string, 0, len(platformSet))
+	for name := range platformSet {
+		platformPermissions = append(platformPermissions, name)
 	}
-	return result, platformAdmin, rows.Err()
+	workspacePermissions := make([]string, 0, len(workspaceSet))
+	for name := range workspaceSet {
+		workspacePermissions = append(workspacePermissions, name)
+	}
+	return platformPermissions, workspacePermissions, platformAdmin, workspaceAdmin, rows.Err()
+}
+
+func (r *Repository) CountActiveWorkspaceAdministrators(ctx context.Context, workspaceID uuid.UUID) (int, error) {
+	var count int
+	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(DISTINCT m.id) FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id WHERE m.workspace_id = $1 AND m.status = 'active' AND r.workspace_id = $1 AND r.name = 'workspace_administrator'`, workspaceID).Scan(&count)
+	return count, err
+}
+
+func (r *Repository) IsWorkspaceAdministrator(ctx context.Context, membershipID, workspaceID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db(ctx).QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_memberships m JOIN access_workspace_membership_roles wmr ON wmr.membership_id = m.id JOIN access_roles r ON r.id = wmr.role_id WHERE m.id = $1 AND m.workspace_id = $2 AND m.status = 'active' AND r.workspace_id = $2 AND r.name = 'workspace_administrator')`, membershipID, workspaceID).Scan(&exists)
+	return exists, err
 }
 
 func (r *Repository) ReplaceMembershipRoles(ctx context.Context, membershipID uuid.UUID, roleIDs []uuid.UUID) error {
