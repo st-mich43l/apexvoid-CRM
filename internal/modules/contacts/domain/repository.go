@@ -23,6 +23,8 @@ type Repository interface {
 	CreateNote(context.Context, *Note) error
 	UpdateNote(context.Context, *Note) error
 	ListActivities(context.Context, uuid.UUID, *uuid.UUID, *uuid.UUID, ActivityStatus) ([]Activity, error)
+	ListActivitiesPage(context.Context, uuid.UUID, ActivityListFilter) ([]Activity, int, error)
+	GetActivityByID(context.Context, uuid.UUID, uuid.UUID) (*Activity, error)
 	CreateActivity(context.Context, *Activity) error
 	UpdateActivity(context.Context, *Activity) error
 	ListAttachments(context.Context, uuid.UUID, uuid.UUID) ([]Attachment, error)
@@ -32,7 +34,18 @@ type Repository interface {
 	ListCustomFields(context.Context, uuid.UUID, bool) ([]CustomFieldDefinition, error)
 	CreateCustomField(context.Context, *CustomFieldDefinition) error
 	UpdateCustomField(context.Context, *CustomFieldDefinition) error
+	CountContactsWithCustomFieldValues(context.Context, uuid.UUID, string) (int, error)
+	CountContactsUsingCustomFieldOptions(context.Context, uuid.UUID, string, []string) (int, error)
+	CountContactsMissingCustomField(context.Context, uuid.UUID, string) (int, error)
 	IsActiveWorkspaceMember(context.Context, uuid.UUID, uuid.UUID) (bool, error)
+}
+
+type ActivityListFilter struct {
+	ContactID      *uuid.UUID
+	AssignedUserID *uuid.UUID
+	Status         ActivityStatus
+	Page           int
+	Limit          int
 }
 
 type FileStore interface {

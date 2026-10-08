@@ -319,6 +319,64 @@ func (r *Repository) ListActivities(ctx context.Context, w uuid.UUID, c, user *u
 	}
 	return out, rows.Err()
 }
+func (r *Repository) GetActivityByID(ctx context.Context, w, id uuid.UUID) (*domain.Activity, error) {
+	var x domain.Activity
+	err := r.db(ctx).QueryRow(ctx, `SELECT id,workspace_id,title,description,activity_type,related_contact_id,assigned_user_id,due_at,status,completed_at,created_at,updated_at FROM contacts_activities WHERE workspace_id=$1 AND id=$2`, w, id).Scan(&x.ID, &x.WorkspaceID, &x.Title, &x.Description, &x.ActivityType, &x.RelatedContactID, &x.AssignedUserID, &x.DueAt, &x.Status, &x.CompletedAt, &x.CreatedAt, &x.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+func (r *Repository) ListActivitiesPage(ctx context.Context, w uuid.UUID, f domain.ActivityListFilter) ([]domain.Activity, int, error) {
+	where := []string{"workspace_id=$1"}
+	args := []any{w}
+	next := 2
+	if f.ContactID != nil {
+		where = append(where, fmt.Sprintf("related_contact_id=$%d", next))
+		args = append(args, *f.ContactID)
+		next++
+	}
+	if f.AssignedUserID != nil {
+		where = append(where, fmt.Sprintf("assigned_user_id=$%d", next))
+		args = append(args, *f.AssignedUserID)
+		next++
+	}
+	if f.Status != "" {
+		where = append(where, fmt.Sprintf("status=$%d", next))
+		args = append(args, f.Status)
+		next++
+	}
+	whereSQL := strings.Join(where, " AND ")
+	var total int
+	if err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(*) FROM contacts_activities WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.Limit < 1 || f.Limit > 100 {
+		f.Limit = 25
+	}
+	args = append(args, f.Limit, (f.Page-1)*f.Limit)
+	query := fmt.Sprintf(`SELECT id,workspace_id,title,description,activity_type,related_contact_id,assigned_user_id,due_at,status,completed_at,created_at,updated_at FROM contacts_activities WHERE %s ORDER BY due_at NULLS LAST,created_at DESC,id LIMIT $%d OFFSET $%d`, whereSQL, next, next+1)
+	rows, err := r.db(ctx).Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []domain.Activity{}
+	for rows.Next() {
+		var x domain.Activity
+		if err := rows.Scan(&x.ID, &x.WorkspaceID, &x.Title, &x.Description, &x.ActivityType, &x.RelatedContactID, &x.AssignedUserID, &x.DueAt, &x.Status, &x.CompletedAt, &x.CreatedAt, &x.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, x)
+	}
+	return out, total, rows.Err()
+}
 func (r *Repository) CreateActivity(ctx context.Context, a *domain.Activity) error {
 	_, err := r.db(ctx).Exec(ctx, `INSERT INTO contacts_activities(id,workspace_id,title,description,activity_type,related_contact_id,assigned_user_id,due_at,status,completed_at,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, a.ID, a.WorkspaceID, a.Title, a.Description, a.ActivityType, a.RelatedContactID, a.AssignedUserID, a.DueAt, a.Status, a.CompletedAt, a.CreatedAt, a.UpdatedAt)
 	return err
@@ -420,6 +478,21 @@ func (r *Repository) UpdateCustomField(ctx context.Context, f *domain.CustomFiel
 		return domain.ErrNotFound
 	}
 	return nil
+}
+func (r *Repository) CountContactsWithCustomFieldValues(ctx context.Context, w uuid.UUID, key string) (int, error) {
+	var count int
+	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(*) FROM contacts_contacts WHERE workspace_id=$1 AND custom_values ? $2 AND custom_values->>$2 IS NOT NULL`, w, key).Scan(&count)
+	return count, err
+}
+func (r *Repository) CountContactsUsingCustomFieldOptions(ctx context.Context, w uuid.UUID, key string, options []string) (int, error) {
+	var count int
+	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(*) FROM contacts_contacts WHERE workspace_id=$1 AND custom_values->>$2 IS NOT NULL AND NOT (custom_values->>$2 = ANY($3::text[]))`, w, key, options).Scan(&count)
+	return count, err
+}
+func (r *Repository) CountContactsMissingCustomField(ctx context.Context, w uuid.UUID, key string) (int, error) {
+	var count int
+	err := r.db(ctx).QueryRow(ctx, `SELECT COUNT(*) FROM contacts_contacts WHERE workspace_id=$1 AND (NOT (custom_values ? $2) OR custom_values->>$2 IS NULL OR custom_values->>$2='')`, w, key).Scan(&count)
+	return count, err
 }
 func (r *Repository) IsActiveWorkspaceMember(ctx context.Context, w, user uuid.UUID) (bool, error) {
 	var ok bool

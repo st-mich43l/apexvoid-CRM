@@ -55,7 +55,7 @@ func (s *FileSystem) Save(ctx context.Context, prefix string, reader io.Reader, 
 		return "", 0, closeErr
 	}
 	if size > max {
-		return "", 0, fmt.Errorf("attachment exceeds %d bytes", max)
+		return "", 0, fmt.Errorf("%w: %d bytes", domain.ErrAttachmentTooLarge, max)
 	}
 	if err := ctx.Err(); err != nil {
 		return "", 0, err

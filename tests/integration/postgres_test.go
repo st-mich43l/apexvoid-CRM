@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -28,6 +29,48 @@ type apiClient struct {
 	t       *testing.T
 	client  *http.Client
 	baseURL string
+}
+
+func (c *apiClient) multipartRequest(method, path, workspaceID, filename, contentType string, content []byte, target any) int {
+	c.t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		c.t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		c.t.Fatal(err)
+	}
+	req, err := http.NewRequest(method, c.baseURL+path, &body)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if contentType != "" {
+		req.Header.Set("X-Test-Content-Type", contentType)
+	}
+	if workspaceID != "" {
+		req.Header.Set("X-ApexVoid-Workspace", workspaceID)
+	}
+	response, err := c.client.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(response.Body)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if target != nil && len(responseBody) > 0 {
+		if err := json.Unmarshal(responseBody, target); err != nil {
+			c.t.Fatalf("decode multipart response (%d): %v", response.StatusCode, err)
+		}
+	}
+	return response.StatusCode
 }
 
 func newAPIClient(t *testing.T, baseURL string) *apiClient {
@@ -135,6 +178,10 @@ type fieldResponse struct {
 	ID string `json:"id"`
 }
 
+type attachmentResponse struct {
+	ID string `json:"id"`
+}
+
 func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	databaseURL, cleanup := isolatedDatabaseURL(t)
 	defer cleanup()
@@ -218,6 +265,29 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	admin.must("PUT", "/api/v1/contacts/"+primaryPerson.ID+"/relationships", primaryWorkspaceID, []map[string]any{{"person_id": primaryPerson.ID, "company_id": primaryCompany.ID, "relationship_type": "employee", "job_title": "Founder", "is_primary": true}}, nil, http.StatusNoContent)
 	admin.must("POST", "/api/v1/contacts/"+primaryPerson.ID+"/notes", primaryWorkspaceID, map[string]string{"content": "Workspace-scoped note"}, nil, http.StatusCreated)
 	admin.must("POST", "/api/v1/activities", primaryWorkspaceID, map[string]any{"title": "Welcome call", "activity_type": "call", "related_contact_id": primaryPerson.ID, "assigned_user_id": adminLogin.User.ID}, nil, http.StatusCreated)
+	var attachment attachmentResponse
+	if got := admin.multipartRequest("POST", "/api/v1/contacts/"+primaryPerson.ID+"/attachments", primaryWorkspaceID, "brief.pdf", "application/pdf", []byte("%PDF-1.7\nattachment"), &attachment); got != http.StatusCreated {
+		t.Fatalf("expected attachment upload to return %d, got %d", http.StatusCreated, got)
+	}
+	downloadRequest, err := http.NewRequest("GET", server.URL+"/api/v1/contacts/"+primaryPerson.ID+"/attachments/"+attachment.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloadRequest.Header.Set("X-ApexVoid-Workspace", primaryWorkspaceID)
+	downloadResponse, err := admin.client.Do(downloadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloadBody, err := io.ReadAll(downloadResponse.Body)
+	downloadResponse.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if downloadResponse.StatusCode != http.StatusOK || string(downloadBody) != "%PDF-1.7\nattachment" || downloadResponse.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("unexpected attachment download: status=%d body=%q nosniff=%q", downloadResponse.StatusCode, string(downloadBody), downloadResponse.Header.Get("X-Content-Type-Options"))
+	}
+	admin.must("GET", "/api/v1/contacts/"+primaryPerson.ID+"/attachments/"+attachment.ID, secondary.ID, nil, nil, http.StatusNotFound)
+	admin.must("DELETE", "/api/v1/contacts/"+primaryPerson.ID+"/attachments/"+attachment.ID, primaryWorkspaceID, nil, nil, http.StatusNoContent)
 	admin.must("GET", "/api/v1/contacts/"+secondaryPerson.ID, primaryWorkspaceID, nil, nil, http.StatusNotFound)
 	admin.must("GET", "/api/v1/contacts/"+primaryPerson.ID+"/relationships", secondary.ID, nil, nil, http.StatusNotFound)
 

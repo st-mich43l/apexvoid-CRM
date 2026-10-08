@@ -2,6 +2,8 @@ package domain
 
 import (
 	"fmt"
+	"net/mail"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -103,6 +105,27 @@ type Activity struct {
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
 }
+
+func (a *Activity) TransitionTo(status ActivityStatus) error {
+	if status == a.Status {
+		return nil
+	}
+	if a.Status != ActivityPlanned {
+		return ErrInvalidActivityTransition
+	}
+	switch status {
+	case ActivityCompleted:
+		now := time.Now().UTC()
+		a.CompletedAt = &now
+	case ActivityCancelled:
+		a.CompletedAt = nil
+	default:
+		return ErrInvalidActivityTransition
+	}
+	a.Status = status
+	return nil
+}
+
 type Attachment struct {
 	ID          uuid.UUID `json:"id"`
 	WorkspaceID uuid.UUID `json:"workspace_id"`
@@ -159,6 +182,27 @@ func (c Contact) Validate() error {
 	}
 	if strings.TrimSpace(c.DisplayName) == "" {
 		return fmt.Errorf("display name is required")
+	}
+	if len([]rune(c.DisplayName)) > 255 {
+		return fmt.Errorf("display name is too long")
+	}
+	if c.Email != "" {
+		parsed, err := mail.ParseAddress(c.Email)
+		if err != nil || parsed.Address != c.Email {
+			return fmt.Errorf("email is invalid")
+		}
+	}
+	if c.Website != "" {
+		parsed, err := url.ParseRequestURI(c.Website)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("website is invalid")
+		}
+	}
+	if len([]rune(c.Phone)) > 64 {
+		return fmt.Errorf("phone is too long")
+	}
+	if len([]rune(c.Description)) > 10000 {
+		return fmt.Errorf("description is too long")
 	}
 	if c.Status != StatusActive && c.Status != StatusArchived {
 		return ErrInvalidStatus
@@ -234,9 +278,12 @@ func (f CustomFieldDefinition) Validate() error {
 }
 
 var (
-	ErrNotFound           = fmt.Errorf("contact resource not found")
-	ErrDuplicate          = fmt.Errorf("contact resource already exists")
-	ErrInvalidStatus      = fmt.Errorf("invalid contact status")
-	ErrInvalidCustomValue = fmt.Errorf("invalid custom field value")
-	ErrInactiveMember     = fmt.Errorf("assigned user is not an active workspace member")
+	ErrNotFound                  = fmt.Errorf("contact resource not found")
+	ErrDuplicate                 = fmt.Errorf("contact resource already exists")
+	ErrInvalidStatus             = fmt.Errorf("invalid contact status")
+	ErrInvalidCustomValue        = fmt.Errorf("invalid custom field value")
+	ErrInactiveMember            = fmt.Errorf("assigned user is not an active workspace member")
+	ErrInvalidActivityTransition = fmt.Errorf("invalid activity state transition")
+	ErrUnsupportedAttachment     = fmt.Errorf("unsupported attachment content type")
+	ErrAttachmentTooLarge        = fmt.Errorf("attachment exceeds size limit")
 )
