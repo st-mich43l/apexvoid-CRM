@@ -34,10 +34,17 @@ func (h *Handler) RegisterRoutes(r module.RouteRegistry) error {
 	manage := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.pipeline.manage"))
 	manage.Post("/crm/pipelines", h.create)
 	manage.Post("/crm/pipelines/initialize", h.initialize)
+	manage.Patch("/crm/pipelines/{id}", h.updatePipeline)
+	manage.Post("/crm/pipelines/{id}/clone", h.clonePipeline)
+	manage.Post("/crm/pipelines/{id}/archive", h.archivePipeline)
+	manage.Post("/crm/pipelines/{id}/restore", h.restorePipeline)
 	manage.Post("/crm/pipelines/{id}/set-default", h.defaultPipeline)
 	stage := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.stage.manage"))
 	stage.Post("/crm/pipelines/{id}/stages", h.addStage)
 	stage.Post("/crm/pipelines/{id}/stages/reorder", h.reorder)
+	stage.Patch("/crm/pipelines/{id}/stages/{stageID}", h.updateStage)
+	stage.Post("/crm/pipelines/{id}/stages/{stageID}/archive", h.archiveStage)
+	stage.Post("/crm/pipelines/{id}/stages/{stageID}/restore", h.restoreStage)
 	h.registerWorkspaceRoutes(r)
 	return nil
 }
@@ -144,6 +151,71 @@ func (h *Handler) defaultPipeline(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(204)
 }
+func (h *Handler) updatePipeline(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Color       string `json:"color"`
+		Version     int    `json:"version"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	workspace, actor := ctx(r)
+	identifier, ok := id(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.s.UpdatePipeline(r.Context(), workspace, actor, identifier, body.Version, body.Name, body.Description, body.Color)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	out(w, http.StatusOK, item)
+}
+func (h *Handler) clonePipeline(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	workspace, actor := ctx(r)
+	identifier, ok := id(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.s.ClonePipeline(r.Context(), workspace, actor, identifier, body.Name)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	out(w, http.StatusCreated, item)
+}
+func (h *Handler) setPipelineArchived(w http.ResponseWriter, r *http.Request, archived bool) {
+	var body struct {
+		Version int `json:"version"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	workspace, _ := ctx(r)
+	identifier, ok := id(w, r)
+	if !ok {
+		return
+	}
+	if err := h.s.SetPipelineArchived(r.Context(), workspace, identifier, body.Version, archived); err != nil {
+		fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (h *Handler) archivePipeline(w http.ResponseWriter, r *http.Request) {
+	h.setPipelineArchived(w, r, true)
+}
+func (h *Handler) restorePipeline(w http.ResponseWriter, r *http.Request) {
+	h.setPipelineArchived(w, r, false)
+}
 func (h *Handler) stages(w http.ResponseWriter, r *http.Request) {
 	x, _ := ctx(r)
 	i, ok := id(w, r)
@@ -194,4 +266,61 @@ func (h *Handler) reorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+func stageID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	value, err := uuid.Parse(chi.URLParam(r, "stageID"))
+	if err != nil {
+		httpserver.WriteError(w, r, 400, "VALIDATION_ERROR", "Stage identifier is invalid")
+		return uuid.Nil, false
+	}
+	return value, true
+}
+func (h *Handler) updateStage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Color       string `json:"color"`
+		Probability int    `json:"probability"`
+		Version     int    `json:"version"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	workspace, _ := ctx(r)
+	pipelineID, ok := id(w, r)
+	if !ok {
+		return
+	}
+	identifier, ok := stageID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.s.UpdateStage(r.Context(), workspace, pipelineID, identifier, body.Version, body.Name, body.Description, body.Color, body.Probability)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	out(w, http.StatusOK, item)
+}
+func (h *Handler) setStageArchived(w http.ResponseWriter, r *http.Request, archived bool) {
+	workspace, _ := ctx(r)
+	pipelineID, ok := id(w, r)
+	if !ok {
+		return
+	}
+	identifier, ok := stageID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.s.SetStageArchived(r.Context(), workspace, pipelineID, identifier, archived); err != nil {
+		fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (h *Handler) archiveStage(w http.ResponseWriter, r *http.Request) {
+	h.setStageArchived(w, r, true)
+}
+func (h *Handler) restoreStage(w http.ResponseWriter, r *http.Request) {
+	h.setStageArchived(w, r, false)
 }

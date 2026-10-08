@@ -81,6 +81,16 @@ func (r *Repository) UpdatePipeline(ctx context.Context, p *domain.Pipeline, v i
 	p.Version = v + 1
 	return nil
 }
+func (r *Repository) SetPipelineStatus(ctx context.Context, w, id uuid.UUID, status domain.PipelineStatus, version int) error {
+	x, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipelines SET status=$3,is_default=CASE WHEN $3='archived' THEN FALSE ELSE is_default END,version=version+1,updated_at=NOW() WHERE workspace_id=$1 AND id=$2 AND version=$4", w, id, status, version)
+	if e != nil {
+		return mapErr(e)
+	}
+	if x.RowsAffected() == 0 {
+		return domain.ErrConflict
+	}
+	return nil
+}
 func (r *Repository) SetDefault(ctx context.Context, w, id uuid.UUID) error {
 	if _, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipelines SET is_default=FALSE WHERE workspace_id=$1 AND is_default", w); e != nil {
 		return e
@@ -154,6 +164,16 @@ func (r *Repository) SetStagesActive(ctx context.Context, w, p uuid.UUID, ids []
 		}
 	}
 	return nil
+}
+func (r *Repository) CountOpenOpportunities(ctx context.Context, w, pipelineID uuid.UUID, stageID *uuid.UUID) (int, error) {
+	var count int
+	query := "SELECT count(*) FROM crm_opportunities WHERE workspace_id=$1 AND pipeline_id=$2 AND outcome='open'"
+	args := []any{w, pipelineID}
+	if stageID != nil {
+		query += " AND stage_id=$3"
+		args = append(args, *stageID)
+	}
+	return count, r.q(ctx).QueryRow(ctx, query, args...).Scan(&count)
 }
 func (r *Repository) SetTemporaryStagePositions(ctx context.Context, w, p uuid.UUID) error {
 	_, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipeline_stages SET position=position+1000000 WHERE workspace_id=$1 AND pipeline_id=$2 AND active", w, p)
@@ -295,6 +315,9 @@ func (r *Repository) UpdateLead(ctx context.Context, item *domain.Lead, version 
 func (r *Repository) GetOpportunity(ctx context.Context, w, id uuid.UUID) (*domain.Opportunity, error) {
 	return scanOpportunity(r.q(ctx).QueryRow(ctx, "SELECT "+opportunityColumns+" FROM crm_opportunities WHERE workspace_id=$1 AND id=$2", w, id))
 }
+func (r *Repository) GetOpportunityForUpdate(ctx context.Context, w, id uuid.UUID) (*domain.Opportunity, error) {
+	return scanOpportunity(r.q(ctx).QueryRow(ctx, "SELECT "+opportunityColumns+" FROM crm_opportunities WHERE workspace_id=$1 AND id=$2 FOR UPDATE", w, id))
+}
 func (r *Repository) ListOpportunities(ctx context.Context, w uuid.UUID, f domain.OpportunityFilter) ([]domain.Opportunity, int, error) {
 	where, args := []string{"workspace_id=$1"}, []any{w}
 	add := func(clause string, value any) {
@@ -374,4 +397,34 @@ func (r *Repository) UpdateOpportunity(ctx context.Context, item *domain.Opportu
 	}
 	item.Version = version + 1
 	return nil
+}
+func (r *Repository) CreateHistory(ctx context.Context, item domain.History) error {
+	_, err := r.q(ctx).Exec(ctx, "INSERT INTO crm_lifecycle_history(id,workspace_id,lead_id,opportunity_id,event_type,from_stage_id,to_stage_id,actor_id,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", item.ID, item.WorkspaceID, item.LeadID, item.OpportunityID, item.EventType, item.FromStageID, item.ToStageID, item.ActorID, item.CreatedAt)
+	return mapErr(err)
+}
+func (r *Repository) ListHistory(ctx context.Context, w uuid.UUID, leadID, opportunityID *uuid.UUID) ([]domain.History, error) {
+	query, args := "SELECT id,workspace_id,lead_id,opportunity_id,event_type,from_stage_id,to_stage_id,actor_id,created_at FROM crm_lifecycle_history WHERE workspace_id=$1", []any{w}
+	if leadID != nil {
+		query += " AND lead_id=$2"
+		args = append(args, *leadID)
+	} else if opportunityID != nil {
+		query += " AND opportunity_id=$2"
+		args = append(args, *opportunityID)
+	} else {
+		return nil, fmt.Errorf("history target is required")
+	}
+	rows, err := r.q(ctx).Query(ctx, query+" ORDER BY created_at,id", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.History{}
+	for rows.Next() {
+		var item domain.History
+		if err = rows.Scan(&item.ID, &item.WorkspaceID, &item.LeadID, &item.OpportunityID, &item.EventType, &item.FromStageID, &item.ToStageID, &item.ActorID, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
