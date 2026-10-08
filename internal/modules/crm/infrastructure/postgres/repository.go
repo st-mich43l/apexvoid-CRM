@@ -418,6 +418,123 @@ func (r *Repository) ListOpportunities(ctx context.Context, w uuid.UUID, f domai
 	}
 	return result, total, rows.Err()
 }
+
+func (r *Repository) GetOpportunityBoard(ctx context.Context, w, pipelineID uuid.UUID, stages []domain.Stage, f domain.OpportunityBoardFilter) ([]domain.OpportunityBoardStage, error) {
+	if len(stages) == 0 {
+		return []domain.OpportunityBoardStage{}, nil
+	}
+	where, args := []string{"workspace_id=$1", "pipeline_id=$2"}, []any{w, pipelineID}
+	stageArgs := make([]string, 0, len(stages))
+	for _, stage := range stages {
+		args = append(args, stage.ID)
+		stageArgs = append(stageArgs, "$"+fmt.Sprint(len(args)))
+	}
+	where = append(where, "stage_id IN ("+strings.Join(stageArgs, ",")+")")
+	if f.StageID != nil {
+		args = append(args, *f.StageID)
+		where = append(where, "stage_id=$"+fmt.Sprint(len(args)))
+	}
+	if f.OwnerID != nil {
+		args = append(args, *f.OwnerID)
+		where = append(where, "assigned_user_id=$"+fmt.Sprint(len(args)))
+	}
+	if f.Outcome != "" {
+		args = append(args, f.Outcome)
+		where = append(where, "outcome=$"+fmt.Sprint(len(args)))
+	}
+	if strings.TrimSpace(f.Search) != "" {
+		args = append(args, "%"+strings.TrimSpace(f.Search)+"%")
+		placeholder := "$" + fmt.Sprint(len(args))
+		where = append(where, "(title ILIKE "+placeholder+" OR EXISTS (SELECT 1 FROM contacts_contacts c WHERE c.workspace_id=crm_opportunities.workspace_id AND (c.id=crm_opportunities.contact_id OR c.id=crm_opportunities.company_id) AND (c.display_name ILIKE "+placeholder+" OR c.email ILIKE "+placeholder+")))")
+	}
+	if err := applyViewConditions(&where, &args, f.Conditions, "crm.opportunity"); err != nil {
+		return nil, err
+	}
+	filter := strings.Join(where, " AND ")
+
+	result := make([]domain.OpportunityBoardStage, 0, len(stages))
+	byStage := make(map[uuid.UUID]*domain.OpportunityBoardStage, len(stages))
+	for _, stage := range stages {
+		item := domain.OpportunityBoardStage{Stage: stage, TotalsByCurrency: map[string]string{}, Items: []domain.Opportunity{}}
+		result = append(result, item)
+		byStage[stage.ID] = &result[len(result)-1]
+	}
+	rows, err := r.q(ctx).Query(ctx, "SELECT stage_id,currency,COUNT(*),COALESCE(SUM(expected_revenue),0)::text FROM crm_opportunities WHERE "+filter+" GROUP BY stage_id,currency", args...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var stageID uuid.UUID
+		var currency, total string
+		var count int
+		if err := rows.Scan(&stageID, &currency, &count, &total); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if item := byStage[stageID]; item != nil {
+			item.Count += count
+			item.TotalsByCurrency[currency] = total
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	limit := f.Limit
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+	for _, stage := range stages {
+		if f.StageID != nil && *f.StageID != stage.ID {
+			continue
+		}
+		cardWhere := append([]string{}, where...)
+		cardArgs := append([]any{}, args...)
+		cardArgs = append(cardArgs, stage.ID)
+		cardWhere = append(cardWhere, "stage_id=$"+fmt.Sprint(len(cardArgs)))
+		if f.Cursor != nil && f.StageID != nil && *f.StageID == stage.ID {
+			if f.Cursor.ExpectedCloseDate == nil {
+				cursorIDArg := len(cardArgs) + 1
+				cardArgs = append(cardArgs, f.Cursor.ID)
+				cardWhere = append(cardWhere, "expected_close_date IS NULL AND id>$"+fmt.Sprint(cursorIDArg))
+			} else {
+				cursorDateArg := len(cardArgs) + 1
+				cursorIDArg := len(cardArgs) + 2
+				cardArgs = append(cardArgs, f.Cursor.ExpectedCloseDate, f.Cursor.ID)
+				cardWhere = append(cardWhere, "(expected_close_date IS NULL OR expected_close_date>$"+fmt.Sprint(cursorDateArg)+"::date OR (expected_close_date=$"+fmt.Sprint(cursorDateArg)+"::date AND id>$"+fmt.Sprint(cursorIDArg)+"))")
+			}
+		}
+		cardArgs = append(cardArgs, limit+1)
+		cardRows, err := r.q(ctx).Query(ctx, "SELECT "+opportunityColumns+" FROM crm_opportunities WHERE "+strings.Join(cardWhere, " AND ")+" ORDER BY expected_close_date IS NULL,expected_close_date,id LIMIT $"+fmt.Sprint(len(cardArgs)), cardArgs...)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]domain.Opportunity, 0, limit)
+		for cardRows.Next() {
+			item, scanErr := scanOpportunity(cardRows)
+			if scanErr != nil {
+				cardRows.Close()
+				return nil, scanErr
+			}
+			if len(items) < limit {
+				items = append(items, *item)
+				continue
+			}
+			cursor := domain.BoardCursor{ExpectedCloseDate: item.ExpectedCloseDate, ID: item.ID}
+			byStage[stage.ID].NextCursor = &cursor
+			break
+		}
+		if err := cardRows.Err(); err != nil {
+			cardRows.Close()
+			return nil, err
+		}
+		cardRows.Close()
+		byStage[stage.ID].Items = items
+	}
+	return result, nil
+}
 func (r *Repository) CreateOpportunity(ctx context.Context, item *domain.Opportunity) error {
 	values, err := json.Marshal(item.CustomValues)
 	if err != nil {

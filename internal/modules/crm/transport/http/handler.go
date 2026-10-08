@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/go-chi/chi/v5"
@@ -12,6 +13,8 @@ import (
 	usersapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/httpserver"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 type Handler struct {
@@ -106,6 +109,112 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out(w, 200, v)
+}
+
+func encodeBoardCursor(cursor *domain.BoardCursor) *string {
+	if cursor == nil {
+		return nil
+	}
+	payload := struct {
+		ExpectedCloseDate *string   `json:"expected_close_date"`
+		ID                uuid.UUID `json:"id"`
+	}{ID: cursor.ID}
+	if cursor.ExpectedCloseDate != nil {
+		value := cursor.ExpectedCloseDate.Format("2006-01-02")
+		payload.ExpectedCloseDate = &value
+	}
+	raw, _ := json.Marshal(payload)
+	value := base64.RawURLEncoding.EncodeToString(raw)
+	return &value
+}
+
+func decodeBoardCursor(w http.ResponseWriter, r *http.Request) (*domain.BoardCursor, bool) {
+	raw := r.URL.Query().Get("cursor")
+	if raw == "" {
+		return nil, true
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		httpserver.WriteError(w, r, 400, "VALIDATION_ERROR", "Invalid board cursor")
+		return nil, false
+	}
+	var payload struct {
+		ExpectedCloseDate *string   `json:"expected_close_date"`
+		ID                uuid.UUID `json:"id"`
+	}
+	if err := json.Unmarshal(decoded, &payload); err != nil || payload.ID == uuid.Nil {
+		httpserver.WriteError(w, r, 400, "VALIDATION_ERROR", "Invalid board cursor")
+		return nil, false
+	}
+	cursor := &domain.BoardCursor{ID: payload.ID}
+	if payload.ExpectedCloseDate != nil {
+		value, err := time.Parse("2006-01-02", *payload.ExpectedCloseDate)
+		if err != nil {
+			httpserver.WriteError(w, r, 400, "VALIDATION_ERROR", "Invalid board cursor")
+			return nil, false
+		}
+		cursor.ExpectedCloseDate = &value
+	}
+	return cursor, true
+}
+
+func (h *Handler) board(w http.ResponseWriter, r *http.Request) {
+	workspace, actor := ctx(r)
+	pipelineID, ok := id(w, r)
+	if !ok {
+		return
+	}
+	viewID := optionalID(w, r, "view_id")
+	if r.URL.Query().Get("view_id") != "" && viewID == nil {
+		return
+	}
+	ownerID := optionalID(w, r, "owner_id")
+	if r.URL.Query().Get("owner_id") != "" && ownerID == nil {
+		return
+	}
+	stageID := optionalID(w, r, "stage_id")
+	if r.URL.Query().Get("stage_id") != "" && stageID == nil {
+		return
+	}
+	cursor, ok := decodeBoardCursor(w, r)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+	outcome := r.URL.Query().Get("outcome")
+	if outcome == "" {
+		outcome = r.URL.Query().Get("status")
+	}
+	board, err := h.s.OpportunityBoard(r.Context(), workspace, pipelineID, domain.OpportunityBoardFilter{Search: r.URL.Query().Get("search"), ViewID: viewID, ViewUserID: actor, OwnerID: ownerID, Outcome: domain.OpportunityOutcome(outcome), Limit: limit, StageID: stageID, Cursor: cursor})
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	stages := make([]map[string]any, 0, len(board.Stages))
+	for _, item := range board.Stages {
+		stages = append(stages, map[string]any{
+			"stage":              item.Stage,
+			"count":              item.Count,
+			"totals_by_currency": item.TotalsByCurrency,
+			"items":              opportunityListOutput(item.Items),
+			"next_cursor":        encodeBoardCursor(item.NextCursor),
+		})
+	}
+	out(w, 200, map[string]any{
+		"pipeline": board.Pipeline,
+		"stages":   stages,
+		"filter": map[string]any{
+			"search":   r.URL.Query().Get("search"),
+			"view_id":  viewID,
+			"owner_id": ownerID,
+			"outcome":  outcome,
+			"stage_id": stageID,
+			"limit":    limit,
+		},
+	})
 }
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var v struct {

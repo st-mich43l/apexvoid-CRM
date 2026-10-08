@@ -111,6 +111,7 @@ func (h *Handler) registerWorkspaceRoutes(r module.RouteRegistry) {
 	leadConvert.Post("/crm/leads/{id}/convert", h.convertLead)
 	oppRead := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.opportunity.read"))
 	oppRead.Get("/crm/opportunities", h.listOpportunities)
+	oppRead.Get("/crm/pipelines/{id}/board", h.board)
 	oppRead.Get("/crm/opportunities/{id}", h.getOpportunity)
 	oppRead.Get("/crm/opportunities/{id}/history", h.opportunityHistory)
 	oppCreate := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.opportunity.create"))
