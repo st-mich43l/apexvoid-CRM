@@ -134,6 +134,13 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if opportunity.OriginalLeadID != lead.ID || opportunity.ContactID != contact.ID {
 		t.Fatalf("opportunity conversion link was not persisted: %#v", opportunity)
 	}
+	var history []struct {
+		EventType string `json:"event_type"`
+	}
+	admin.must("GET", "/api/v1/crm/opportunities/"+opportunity.ID+"/history", workspaceID, nil, &history, http.StatusOK)
+	if len(history) != 1 || history[0].EventType != "lead.converted" {
+		t.Fatalf("conversion history was not persisted: %#v", history)
+	}
 	admin.must("POST", "/api/v1/crm/leads/"+lead.ID+"/convert", workspaceID, map[string]any{"pipeline_id": pipeline.ID, "stage_id": openStage, "contact_id": contact.ID, "create_contact": false, "expected_revenue": "1250.50", "currency": "USD", "version": lead.Version}, nil, http.StatusConflict)
 	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "stage_id": openStage}, nil, http.StatusBadRequest)
 	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "description": "Updated without moving stage"}, &opportunity, http.StatusOK)
