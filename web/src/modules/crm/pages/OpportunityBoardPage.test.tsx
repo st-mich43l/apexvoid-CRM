@@ -70,8 +70,8 @@ describe('OpportunityBoardPage', () => {
     vi.spyOn(api.crm, 'pipelines').mockResolvedValue([board.pipeline])
     vi.spyOn(api.crm, 'stages').mockResolvedValue([stageOne, stageTwo])
     vi.spyOn(api.crm, 'opportunities').mockImplementation(async params => ({
-      items: [{ ...item, id: Number(params.page) === 2 ? 'page-2-id' : 'page-1-id', title: Number(params.page) === 2 ? 'Page two deal' : 'Page one deal' }],
-      page: Number(params.page) || 1,
+      items: [{ ...item, id: Number(params?.page) === 2 ? 'page-2-id' : 'page-1-id', title: Number(params?.page) === 2 ? 'Page two deal' : 'Page one deal' }],
+      page: Number(params?.page) || 1,
       limit: 25,
       total: 30,
     }))
