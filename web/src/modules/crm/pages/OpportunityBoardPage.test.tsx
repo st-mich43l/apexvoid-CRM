@@ -13,9 +13,9 @@ const stageTwo = { ...stageOne, id: 'stage-2', key: 'qualified', name: 'Qualifie
 const item = { id: 'opportunity-1', title: 'Acme expansion', description: '', pipeline_id: 'pipeline-1', stage_id: stageOne.id, expected_revenue: '1250.00', currency: 'USD', outcome: 'open' as const, custom_values: {}, version: 3, created_at: '2026-10-08T00:00:00Z' }
 const board: OpportunityBoard = { pipeline: { id: 'pipeline-1', workspace_id: 'workspace-1', name: 'Sales', slug: 'sales', description: '', color: '#7c3aed', status: 'active', default: true, version: 1 }, stages: [{ stage: stageOne, count: 1, totals_by_currency: { USD: '1250.00' }, items: [item], next_cursor: null }, { stage: stageTwo, count: 0, totals_by_currency: {}, items: [], next_cursor: null }], filter: { search: '', outcome: 'open', limit: 20 } }
 
-function renderPage() {
+function renderPage(initialEntry = '/crm/opportunities?pipeline_id=pipeline-1&view=kanban') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={queryClient}><AuthContext.Provider value={{ user, loading: false, platformPermissions: [], login: vi.fn(), logout: vi.fn(), platformCan: () => true, reload: vi.fn() }}><WorkspaceContext.Provider value={{ workspaces: [], activeWorkspace: null, activeWorkspaceId: 'workspace-1', setup: null, workspacePermissions: ['crm.opportunity.read', 'crm.opportunity.transition'], loading: false, selectWorkspace: vi.fn(), can: permission => ['crm.opportunity.read', 'crm.opportunity.transition'].includes(permission), reload: vi.fn() }}><MemoryRouter initialEntries={['/crm/opportunities?pipeline_id=pipeline-1&view=kanban']}><OpportunityBoardPage/></MemoryRouter></WorkspaceContext.Provider></AuthContext.Provider></QueryClientProvider>)
+  return render(<QueryClientProvider client={queryClient}><AuthContext.Provider value={{ user, loading: false, platformPermissions: [], login: vi.fn(), logout: vi.fn(), platformCan: () => true, reload: vi.fn() }}><WorkspaceContext.Provider value={{ workspaces: [], activeWorkspace: null, activeWorkspaceId: 'workspace-1', setup: null, workspacePermissions: ['crm.opportunity.read', 'crm.opportunity.transition'], loading: false, selectWorkspace: vi.fn(), can: permission => ['crm.opportunity.read', 'crm.opportunity.transition'].includes(permission), reload: vi.fn() }}><MemoryRouter initialEntries={[initialEntry]}><OpportunityBoardPage/></MemoryRouter></WorkspaceContext.Provider></AuthContext.Provider></QueryClientProvider>)
 }
 
 describe('OpportunityBoardPage', () => {
@@ -47,4 +47,44 @@ describe('OpportunityBoardPage', () => {
     fireEvent.change(select, { target: { value: stageTwo.id } })
     await waitFor(() => expect(api.crm.moveOpportunity).toHaveBeenCalledWith(item.id, { pipeline_id: item.pipeline_id, stage_id: stageTwo.id, version: item.version }))
   })
+  it('moves a card dropped into a different stage rather than searching the destination cards', async () => {
+    vi.spyOn(api.crm, 'pipelines').mockResolvedValue([board.pipeline])
+    vi.spyOn(api.crm, 'stages').mockResolvedValue([stageOne, stageTwo])
+    const boardAPI = vi.spyOn(api.crm, 'opportunityBoard').mockResolvedValue(board)
+    vi.spyOn(api.crm, 'moveOpportunity').mockResolvedValue({ ...item, stage_id: stageTwo.id, version: 4 })
+    vi.spyOn(api.customization, 'views').mockResolvedValue([])
+    vi.spyOn(api.workspaces, 'candidates').mockResolvedValue([])
+    vi.spyOn(api.contacts, 'list').mockResolvedValue({ items: [], page: 1, limit: 100, total: 0 })
+    renderPage()
+    expect(await screen.findByText('Acme expansion')).toBeInTheDocument()
+    const destination = screen.getByRole('region', { name: 'Stage Qualified' })
+    fireEvent.dragOver(destination)
+    fireEvent.drop(destination, { dataTransfer: { getData: () => item.id } })
+    await waitFor(() => expect(api.crm.moveOpportunity).toHaveBeenCalledWith(item.id, {
+      pipeline_id: item.pipeline_id, stage_id: stageTwo.id, version: item.version,
+    }))
+    await waitFor(() => expect(boardAPI.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('fetches new records when navigating from list page 1 to page 2', async () => {
+    vi.spyOn(api.crm, 'pipelines').mockResolvedValue([board.pipeline])
+    vi.spyOn(api.crm, 'stages').mockResolvedValue([stageOne, stageTwo])
+    vi.spyOn(api.crm, 'opportunities').mockImplementation(async params => ({
+      items: [{ ...item, id: Number(params.page) === 2 ? 'page-2-id' : 'page-1-id', title: Number(params.page) === 2 ? 'Page two deal' : 'Page one deal' }],
+      page: Number(params.page) || 1,
+      limit: 25,
+      total: 30,
+    }))
+    vi.spyOn(api.customization, 'views').mockResolvedValue([])
+    vi.spyOn(api.workspaces, 'candidates').mockResolvedValue([])
+    vi.spyOn(api.contacts, 'list').mockResolvedValue({ items: [], page: 1, limit: 100, total: 0 })
+    renderPage('/crm/opportunities?pipeline_id=pipeline-1&view=list&page=1')
+    expect(await screen.findByText('Page one deal')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('Page two deal')).toBeInTheDocument()
+    await waitFor(() => expect(api.crm.opportunities).toHaveBeenCalledWith(expect.objectContaining({ page: 2 })))
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }))
+    expect(await screen.findByText('Page one deal')).toBeInTheDocument()
+  })
+
 })
