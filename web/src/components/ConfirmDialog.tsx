@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Button } from './ui'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -12,6 +13,14 @@ type ConfirmDialogProps = {
 
 export function ConfirmDialog({ open, title, description, confirmLabel, destructive = false, onCancel, onConfirm }: ConfirmDialogProps) {
   const [pending, setPending] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !pending) onCancel()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel, open, pending])
   if (!open) return null
 
   const confirm = async () => {
@@ -24,12 +33,12 @@ export function ConfirmDialog({ open, title, description, confirmLabel, destruct
   }
 
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onCancel() }}>
-    <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+    <div role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-xl">
       <h2 id="confirm-dialog-title" className="text-lg font-semibold text-foreground">{title}</h2>
-      <div className="mt-2 text-sm text-muted-foreground">{description}</div>
+      <div id="confirm-dialog-description" className="mt-2 text-sm text-muted-foreground">{description}</div>
       <div className="mt-6 flex justify-end gap-3">
-        <button type="button" onClick={onCancel} disabled={pending} className="rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50">Cancel</button>
-        <button type="button" onClick={() => void confirm()} disabled={pending} className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${destructive ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'}`}>{pending ? 'Working…' : confirmLabel}</button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>Cancel</Button>
+        <Button type="button" variant={destructive ? 'destructive' : 'primary'} onClick={() => void confirm()} disabled={pending}>{pending ? 'Working…' : confirmLabel}</Button>
       </div>
     </div>
   </div>

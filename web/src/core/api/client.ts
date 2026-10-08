@@ -2,6 +2,14 @@ import type { EntityMetadata, HealthResponse, ModuleMetadata, PermissionMetadata
 import type { AuthResponse, CurrentUser, Permission } from '../../framework/auth/types'
 
 const baseURL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const sessionExpiryReloadKey = 'apexvoid.session_expiry_reload'
+
+function reloadAfterSessionExpiry(path: string) {
+  const bootstrapAuthPaths = ['/api/v1/auth/login', '/api/v1/auth/me', '/api/v1/auth/refresh']
+  if (bootstrapAuthPaths.includes(path) || window.sessionStorage.getItem(sessionExpiryReloadKey)) return
+  window.sessionStorage.setItem(sessionExpiryReloadKey, '1')
+  window.location.reload()
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
@@ -11,6 +19,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   const response = await fetch(`${baseURL}${path}`, { ...options, headers, credentials: 'include' })
   if (!response.ok) {
+    if (response.status === 401) reloadAfterSessionExpiry(path)
     let message = `API request failed with status ${response.status}`
     try { const body = await response.json() as { error?: { message?: string } }; message = body.error?.message ?? message } catch { /* keep status message */ }
     const error = new Error(message) as Error & { status?: number }

@@ -18,6 +18,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const applyAuth = useCallback(async (response: { user: CurrentUser; permissions?: string[] }) => {
     if (identityRef.current !== null && identityRef.current !== response.user.id) await clearIdentityCache()
+    window.sessionStorage.removeItem('apexvoid.session_expiry_reload')
     identityRef.current = response.user.id
     setUser(response.user)
     setPlatformPermissions(response.permissions ?? [])
