@@ -5,6 +5,7 @@ import { useWorkspace } from '../../../core/workspace/context'
 import { userWorkspaceQueryKey } from '../../../core/workspace/query'
 import { useAuth } from '../../../core/auth/context'
 import { ConfirmDialog } from '../../../components/ConfirmDialog'
+import { Card, EmptyState, LoadingState, PageContainer, PageHeader } from '../../../components/ui'
 
 function MemberRoleEditor({ member, roles, userID, onError }: { member: Membership; roles: WorkspaceRole[]; userID?: string; onError: (message: string) => void }) {
   const queryClient = useQueryClient()
@@ -87,22 +88,20 @@ export function MembersPage() {
     }
   }
 
-  if (!canRead) return <section><h1 className="text-3xl font-semibold">Members</h1><p className="mt-3 text-muted-foreground">You do not have permission to view workspace members.</p></section>
-  return <div>
-    <p className="mb-3 text-sm font-medium text-primary">Settings</p>
-    <h1 className="text-3xl font-semibold tracking-tight">Members</h1>
-    <p className="mt-3 text-muted-foreground">Manage who can work in this workspace and what they can access.</p>
-    {canAdd && <div className="mt-8 rounded-2xl border border-border bg-card p-6">
+  if (!canRead) return <PageContainer variant="settings"><PageHeader eyebrow="Settings" title="Members" description="You do not have permission to view workspace members." /></PageContainer>
+  return <PageContainer variant="settings">
+    <PageHeader eyebrow="Settings" title="Members" description="Manage who can work in this workspace and what they can access." />
+    {canAdd && <Card className="mb-4 p-5">
       <div className="flex flex-col gap-3 md:flex-row"><select aria-label="Select a user to add" value={selectedUser} onChange={event => setSelectedUser(event.target.value)} className="flex-1 rounded-lg border border-border bg-background px-3 py-3 text-sm text-card-foreground outline-none focus:border-primary"><option value="">Select an existing user…</option>{(users.data ?? []).filter(user => !(members.data ?? []).some(member => member.user_id === user.id)).map(user => <option key={user.id} value={user.id}>{user.display_name} · {user.email}</option>)}</select><button onClick={() => void add()} disabled={!selectedUser} className="rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">Add member</button></div>
       {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-    </div>}
-    <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card">
+    </Card>}
+    <Card className="overflow-hidden">
       <div className="hidden grid-cols-[1.1fr_1.2fr_0.8fr_1.6fr_0.5fr] gap-4 border-b border-border px-6 py-4 text-xs uppercase tracking-wider text-muted-foreground/70 md:grid"><span>Name</span><span>Email</span><span>Status</span><span>Roles</span><span /></div>
-      {members.isLoading && <div className="px-6 py-12 text-center text-sm text-muted-foreground">Loading members…</div>}
+      {members.isLoading && <LoadingState label="Loading members…" />}
       {(members.data ?? []).map(member => <div key={member.id} className="grid gap-3 border-b border-border px-6 py-5 last:border-0 md:grid-cols-[1.1fr_1.2fr_0.8fr_1.6fr_0.5fr] md:items-center md:gap-4"><div><p className="font-medium text-card-foreground">{member.display_name}</p><p className="text-xs text-muted-foreground/70 md:hidden">{member.email}</p></div><span className="hidden text-sm text-muted-foreground md:block">{member.email}</span>{canUpdate ? <select value={member.status} onChange={event => void changeStatus(member, event.target.value)} className="w-fit rounded-lg border border-border bg-background px-2 py-2 text-xs text-card-foreground"><option value="active">Active</option><option value="suspended">Suspended</option></select> : <span className="text-xs text-muted-foreground">{member.status}</span>}{canAssign && <MemberRoleEditor member={member} roles={roles.data ?? []} userID={userID} onError={setError} />}{canRemove && <button onClick={() => setPendingAction({ type: 'remove', member })} className="text-left text-xs text-destructive hover:text-destructive">Remove</button>}</div>)}
-      {members.data?.length === 0 && <div className="px-6 py-12 text-center"><p className="font-medium text-foreground">No team members yet</p><p className="mt-2 text-sm text-muted-foreground">Select an existing user above to give them access to this workspace.</p></div>}
-    </div>
+      {members.data?.length === 0 && <EmptyState title="No team members yet" description="Select an existing user above to give them access to this workspace." />}
+    </Card>
     <ConfirmDialog open={pendingAction?.type === 'remove'} title="Remove workspace member?" description="This removes the member’s access to the current workspace. Their account and access to other workspaces are not affected." confirmLabel="Remove member" destructive onCancel={() => setPendingAction(null)} onConfirm={confirmAction} />
     <ConfirmDialog open={pendingAction?.type === 'suspend'} title="Suspend workspace member?" description="The member will lose access to this workspace until they are activated again. This action is blocked when it would remove the last workspace administrator." confirmLabel="Suspend member" destructive onCancel={() => setPendingAction(null)} onConfirm={confirmAction} />
-  </div>
+  </PageContainer>
 }
