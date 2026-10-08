@@ -176,14 +176,18 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if lead.Source != "web" || lead.CustomValues["segment"] != "mid" {
 		t.Fatalf("sparse lead patch erased data: %#v", lead)
 	}
-	admin.must("PATCH", "/api/v1/crm/leads/"+lead.ID, workspaceID, map[string]any{"version": lead.Version, "custom_values": map[string]any{"segment": nil}}, &lead, http.StatusOK)
+	var clearedLead crmLead
+	admin.must("PATCH", "/api/v1/crm/leads/"+lead.ID, workspaceID, map[string]any{"version": lead.Version, "custom_values": map[string]any{"segment": nil}}, &clearedLead, http.StatusOK)
+	lead = clearedLead
 	if _, exists := lead.CustomValues["segment"]; exists {
 		t.Fatalf("cleared custom field is still present: %#v", lead.CustomValues)
 	}
 	if lead.CustomValues["annual_revenue"] != 125000.5 {
 		t.Fatalf("clearing one custom field removed unrelated values: %#v", lead.CustomValues)
 	}
-	admin.must("GET", "/api/v1/crm/leads/"+lead.ID, workspaceID, nil, &lead, http.StatusOK)
+	var reloadedLead crmLead
+	admin.must("GET", "/api/v1/crm/leads/"+lead.ID, workspaceID, nil, &reloadedLead, http.StatusOK)
+	lead = reloadedLead
 	if _, exists := lead.CustomValues["segment"]; exists {
 		t.Fatal("cleared custom field was restored after reload")
 	}
