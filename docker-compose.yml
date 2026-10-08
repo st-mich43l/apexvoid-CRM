@@ -24,6 +24,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-apexvoid}:${POSTGRES_PASSWORD:-apexvoid}@postgres:5432/${POSTGRES_DB:-apexvoid}?sslmode=disable
     ports:
       - "${BACKEND_PORT:-6868}:6868"
+    volumes:
+      - contacts-data:/var/lib/apexvoid/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,3 +54,4 @@ services:
 volumes:
   postgres-data:
   web-node-modules:
+  contacts-data:
