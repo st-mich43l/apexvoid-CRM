@@ -48,8 +48,7 @@ func (s *Service) create(ctx context.Context, w, u uuid.UUID, t domain.Template,
 		}
 		for _, x := range items {
 			if strings.EqualFold(x.Name, name) {
-				out = x
-				return nil
+				return domain.ErrConflict
 			}
 		}
 		now := time.Now().UTC()
@@ -90,11 +89,34 @@ func (s *Service) AddStage(ctx context.Context, w, p uuid.UUID, key, name string
 		if e != nil {
 			return e
 		}
-		out = domain.Stage{ID: uuid.New(), WorkspaceID: w, PipelineID: p, Key: slug(key), Name: name, Category: domain.StageOpen, Position: len(st), Probability: prob, Active: true, Version: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+		if _, e = s.r.GetPipeline(c, w, p); e != nil {
+			return e
+		}
+		// Renumber first: the repository moves active stages to a collision-free
+		// temporary range before applying the final sequence.
+		order := make([]uuid.UUID, 0, len(st)+1)
+		for _, item := range st {
+			if item.Category == domain.StageOpen {
+				order = append(order, item.ID)
+			}
+		}
+		out = domain.Stage{ID: uuid.New(), WorkspaceID: w, PipelineID: p, Key: slug(key), Name: name, Category: domain.StageOpen, Position: len(order), Probability: prob, Active: true, Version: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 		if e = out.Validate(); e != nil {
 			return e
 		}
-		return s.r.CreateStages(c, []domain.Stage{out})
+		if e = s.r.SetTemporaryStagePositions(c, w, p); e != nil {
+			return e
+		}
+		if e = s.r.CreateStages(c, []domain.Stage{out}); e != nil {
+			return e
+		}
+		order = append(order, out.ID)
+		for _, item := range st {
+			if item.Category != domain.StageOpen {
+				order = append(order, item.ID)
+			}
+		}
+		return s.r.SetStagePositions(c, w, p, order)
 	})
 	return out, e
 }
