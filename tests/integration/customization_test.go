@@ -22,12 +22,12 @@ func TestCustomizationManagementAndTenantIsolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	application, err := app.Bootstrap(ctx, config.Config{
-		App: config.AppConfig{Name: "customization-test", Environment: "test"},
-		Server: config.ServerConfig{Address: ":0"},
-		Database: config.DatabaseConfig{URL: url, MaxConns: 10, MinConns: 1},
-		Auth: config.AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 24 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
+		App:       config.AppConfig{Name: "customization-test", Environment: "test"},
+		Server:    config.ServerConfig{Address: ":0"},
+		Database:  config.DatabaseConfig{URL: url, MaxConns: 10, MinConns: 1},
+		Auth:      config.AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 24 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
 		Bootstrap: config.BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
-		Logging: config.LoggingConfig{Level: "ERROR"},
+		Logging:   config.LoggingConfig{Level: "ERROR"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestCustomizationManagementAndTenantIsolation(t *testing.T) {
 	admin.must("POST", "/api/v1/contacts/fields", primary, map[string]any{"key": "lifetime_value", "label": "Lifetime Value", "type": "number"}, nil, http.StatusCreated)
 	var contactSchema struct {
 		Fields []struct {
-			Key string `json:"key"`
+			Key  string `json:"key"`
 			Type string `json:"type"`
 		} `json:"fields"`
 	}
@@ -66,19 +66,21 @@ func TestCustomizationManagementAndTenantIsolation(t *testing.T) {
 		t.Fatalf("legacy Contacts field types not mapped: %#v", mapped)
 	}
 
-	var goodSection, otherEntitySection struct { ID string `json:"id"` }
+	var goodSection, otherEntitySection struct {
+		ID string `json:"id"`
+	}
 	admin.must("POST", "/api/v1/customization/sections", primary, map[string]any{"entity": "customization.saved_view", "name": "Details"}, &goodSection, http.StatusCreated)
 	admin.must("POST", "/api/v1/customization/sections", primary, map[string]any{"entity": "customization.field_definition", "name": "Other Entity"}, &otherEntitySection, http.StatusCreated)
 
 	var customField struct {
-		ID string `json:"id"`
-		Label string `json:"label"`
-		Required bool `json:"required"`
-		DefaultValue string `json:"default_value"`
-		Options []string `json:"options"`
-		Active bool `json:"active"`
-		Visible bool `json:"visible"`
-		SectionID string `json:"section_id"`
+		ID           string   `json:"id"`
+		Label        string   `json:"label"`
+		Required     bool     `json:"required"`
+		DefaultValue string   `json:"default_value"`
+		Options      []string `json:"options"`
+		Active       bool     `json:"active"`
+		Visible      bool     `json:"visible"`
+		SectionID    string   `json:"section_id"`
 	}
 	admin.must("POST", "/api/v1/customization/fields", primary, map[string]any{
 		"entity": "customization.saved_view", "key": "customer_tier", "label": "Customer Tier",
@@ -97,24 +99,33 @@ func TestCustomizationManagementAndTenantIsolation(t *testing.T) {
 	admin.must("PATCH", "/api/v1/customization/fields/"+customField.ID, secondary.ID, map[string]any{"label": "Cross-tenant"}, nil, http.StatusNotFound)
 	admin.must("PATCH", "/api/v1/customization/fields/"+customField.ID, primary, map[string]any{"active": false}, &updated, http.StatusOK)
 
-	var inventory []struct { ID string `json:"id"`; Active bool `json:"active"` }
+	var inventory []struct {
+		ID     string `json:"id"`
+		Active bool   `json:"active"`
+	}
 	admin.must("GET", "/api/v1/customization/fields/customization.saved_view", primary, nil, &inventory, http.StatusOK)
 	if len(inventory) != 1 || inventory[0].ID != customField.ID || inventory[0].Active {
 		t.Fatalf("inactive field missing from management inventory: %#v", inventory)
 	}
-	var otherInventory []struct { ID string `json:"id"` }
+	var otherInventory []struct {
+		ID string `json:"id"`
+	}
 	admin.must("GET", "/api/v1/customization/fields/customization.saved_view", secondary.ID, nil, &otherInventory, http.StatusOK)
 	if len(otherInventory) != 0 {
 		t.Fatalf("workspace isolation failed: %#v", otherInventory)
 	}
 	admin.must("PATCH", "/api/v1/customization/fields/"+customField.ID, primary, map[string]any{"active": true}, &updated, http.StatusOK)
 
-	var view struct { ID string `json:"id"` }
+	var view struct {
+		ID string `json:"id"`
+	}
 	admin.must("POST", "/api/v1/customization/views", primary, map[string]any{
 		"entity": "customization.saved_view", "name": "My Saved View", "columns": []string{"name"},
 		"filters": []any{}, "sort_field": "name", "sort_direction": "asc",
 	}, &view, http.StatusCreated)
-	var views []struct { ID string `json:"id"` }
+	var views []struct {
+		ID string `json:"id"`
+	}
 	admin.must("GET", "/api/v1/customization/views/customization.saved_view", primary, nil, &views, http.StatusOK)
 	if len(views) != 1 || views[0].ID != view.ID {
 		t.Fatalf("created view not visible to owner: %#v", views)

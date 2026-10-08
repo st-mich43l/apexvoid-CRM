@@ -117,15 +117,15 @@ func (h *Handler) listFields(w http.ResponseWriter, r *http.Request) {
 
 // PATCH deliberately accepts only editable attributes, never entity/key/type.
 type fieldPatchRequest struct {
-	Label *string `json:"label"`
-	Description *string `json:"description"`
-	Required *bool `json:"required"`
+	Label        *string         `json:"label"`
+	Description  *string         `json:"description"`
+	Required     *bool           `json:"required"`
 	DefaultValue json.RawMessage `json:"default_value"`
-	Options *[]string `json:"options"`
-	Visible *bool `json:"visible"`
-	DisplayOrder *int `json:"display_order"`
-	SectionID json.RawMessage `json:"section_id"`
-	Active *bool `json:"active"`
+	Options      *[]string       `json:"options"`
+	Visible      *bool           `json:"visible"`
+	DisplayOrder *int            `json:"display_order"`
+	SectionID    json.RawMessage `json:"section_id"`
+	Active       *bool           `json:"active"`
 }
 
 func (h *Handler) updateField(w http.ResponseWriter, r *http.Request) {

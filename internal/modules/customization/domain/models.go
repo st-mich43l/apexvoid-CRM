@@ -46,17 +46,17 @@ type RuntimeField struct {
 
 // FieldPatch uses pointers to distinguish omitted properties from explicit values.
 type FieldPatch struct {
-	Label *string
-	Description *string
-	Required *bool
+	Label        *string
+	Description  *string
+	Required     *bool
 	DefaultValue any
-	SetDefault bool
-	Options *[]string
-	Visible *bool
+	SetDefault   bool
+	Options      *[]string
+	Visible      *bool
 	DisplayOrder *int
-	SectionID *uuid.UUID
-	SetSection bool
-	Active *bool
+	SectionID    *uuid.UUID
+	SetSection   bool
+	Active       *bool
 }
 
 type FormSection struct {

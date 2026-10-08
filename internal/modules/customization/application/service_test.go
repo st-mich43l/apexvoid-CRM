@@ -8,10 +8,10 @@ import (
 
 func TestContactLegacyFieldTypeMapping(t *testing.T) {
 	cases := map[string]field.Type{
-		"text": field.String,
-		"number": field.Decimal,
-		"boolean": field.Boolean,
-		"date": field.Date,
+		"text":      field.String,
+		"number":    field.Decimal,
+		"boolean":   field.Boolean,
+		"date":      field.Date,
 		"selection": field.Enum,
 	}
 	for legacy, expected := range cases {
