@@ -2,6 +2,7 @@ package domain
 
 import (
 	"testing"
+	"math"
 
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/field"
 )
@@ -36,5 +37,21 @@ func TestValidValue(t *testing.T) {
 	}
 	if !ValidValue(field.Enum, []string{"new", "qualified"}, "qualified") {
 		t.Fatal("expected allowed enum value to be valid")
+	}
+}
+
+func TestIntegerRequiresWholeFiniteSafeNumber(t *testing.T) {
+	for _, value := range []any{1.25, -0.1, 9007199254740992.0, 1e100} {
+		if ValidValue(field.Integer, nil, value) {
+			t.Errorf("integer field accepted invalid value %v", value)
+		}
+	}
+	for _, value := range []any{0.0, -3.0, 28.0, 9007199254740991.0} {
+		if !ValidValue(field.Integer, nil, value) {
+			t.Errorf("integer field rejected valid value %v", value)
+		}
+	}
+	if ValidValue(field.Decimal, nil, math.Inf(1)) || ValidValue(field.Decimal, nil, math.NaN()) {
+		t.Fatal("decimal must reject non-finite values")
 	}
 }
