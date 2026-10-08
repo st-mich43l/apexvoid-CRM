@@ -143,7 +143,7 @@ func (s FormSection) Validate() error {
 	return nil
 }
 
-func (v SavedView) Validate(fieldNames map[string]struct{}) error {
+func (v SavedView) Validate(fields map[string]EffectiveField) error {
 	if strings.TrimSpace(v.Name) == "" {
 		return fmt.Errorf("view name is required")
 	}
@@ -151,13 +151,13 @@ func (v SavedView) Validate(fieldNames map[string]struct{}) error {
 		return fmt.Errorf("sort direction is invalid")
 	}
 	if v.SortField != "" {
-		if _, ok := fieldNames[v.SortField]; !ok {
+		if _, ok := fields[v.SortField]; !ok {
 			return fmt.Errorf("sort field is not available")
 		}
 	}
 	seen := map[string]struct{}{}
 	for _, column := range v.Columns {
-		if _, ok := fieldNames[column]; !ok {
+		if _, ok := fields[column]; !ok {
 			return fmt.Errorf("view column is not available")
 		}
 		if _, duplicate := seen[column]; duplicate {
@@ -166,7 +166,8 @@ func (v SavedView) Validate(fieldNames map[string]struct{}) error {
 		seen[column] = struct{}{}
 	}
 	for _, filter := range v.Filters {
-		if _, ok := fieldNames[filter.Field]; !ok {
+		definition, ok := fields[filter.Field]
+		if !ok {
 			return fmt.Errorf("filter field is not available")
 		}
 		switch filter.Operator {
@@ -174,8 +175,56 @@ func (v SavedView) Validate(fieldNames map[string]struct{}) error {
 		default:
 			return fmt.Errorf("filter operator is invalid")
 		}
+		if filter.Operator != "is_empty" && !validFilterValue(definition, filter.Operator, filter.Value) {
+			return fmt.Errorf("filter value is invalid for field %q", filter.Field)
+		}
 	}
 	return nil
+}
+
+func validFilterValue(definition EffectiveField, operator string, value any) bool {
+	if operator == "contains" && definition.Type != field.String && definition.Type != field.Text {
+		return false
+	}
+	if operator == "in" {
+		values, ok := value.([]any)
+		if !ok {
+			if strings, ok := value.([]string); ok {
+				values = make([]any, len(strings))
+				for i := range strings {
+					values[i] = strings[i]
+				}
+			} else {
+				return false
+			}
+		}
+		if len(values) == 0 {
+			return false
+		}
+		for _, item := range values {
+			if !validFieldValue(definition, item) {
+				return false
+			}
+		}
+		return true
+	}
+	return validFieldValue(definition, value)
+}
+
+func validFieldValue(definition EffectiveField, value any) bool {
+	if value == nil {
+		return false
+	}
+	if definition.Type == field.UUID || definition.Type == field.RelationField {
+		text, ok := value.(string)
+		_, err := uuid.Parse(text)
+		return ok && err == nil
+	}
+	if definition.Type == field.Enum && len(definition.Options) == 0 {
+		text, ok := value.(string)
+		return ok && text != ""
+	}
+	return ValidValue(definition.Type, definition.Options, value)
 }
 
 func ValidValue(kind field.Type, options []string, value any) bool {

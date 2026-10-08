@@ -71,6 +71,21 @@ func TestCustomizationManagementAndTenantIsolation(t *testing.T) {
 	}
 	admin.must("POST", "/api/v1/customization/sections", primary, map[string]any{"entity": "customization.saved_view", "name": "Details"}, &goodSection, http.StatusCreated)
 	admin.must("POST", "/api/v1/customization/sections", primary, map[string]any{"entity": "customization.field_definition", "name": "Other Entity"}, &otherEntitySection, http.StatusCreated)
+	var sections []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	admin.must("GET", "/api/v1/customization/sections/customization.saved_view", primary, nil, &sections, http.StatusOK)
+	if len(sections) != 1 || sections[0].ID != goodSection.ID {
+		t.Fatalf("created section not visible to owner: %#v", sections)
+	}
+	var updatedSection struct {
+		Name string `json:"name"`
+	}
+	admin.must("PATCH", "/api/v1/customization/sections/"+goodSection.ID, primary, map[string]any{"entity": "customization.saved_view", "name": "Overview", "description": "Primary details", "display_order": 1}, &updatedSection, http.StatusOK)
+	if updatedSection.Name != "Overview" {
+		t.Fatalf("section update did not persist: %#v", updatedSection)
+	}
 
 	var customField struct {
 		ID           string   `json:"id"`
@@ -133,6 +148,15 @@ func TestCustomizationManagementAndTenantIsolation(t *testing.T) {
 	admin.must("GET", "/api/v1/customization/views/customization.saved_view", secondary.ID, nil, &views, http.StatusOK)
 	if len(views) != 0 {
 		t.Fatalf("views leaked across workspaces: %#v", views)
+	}
+	admin.must("PATCH", "/api/v1/customization/views/customization.saved_view/"+view.ID, primary, map[string]any{
+		"entity": "customization.saved_view", "name": "Updated Saved View", "columns": []string{"name"},
+		"filters": []any{map[string]any{"field": "name", "operator": "contains", "value": "updated"}}, "sort_field": "name", "sort_direction": "desc",
+	}, &view, http.StatusOK)
+	admin.must("DELETE", "/api/v1/customization/views/customization.saved_view/"+view.ID, primary, nil, nil, http.StatusNoContent)
+	admin.must("GET", "/api/v1/customization/views/customization.saved_view", primary, nil, &views, http.StatusOK)
+	if len(views) != 0 {
+		t.Fatalf("deleted saved view remained visible: %#v", views)
 	}
 
 	// Nested event hooks are discarded on rollback and run only after outermost commit.

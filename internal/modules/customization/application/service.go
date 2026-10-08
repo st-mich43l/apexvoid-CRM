@@ -200,6 +200,29 @@ func (s *Service) CreateSection(ctx context.Context, item domain.FormSection) (d
 	return item, nil
 }
 
+func (s *Service) ListSections(ctx context.Context, workspaceID uuid.UUID, entityName string) ([]domain.FormSection, error) {
+	if _, err := s.workspaceEntity(entityName); err != nil {
+		return nil, err
+	}
+	return s.repository.ListSections(ctx, workspaceID, entityName)
+}
+
+func (s *Service) UpdateSection(ctx context.Context, item domain.FormSection) (domain.FormSection, error) {
+	if _, err := s.workspaceEntity(item.Entity); err != nil {
+		return domain.FormSection{}, err
+	}
+	item.Name = strings.TrimSpace(item.Name)
+	item.Description = strings.TrimSpace(item.Description)
+	item.UpdatedAt = time.Now().UTC()
+	if err := item.Validate(); err != nil {
+		return domain.FormSection{}, err
+	}
+	if err := s.withTransaction(ctx, func(tx context.Context) error { return s.repository.UpdateSection(tx, &item) }); err != nil {
+		return domain.FormSection{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) ListViews(ctx context.Context, workspaceID, userID uuid.UUID, entityName string) ([]domain.SavedView, error) {
 	if _, err := s.workspaceEntity(entityName); err != nil {
 		return nil, err
@@ -220,13 +243,62 @@ func (s *Service) CreateView(ctx context.Context, item domain.SavedView) (domain
 	}
 	item.CreatedAt = time.Now().UTC()
 	item.UpdatedAt = item.CreatedAt
-	if err := item.Validate(fieldNames(schema)); err != nil {
+	if err := item.Validate(fieldMetadata(schema)); err != nil {
 		return domain.SavedView{}, err
 	}
 	if err := s.withTransaction(ctx, func(tx context.Context) error { return s.repository.CreateView(tx, &item) }); err != nil {
 		return domain.SavedView{}, err
 	}
 	return item, nil
+}
+
+func (s *Service) UpdateView(ctx context.Context, workspaceID, userID, id uuid.UUID, entityName string, input domain.SavedView) (domain.SavedView, error) {
+	views, err := s.repository.ListViews(ctx, workspaceID, userID, entityName)
+	if err != nil {
+		return domain.SavedView{}, err
+	}
+	var current domain.SavedView
+	for _, view := range views {
+		if view.ID == id {
+			current = view
+			break
+		}
+	}
+	if current.ID == uuid.Nil {
+		return domain.SavedView{}, domain.ErrNotFound
+	}
+	schema, err := s.EffectiveSchema(ctx, workspaceID, entityName)
+	if err != nil {
+		return domain.SavedView{}, err
+	}
+	current.Name, current.Shared, current.Filters, current.Columns = strings.TrimSpace(input.Name), input.Shared, input.Filters, input.Columns
+	current.SortField, current.SortDirection = input.SortField, strings.ToLower(strings.TrimSpace(input.SortDirection))
+	if current.SortDirection == "" {
+		current.SortDirection = "asc"
+	}
+	current.UpdatedAt = time.Now().UTC()
+	if err := current.Validate(fieldMetadata(schema)); err != nil {
+		return domain.SavedView{}, err
+	}
+	if err := s.withTransaction(ctx, func(tx context.Context) error { return s.repository.UpdateView(tx, &current) }); err != nil {
+		return domain.SavedView{}, err
+	}
+	return current, nil
+}
+
+func (s *Service) DeleteView(ctx context.Context, workspaceID, userID, id uuid.UUID, entityName string) error {
+	views, err := s.repository.ListViews(ctx, workspaceID, userID, entityName)
+	if err != nil {
+		return err
+	}
+	for _, view := range views {
+		if view.ID == id {
+			return s.withTransaction(ctx, func(tx context.Context) error {
+				return s.repository.DeleteView(tx, workspaceID, entityName, id, view.OwnerUserID)
+			})
+		}
+	}
+	return domain.ErrNotFound
 }
 
 func (s *Service) ValidateCustomValues(ctx context.Context, workspaceID uuid.UUID, entityName string, values map[string]any) error {
@@ -272,10 +344,10 @@ func toEffective(item domain.RuntimeField) domain.EffectiveField {
 	return domain.EffectiveField{Key: item.Key, Label: item.Label, Type: item.Type, Description: item.Description, Required: item.Required, Source: domain.FieldSourceCustom, DefaultValue: item.DefaultValue, Options: append([]string{}, item.Options...), Visible: item.Visible && item.Active, DisplayOrder: item.DisplayOrder, SectionID: item.SectionID}
 }
 
-func fieldNames(schema domain.EffectiveSchema) map[string]struct{} {
-	result := make(map[string]struct{}, len(schema.Fields))
+func fieldMetadata(schema domain.EffectiveSchema) map[string]domain.EffectiveField {
+	result := make(map[string]domain.EffectiveField, len(schema.Fields))
 	for _, item := range schema.Fields {
-		result[item.Key] = struct{}{}
+		result[item.Key] = item
 	}
 	return result
 }

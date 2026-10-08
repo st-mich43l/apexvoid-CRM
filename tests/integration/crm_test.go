@@ -79,11 +79,14 @@ type crmLead struct {
 	CustomValues           map[string]any `json:"custom_values"`
 }
 type crmOpportunity struct {
-	ID             string `json:"id"`
-	Version        int    `json:"version"`
-	OriginalLeadID string `json:"original_lead_id"`
-	ContactID      string `json:"contact_id"`
-	Description    string `json:"description"`
+	ID                string         `json:"id"`
+	Version           int            `json:"version"`
+	PipelineID        string         `json:"pipeline_id"`
+	OriginalLeadID    string         `json:"original_lead_id"`
+	ContactID         string         `json:"contact_id"`
+	Description       string         `json:"description"`
+	ExpectedCloseDate *string        `json:"expected_close_date"`
+	CustomValues      map[string]any `json:"custom_values"`
 }
 
 func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
@@ -126,6 +129,15 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if openStage == "" {
 		t.Fatal("pipeline did not create an open stage")
 	}
+	var blankPipeline crmPipeline
+	admin.must("POST", "/api/v1/crm/pipelines/initialize", workspaceID, map[string]string{"template": "blank"}, &blankPipeline, http.StatusCreated)
+	var blankStages []crmStage
+	admin.must("GET", "/api/v1/crm/pipelines/"+blankPipeline.ID+"/stages", workspaceID, nil, &blankStages, http.StatusOK)
+	for _, stage := range blankStages {
+		if stage.Category == "open" {
+			admin.must("POST", "/api/v1/crm/pipelines/"+blankPipeline.ID+"/stages/"+stage.ID+"/archive", workspaceID, nil, nil, http.StatusBadRequest)
+		}
+	}
 	var addedStage crmStage
 	admin.must("POST", "/api/v1/crm/pipelines/"+pipeline.ID+"/stages", workspaceID, map[string]any{"key": "discovery", "name": "Discovery", "probability": 20}, &addedStage, http.StatusCreated)
 	admin.must("PATCH", "/api/v1/crm/pipelines/"+pipeline.ID+"/stages/"+addedStage.ID, workspaceID, map[string]any{"name": "Discovery complete", "description": "A qualified discovery", "color": "#0ea5e9", "probability": 30, "version": addedStage.Version}, &addedStage, http.StatusOK)
@@ -140,8 +152,26 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	// System-managed lifecycle fields are rejected by strict create DTOs.
 	admin.must("POST", "/api/v1/crm/leads", workspaceID, map[string]any{"title": "Forged", "status": "converted"}, nil, http.StatusBadRequest)
 	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.lead", "key": "segment", "label": "Segment", "type": "enum", "options": []string{"mid", "enterprise"}}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.lead", "key": "annual_revenue", "label": "Annual revenue", "type": "decimal"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.lead", "key": "employee_count", "label": "Employee count", "type": "integer"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.lead", "key": "priority", "label": "Priority", "type": "boolean"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.lead", "key": "follow_up_date", "label": "Follow-up date", "type": "date"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.opportunity", "key": "forecast_score", "label": "Forecast score", "type": "decimal"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.opportunity", "key": "seat_count", "label": "Seat count", "type": "integer"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.opportunity", "key": "segment", "label": "Segment", "type": "enum", "options": []string{"mid", "enterprise"}}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.opportunity", "key": "priority", "label": "Priority", "type": "boolean"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/customization/fields", workspaceID, map[string]any{"entity": "crm.opportunity", "key": "follow_up_date", "label": "Follow-up date", "type": "date"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/crm/leads", workspaceID, map[string]any{"title": "Invalid numeric lead", "custom_values": map[string]any{"employee_count": 1.5}}, nil, http.StatusBadRequest)
+	admin.must("POST", "/api/v1/crm/leads", workspaceID, map[string]any{"title": "Invalid decimal lead", "custom_values": map[string]any{"annual_revenue": "not-a-number"}}, nil, http.StatusBadRequest)
+	admin.must("POST", "/api/v1/crm/leads", workspaceID, map[string]any{"title": "Invalid enum lead", "custom_values": map[string]any{"segment": "unknown"}}, nil, http.StatusBadRequest)
 	var lead crmLead
-	admin.must("POST", "/api/v1/crm/leads", workspaceID, map[string]any{"title": "Acme lead", "contact_name": "Existing Contact", "email": "existing@example.com", "source": "web", "custom_values": map[string]any{"segment": "mid"}}, &lead, http.StatusCreated)
+	admin.must("POST", "/api/v1/crm/leads", workspaceID, map[string]any{"title": "Acme lead", "contact_name": "Existing Contact", "email": "existing@example.com", "source": "web", "custom_values": map[string]any{"segment": "mid", "annual_revenue": 125000.5, "employee_count": 42, "priority": true, "follow_up_date": "2026-10-25"}}, &lead, http.StatusCreated)
+	if revenue, ok := lead.CustomValues["annual_revenue"].(float64); !ok || revenue != 125000.5 {
+		t.Fatalf("decimal custom value was not serialized as a number: %#v", lead.CustomValues["annual_revenue"])
+	}
+	if employees, ok := lead.CustomValues["employee_count"].(float64); !ok || employees != 42 || lead.CustomValues["priority"] != true || lead.CustomValues["follow_up_date"] != "2026-10-25" {
+		t.Fatalf("typed custom values were not preserved: %#v", lead.CustomValues)
+	}
 	admin.must("PATCH", "/api/v1/crm/leads/"+lead.ID, workspaceID, map[string]any{"version": lead.Version, "title": "Acme qualified"}, &lead, http.StatusOK)
 	if lead.Source != "web" || lead.CustomValues["segment"] != "mid" {
 		t.Fatalf("sparse lead patch erased data: %#v", lead)
@@ -157,6 +187,24 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if opportunity.OriginalLeadID != lead.ID || opportunity.ContactID != contact.ID {
 		t.Fatalf("opportunity conversion link was not persisted: %#v", opportunity)
 	}
+	var savedOpportunityView struct {
+		ID string `json:"id"`
+	}
+	admin.must("POST", "/api/v1/customization/views", workspaceID, map[string]any{
+		"entity": "crm.opportunity", "name": "Revenue pipeline opportunities", "columns": []string{"title", "pipeline_id"},
+		"filters": []map[string]any{{"field": "pipeline_id", "operator": "eq", "value": pipeline.ID}}, "sort_field": "title", "sort_direction": "asc",
+	}, &savedOpportunityView, http.StatusCreated)
+	var filteredOpportunities struct {
+		Items []crmOpportunity `json:"items"`
+	}
+	admin.must("GET", "/api/v1/crm/opportunities?pipeline_id="+pipeline.ID, workspaceID, nil, &filteredOpportunities, http.StatusOK)
+	if savedOpportunityView.ID == "" || len(filteredOpportunities.Items) != 1 || filteredOpportunities.Items[0].PipelineID != pipeline.ID {
+		t.Fatalf("saved-view filter did not map to the expected server filter: view=%#v records=%#v", savedOpportunityView, filteredOpportunities.Items)
+	}
+	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "custom_values": map[string]any{"forecast_score": 87.5, "seat_count": 12, "segment": "enterprise", "priority": true, "follow_up_date": "2026-11-01"}}, &opportunity, http.StatusOK)
+	if score, ok := opportunity.CustomValues["forecast_score"].(float64); !ok || score != 87.5 || opportunity.CustomValues["seat_count"] != float64(12) || opportunity.CustomValues["segment"] != "enterprise" || opportunity.CustomValues["priority"] != true || opportunity.CustomValues["follow_up_date"] != "2026-11-01" {
+		t.Fatalf("opportunity numeric custom values were not preserved: %#v", opportunity.CustomValues)
+	}
 	var history []struct {
 		EventType string `json:"event_type"`
 	}
@@ -170,6 +218,15 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if opportunity.Description != "Updated without moving stage" {
 		t.Fatalf("ordinary opportunity patch did not persist: %#v", opportunity)
 	}
+	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "expected_close_date": "2026-10-25"}, &opportunity, http.StatusOK)
+	if opportunity.ExpectedCloseDate == nil || *opportunity.ExpectedCloseDate != "2026-10-25" {
+		t.Fatalf("date-only opportunity value was not preserved: %#v", opportunity.ExpectedCloseDate)
+	}
+	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "expected_close_date": nil}, &opportunity, http.StatusOK)
+	if opportunity.ExpectedCloseDate != nil {
+		t.Fatalf("date-only opportunity value was not cleared: %#v", opportunity.ExpectedCloseDate)
+	}
+	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "expected_close_date": "2026-02-30"}, nil, http.StatusBadRequest)
 	var restrictedUser struct {
 		ID string `json:"id"`
 	}

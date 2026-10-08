@@ -52,9 +52,34 @@ type opportunityCreateRequest struct {
 	AssignedUserID    *uuid.UUID     `json:"assigned_user_id"`
 	ExpectedRevenue   string         `json:"expected_revenue"`
 	Currency          string         `json:"currency"`
-	ExpectedCloseDate *time.Time     `json:"expected_close_date"`
+	ExpectedCloseDate *dateOnly      `json:"expected_close_date"`
 	CustomValues      map[string]any `json:"custom_values"`
 }
+
+// dateOnly is the transport contract for business dates. It deliberately does
+// not accept timestamps, which avoids browser timezone shifts at the API edge.
+type dateOnly struct{ time.Time }
+
+func (d *dateOnly) UnmarshalJSON(raw []byte) error {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return err
+	}
+	d.Time = parsed
+	return nil
+}
+
+func dateOnlyValue(value *dateOnly) *time.Time {
+	if value == nil {
+		return nil
+	}
+	return &value.Time
+}
+
 type opportunityPatchRequest struct {
 	Version           int             `json:"version"`
 	Title             *string         `json:"title"`
@@ -133,6 +158,27 @@ func routeID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 func listOut[T any](w http.ResponseWriter, items []T, page, limit, total int) {
 	out(w, 200, map[string]any{"items": items, "page": page, "limit": limit, "total": total})
 }
+func opportunityOutput(item domain.Opportunity) map[string]any {
+	encoded, _ := json.Marshal(item)
+	result := map[string]any{}
+	_ = json.Unmarshal(encoded, &result)
+	if item.ExpectedCloseDate == nil {
+		result["expected_close_date"] = nil
+	} else {
+		result["expected_close_date"] = item.ExpectedCloseDate.Format("2006-01-02")
+	}
+	return result
+}
+func opportunityListOutput(items []domain.Opportunity) []map[string]any {
+	result := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		result = append(result, opportunityOutput(item))
+	}
+	return result
+}
+func writeOpportunity(w http.ResponseWriter, status int, item domain.Opportunity) {
+	out(w, status, opportunityOutput(item))
+}
 func nullableUUID(raw json.RawMessage) (*uuid.UUID, bool, error) {
 	if len(raw) == 0 {
 		return nil, false, nil
@@ -153,11 +199,11 @@ func nullableDate(raw json.RawMessage) (*time.Time, bool, error) {
 	if string(raw) == "null" {
 		return nil, true, nil
 	}
-	var value time.Time
+	var value dateOnly
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return nil, true, err
 	}
-	return &value, true, nil
+	return &value.Time, true, nil
 }
 func patchValues(raw json.RawMessage) (map[string]any, bool, error) {
 	if len(raw) == 0 {
@@ -317,7 +363,7 @@ func (h *Handler) convertLead(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	out(w, 201, item)
+	writeOpportunity(w, 201, item)
 }
 func (h *Handler) listOpportunities(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := ctx(r)
@@ -331,7 +377,7 @@ func (h *Handler) listOpportunities(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	listOut(w, items, p, l, total)
+	listOut(w, opportunityListOutput(items), p, l, total)
 }
 func (h *Handler) getOpportunity(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := ctx(r)
@@ -344,7 +390,7 @@ func (h *Handler) getOpportunity(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	out(w, 200, item)
+	writeOpportunity(w, 200, *item)
 }
 func (h *Handler) opportunityHistory(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := ctx(r)
@@ -365,13 +411,13 @@ func (h *Handler) createOpportunity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspace, actor := ctx(r)
-	item := domain.Opportunity{WorkspaceID: workspace, Title: body.Title, Description: body.Description, PipelineID: body.PipelineID, StageID: body.StageID, ContactID: body.ContactID, CompanyID: body.CompanyID, AssignedUserID: body.AssignedUserID, ExpectedRevenue: body.ExpectedRevenue, Currency: body.Currency, ExpectedCloseDate: body.ExpectedCloseDate, CustomValues: body.CustomValues, CreatedBy: actor, UpdatedBy: actor}
+	item := domain.Opportunity{WorkspaceID: workspace, Title: body.Title, Description: body.Description, PipelineID: body.PipelineID, StageID: body.StageID, ContactID: body.ContactID, CompanyID: body.CompanyID, AssignedUserID: body.AssignedUserID, ExpectedRevenue: body.ExpectedRevenue, Currency: body.Currency, ExpectedCloseDate: dateOnlyValue(body.ExpectedCloseDate), CustomValues: body.CustomValues, CreatedBy: actor, UpdatedBy: actor}
 	created, err := h.s.CreateOpportunity(r.Context(), item)
 	if err != nil {
 		fail(w, r, err)
 		return
 	}
-	out(w, 201, created)
+	writeOpportunity(w, 201, created)
 }
 func (h *Handler) updateOpportunity(w http.ResponseWriter, r *http.Request) {
 	var body opportunityPatchRequest
@@ -413,7 +459,7 @@ func (h *Handler) updateOpportunity(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	out(w, 200, updated)
+	writeOpportunity(w, 200, updated)
 }
 func (h *Handler) moveOpportunity(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -434,7 +480,7 @@ func (h *Handler) moveOpportunity(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	out(w, 200, item)
+	writeOpportunity(w, 200, item)
 }
 func (h *Handler) markWon(w http.ResponseWriter, r *http.Request)  { h.closeOpportunity(w, r, true) }
 func (h *Handler) markLost(w http.ResponseWriter, r *http.Request) { h.closeOpportunity(w, r, false) }
@@ -456,7 +502,7 @@ func (h *Handler) closeOpportunity(w http.ResponseWriter, r *http.Request, won b
 		fail(w, r, err)
 		return
 	}
-	out(w, 200, item)
+	writeOpportunity(w, 200, item)
 }
 func (h *Handler) reopenOpportunity(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -476,5 +522,5 @@ func (h *Handler) reopenOpportunity(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	out(w, 200, item)
+	writeOpportunity(w, 200, item)
 }

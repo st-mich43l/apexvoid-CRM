@@ -176,8 +176,33 @@ func (r *Repository) CountOpenOpportunities(ctx context.Context, w, pipelineID u
 	return count, r.q(ctx).QueryRow(ctx, query, args...).Scan(&count)
 }
 func (r *Repository) SetTemporaryStagePositions(ctx context.Context, w, p uuid.UUID) error {
-	_, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipeline_stages SET position=position+1000000 WHERE workspace_id=$1 AND pipeline_id=$2 AND active", w, p)
-	return e
+	var maxPosition, count int
+	if e := r.q(ctx).QueryRow(ctx, "SELECT COALESCE(MAX(position),-1),COUNT(*) FROM crm_pipeline_stages WHERE workspace_id=$1 AND pipeline_id=$2 AND active", w, p).Scan(&maxPosition, &count); e != nil {
+		return e
+	}
+	rows, e := r.q(ctx).Query(ctx, "SELECT id FROM crm_pipeline_stages WHERE workspace_id=$1 AND pipeline_id=$2 AND active ORDER BY position,id", w, p)
+	if e != nil {
+		return e
+	}
+	defer rows.Close()
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if e = rows.Scan(&id); e != nil {
+			return e
+		}
+		ids = append(ids, id)
+	}
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	base := maxPosition + count + 1
+	for index, id := range ids {
+		if _, e = r.q(ctx).Exec(ctx, "UPDATE crm_pipeline_stages SET position=$3 WHERE workspace_id=$1 AND pipeline_id=$2 AND id=$4", w, p, base+index, id); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 func (r *Repository) SetStagePositions(ctx context.Context, w, p uuid.UUID, ids []uuid.UUID) error {
 	for i, id := range ids {

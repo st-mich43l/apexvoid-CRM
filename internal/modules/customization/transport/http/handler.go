@@ -30,14 +30,19 @@ func NewHandler(service *application.Service, auth usersapi.Authenticator, works
 func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current := routes.With(usersapi.RequireAuthentication(h.authenticator), organizationapi.RequireWorkspace(h.workspace))
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.schema.read")).Get("/customization/schema/{entity}", h.schema)
+	current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.schema.read")).Get("/customization/sections/{entity}", h.listSections)
 	fields := current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.field.manage"))
 	fields.Post("/customization/fields", h.createField)
-	fields.Get("/customization/fields/{entity}", h.listFields)
 	fields.Patch("/customization/fields/{fieldID}", h.updateField)
 	fields.Post("/customization/sections", h.createSection)
+	fields.Patch("/customization/sections/{sectionID}", h.updateSection)
+	current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.schema.read")).Get("/customization/fields/{entity}", h.listFields)
 	views := current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.schema.read"))
 	views.Get("/customization/views/{entity}", h.listViews)
-	current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.view.manage")).Post("/customization/views", h.createView)
+	viewManage := current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.view.manage"))
+	viewManage.Post("/customization/views", h.createView)
+	viewManage.Patch("/customization/views/{entity}/{viewID}", h.updateView)
+	viewManage.Delete("/customization/views/{entity}/{viewID}", h.deleteView)
 	return nil
 }
 
@@ -183,6 +188,34 @@ func (h *Handler) createSection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, item)
 }
 
+func (h *Handler) listSections(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
+	items, err := h.service.ListSections(r.Context(), workspace.WorkspaceID, chi.URLParam(r, "entity"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) updateSection(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
+	id, ok := parseUUID(w, r, "sectionID")
+	if !ok {
+		return
+	}
+	var input sectionRequest
+	if !decode(w, r, &input) {
+		return
+	}
+	item, err := h.service.UpdateSection(r.Context(), domain.FormSection{ID: id, WorkspaceID: workspace.WorkspaceID, Entity: input.Entity, Name: input.Name, Description: input.Description, DisplayOrder: input.DisplayOrder})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
 func (h *Handler) listViews(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
 	principal, _ := usersapi.PrincipalFromContext(r.Context())
@@ -207,6 +240,39 @@ func (h *Handler) createView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
+}
+
+func (h *Handler) updateView(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
+	principal, _ := usersapi.PrincipalFromContext(r.Context())
+	id, ok := parseUUID(w, r, "viewID")
+	if !ok {
+		return
+	}
+	var input viewRequest
+	if !decode(w, r, &input) {
+		return
+	}
+	item, err := h.service.UpdateView(r.Context(), workspace.WorkspaceID, principal.UserID, id, chi.URLParam(r, "entity"), domain.SavedView{Name: input.Name, Shared: input.Shared, Filters: input.Filters, Columns: input.Columns, SortField: input.SortField, SortDirection: input.SortDirection})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) deleteView(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
+	principal, _ := usersapi.PrincipalFromContext(r.Context())
+	id, ok := parseUUID(w, r, "viewID")
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteView(r.Context(), workspace.WorkspaceID, principal.UserID, id, chi.URLParam(r, "entity")); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
