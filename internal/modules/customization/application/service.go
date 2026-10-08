@@ -55,7 +55,7 @@ func (s *Service) EffectiveSchema(ctx context.Context, workspaceID uuid.UUID, en
 		}
 		for _, item := range legacy {
 			keys[item.Key] = struct{}{}
-			fields = append(fields, domain.EffectiveField{Key: item.Key, Label: item.Label, Type: contactFieldType(item.Type), Description: item.Description, Required: item.Required, Source: domain.FieldSourceCustom, Options: append([]string{}, item.Options...), Visible: item.Active, DisplayOrder: item.DisplayOrder})
+			fields = append(fields, domain.EffectiveField{Key: item.Key, Label: item.Label, Type: contactFieldType(string(item.Type)), Description: item.Description, Required: item.Required, Source: domain.FieldSourceCustom, Options: append([]string{}, item.Options...), Visible: item.Active, DisplayOrder: item.DisplayOrder})
 		}
 	}
 	runtime, err := s.repository.ListFields(ctx, workspaceID, entityName, true)
