@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -41,6 +42,21 @@ type RuntimeField struct {
 	Active       bool       `json:"active"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// FieldPatch uses pointers to distinguish omitted properties from explicit values.
+type FieldPatch struct {
+	Label *string
+	Description *string
+	Required *bool
+	DefaultValue any
+	SetDefault bool
+	Options *[]string
+	Visible *bool
+	DisplayOrder *int
+	SectionID *uuid.UUID
+	SetSection bool
+	Active *bool
 }
 
 type FormSection struct {
@@ -167,9 +183,12 @@ func ValidValue(kind field.Type, options []string, value any) bool {
 	case field.String, field.Text:
 		_, ok := value.(string)
 		return ok
-	case field.Decimal, field.Integer:
-		_, ok := value.(float64)
-		return ok
+	case field.Decimal:
+		n, ok := value.(float64)
+		return ok && !math.IsNaN(n) && !math.IsInf(n, 0)
+	case field.Integer:
+		n, ok := value.(float64)
+		return ok && !math.IsNaN(n) && !math.IsInf(n, 0) && math.Trunc(n) == n && math.Abs(n) <= 9007199254740991
 	case field.Boolean:
 		_, ok := value.(bool)
 		return ok

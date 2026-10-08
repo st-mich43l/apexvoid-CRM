@@ -8,6 +8,7 @@ import (
 
 type Repository interface {
 	ListFields(context.Context, uuid.UUID, string, bool) ([]RuntimeField, error)
+	GetField(context.Context, uuid.UUID, uuid.UUID) (RuntimeField, error)
 	CreateField(context.Context, *RuntimeField) error
 	UpdateField(context.Context, *RuntimeField) error
 	ListSections(context.Context, uuid.UUID, string) ([]FormSection, error)

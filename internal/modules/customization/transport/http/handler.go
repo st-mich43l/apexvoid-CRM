@@ -32,6 +32,7 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.schema.read")).Get("/customization/schema/{entity}", h.schema)
 	fields := current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.field.manage"))
 	fields.Post("/customization/fields", h.createField)
+	fields.Get("/customization/fields/{entity}", h.listFields)
 	fields.Patch("/customization/fields/{fieldID}", h.updateField)
 	fields.Post("/customization/sections", h.createSection)
 	views := current.With(organizationapi.RequireWorkspacePermission(h.access, "customization.schema.read"))
@@ -103,28 +104,48 @@ func (h *Handler) createField(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, item)
 }
 
+// listFields is an administrator inventory, not a consumer effective schema.
+func (h *Handler) listFields(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
+	items, err := h.service.ListFields(r.Context(), workspace.WorkspaceID, chi.URLParam(r, "entity"))
+	if err != nil { writeError(w, r, err); return }
+	writeJSON(w, http.StatusOK, items)
+}
+
+// PATCH deliberately accepts only editable attributes, never entity/key/type.
+type fieldPatchRequest struct {
+	Label *string `json:"label"`
+	Description *string `json:"description"`
+	Required *bool `json:"required"`
+	DefaultValue json.RawMessage `json:"default_value"`
+	Options *[]string `json:"options"`
+	Visible *bool `json:"visible"`
+	DisplayOrder *int `json:"display_order"`
+	SectionID json.RawMessage `json:"section_id"`
+	Active *bool `json:"active"`
+}
+
 func (h *Handler) updateField(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
 	id, ok := parseUUID(w, r, "fieldID")
-	if !ok {
-		return
+	if !ok { return }
+	var input fieldPatchRequest
+	if !decode(w, r, &input) { return }
+	patch := domain.FieldPatch{Label: input.Label, Description: input.Description, Required: input.Required, Options: input.Options, Visible: input.Visible, DisplayOrder: input.DisplayOrder, Active: input.Active}
+	if len(input.DefaultValue) > 0 {
+		patch.SetDefault = true
+		if err := json.Unmarshal(input.DefaultValue, &patch.DefaultValue); err != nil { httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Default value is invalid"); return }
 	}
-	var input fieldRequest
-	if !decode(w, r, &input) {
-		return
+	if len(input.SectionID) > 0 {
+		patch.SetSection = true
+		if string(input.SectionID) != "null" {
+			var sectionID uuid.UUID
+			if err := json.Unmarshal(input.SectionID, &sectionID); err != nil { httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Section ID is invalid"); return }
+			patch.SectionID = &sectionID
+		}
 	}
-	visible, active := true, true
-	if input.Visible != nil {
-		visible = *input.Visible
-	}
-	if input.Active != nil {
-		active = *input.Active
-	}
-	item, err := h.service.UpdateField(r.Context(), domain.RuntimeField{ID: id, WorkspaceID: workspace.WorkspaceID, Entity: input.Entity, Key: input.Key, Label: input.Label, Type: input.Type, Description: input.Description, Required: input.Required, DefaultValue: input.DefaultValue, Options: input.Options, Visible: visible, DisplayOrder: input.DisplayOrder, SectionID: input.SectionID, Active: active})
-	if err != nil {
-		writeError(w, r, err)
-		return
-	}
+	item, err := h.service.PatchField(r.Context(), workspace.WorkspaceID, id, patch)
+	if err != nil { writeError(w, r, err); return }
 	writeJSON(w, http.StatusOK, item)
 }
 

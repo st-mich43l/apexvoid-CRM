@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS customization_form_sections (
  created_at TIMESTAMPTZ NOT NULL,
  updated_at TIMESTAMPTZ NOT NULL,
  UNIQUE(workspace_id, entity_name, name),
- UNIQUE(id, workspace_id)
+ UNIQUE(id, workspace_id),
+ UNIQUE(id, workspace_id, entity_name)
 );
 CREATE TABLE IF NOT EXISTS customization_field_definitions (
  id UUID PRIMARY KEY,
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS customization_field_definitions (
  updated_at TIMESTAMPTZ NOT NULL,
  UNIQUE(workspace_id, entity_name, field_key),
  UNIQUE(id, workspace_id),
- FOREIGN KEY(section_id, workspace_id) REFERENCES customization_form_sections(id, workspace_id) ON DELETE RESTRICT
+ FOREIGN KEY(section_id, workspace_id, entity_name) REFERENCES customization_form_sections(id, workspace_id, entity_name) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS customization_fields_workspace_entity_idx ON customization_field_definitions(workspace_id, entity_name, active, display_order);
 CREATE TABLE IF NOT EXISTS customization_saved_views (

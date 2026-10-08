@@ -55,7 +55,7 @@ func (s *Service) EffectiveSchema(ctx context.Context, workspaceID uuid.UUID, en
 		}
 		for _, item := range legacy {
 			keys[item.Key] = struct{}{}
-			fields = append(fields, domain.EffectiveField{Key: item.Key, Label: item.Label, Type: field.Type(item.Type), Description: item.Description, Required: item.Required, Source: domain.FieldSourceCustom, Options: append([]string{}, item.Options...), Visible: item.Active, DisplayOrder: item.DisplayOrder})
+			fields = append(fields, domain.EffectiveField{Key: item.Key, Label: item.Label, Type: contactFieldType(item.Type), Description: item.Description, Required: item.Required, Source: domain.FieldSourceCustom, Options: append([]string{}, item.Options...), Visible: item.Active, DisplayOrder: item.DisplayOrder})
 		}
 	}
 	runtime, err := s.repository.ListFields(ctx, workspaceID, entityName, true)
@@ -73,6 +73,18 @@ func (s *Service) EffectiveSchema(ctx context.Context, workspaceID uuid.UUID, en
 	return domain.EffectiveSchema{Entity: entityName, Fields: fields, Sections: sections}, nil
 }
 
+// contactFieldType translates Phase 5 Contacts types into the shared field vocabulary.
+func contactFieldType(kind string) field.Type {
+	switch kind {
+	case "text": return field.String
+	case "number": return field.Decimal
+	case "boolean": return field.Boolean
+	case "date": return field.Date
+	case "selection": return field.Enum
+	default: return field.Type(kind)
+	}
+}
+
 func (s *Service) CreateField(ctx context.Context, item domain.RuntimeField) (domain.RuntimeField, error) {
 	if _, err := s.workspaceEntity(item.Entity); err != nil {
 		return domain.RuntimeField{}, err
@@ -84,8 +96,6 @@ func (s *Service) CreateField(ctx context.Context, item domain.RuntimeField) (do
 	item.Key = strings.TrimSpace(item.Key)
 	item.Label = strings.TrimSpace(item.Label)
 	item.Description = strings.TrimSpace(item.Description)
-	item.Active = true
-	item.Visible = true
 	item.CreatedAt = time.Now().UTC()
 	item.UpdatedAt = item.CreatedAt
 	if err := item.Validate(); err != nil {
@@ -106,24 +116,38 @@ func (s *Service) CreateField(ctx context.Context, item domain.RuntimeField) (do
 	return item, nil
 }
 
-func (s *Service) UpdateField(ctx context.Context, item domain.RuntimeField) (domain.RuntimeField, error) {
-	if _, err := s.workspaceEntity(item.Entity); err != nil {
-		return domain.RuntimeField{}, err
+// ListFields returns the managed inventory, including inactive definitions.
+// EffectiveSchema remains a consumer schema and intentionally hides inactive fields.
+func (s *Service) ListFields(ctx context.Context, workspaceID uuid.UUID, entityName string) ([]domain.RuntimeField, error) {
+	if _, err := s.workspaceEntity(entityName); err != nil { return nil, err }
+	if entityName == "contacts.contact" {
+		return nil, fmt.Errorf("contacts fields are managed through the existing contacts field API")
 	}
-	if item.Entity == "contacts.contact" {
-		return domain.RuntimeField{}, fmt.Errorf("contacts fields are managed through the established contacts field API")
-	}
-	item.Key = strings.TrimSpace(item.Key)
-	item.Label = strings.TrimSpace(item.Label)
-	item.Description = strings.TrimSpace(item.Description)
-	item.UpdatedAt = time.Now().UTC()
-	if err := item.Validate(); err != nil {
-		return domain.RuntimeField{}, err
-	}
-	if err := s.withTransaction(ctx, func(tx context.Context) error { return s.repository.UpdateField(tx, &item) }); err != nil {
-		return domain.RuntimeField{}, err
-	}
-	return item, nil
+	return s.repository.ListFields(ctx, workspaceID, entityName, false)
+}
+
+// PatchField changes only supplied properties; key, type, entity and workspace are immutable.
+func (s *Service) PatchField(ctx context.Context, workspaceID, id uuid.UUID, patch domain.FieldPatch) (domain.RuntimeField, error) {
+	var updated domain.RuntimeField
+	err := s.withTransaction(ctx, func(tx context.Context) error {
+		current, err := s.repository.GetField(tx, workspaceID, id)
+		if err != nil { return err }
+		if patch.Label != nil { current.Label = strings.TrimSpace(*patch.Label) }
+		if patch.Description != nil { current.Description = strings.TrimSpace(*patch.Description) }
+		if patch.Required != nil { current.Required = *patch.Required }
+		if patch.SetDefault { current.DefaultValue = patch.DefaultValue }
+		if patch.Options != nil { current.Options = *patch.Options }
+		if patch.Visible != nil { current.Visible = *patch.Visible }
+		if patch.DisplayOrder != nil { current.DisplayOrder = *patch.DisplayOrder }
+		if patch.SetSection { current.SectionID = patch.SectionID }
+		if patch.Active != nil { current.Active = *patch.Active }
+		if err := current.Validate(); err != nil { return err }
+		current.UpdatedAt = time.Now().UTC()
+		if err := s.repository.UpdateField(tx, &current); err != nil { return err }
+		updated = current
+		return nil
+	})
+	return updated, err
 }
 
 func (s *Service) CreateSection(ctx context.Context, item domain.FormSection) (domain.FormSection, error) {

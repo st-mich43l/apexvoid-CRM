@@ -30,6 +30,10 @@ func (r *Repository) db(ctx context.Context) querier {
 	return r.pool
 }
 
+func (r *Repository) GetField(ctx context.Context, workspaceID, id uuid.UUID) (domain.RuntimeField, error) {
+	return scanField(r.db(ctx).QueryRow(ctx, "SELECT id,workspace_id,entity_name,field_key,label,field_type,description,required,default_value,options,visible,display_order,section_id,active,created_at,updated_at FROM customization_field_definitions WHERE workspace_id=$1 AND id=$2 FOR UPDATE", workspaceID, id))
+}
+
 func (r *Repository) ListFields(ctx context.Context, workspaceID uuid.UUID, entity string, activeOnly bool) ([]domain.RuntimeField, error) {
 	query := `SELECT id,workspace_id,entity_name,field_key,label,field_type,description,required,default_value,options,visible,display_order,section_id,active,created_at,updated_at FROM customization_field_definitions WHERE workspace_id=$1 AND entity_name=$2`
 	if activeOnly {
