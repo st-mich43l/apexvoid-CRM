@@ -118,27 +118,39 @@ export const api = {
     templates: () => request<PipelineTemplate[]>('/api/v1/crm/pipeline-templates'),
     initializePipeline: (template: string) => request<Pipeline>('/api/v1/crm/pipelines/initialize', json({ template })),
     createPipeline: (body: { name: string; description: string; color: string }) => request<Pipeline>('/api/v1/crm/pipelines', json(body)),
+    updatePipeline: (id: string, body: { name: string; description: string; color: string; version: number }) => request<Pipeline>(`/api/v1/crm/pipelines/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    clonePipeline: (id: string, name: string) => request<Pipeline>(`/api/v1/crm/pipelines/${id}/clone`, json({ name })),
+    archivePipeline: (id: string, version: number) => request<void>(`/api/v1/crm/pipelines/${id}/archive`, json({ version })),
+    restorePipeline: (id: string, version: number) => request<void>(`/api/v1/crm/pipelines/${id}/restore`, json({ version })),
     setDefaultPipeline: (id: string) => request<void>(`/api/v1/crm/pipelines/${id}/set-default`, { method: 'POST' }),
     addStage: (pipelineID: string, body: { key: string; name: string; probability: number }) => request<Stage>(`/api/v1/crm/pipelines/${pipelineID}/stages`, json(body)),
+    updateStage: (pipelineID: string, id: string, body: { name: string; description: string; color: string; probability: number; version: number }) => request<Stage>(`/api/v1/crm/pipelines/${pipelineID}/stages/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    archiveStage: (pipelineID: string, id: string) => request<void>(`/api/v1/crm/pipelines/${pipelineID}/stages/${id}/archive`, { method: 'POST' }),
+    restoreStage: (pipelineID: string, id: string) => request<void>(`/api/v1/crm/pipelines/${pipelineID}/stages/${id}/restore`, { method: 'POST' }),
     reorderStages: (pipelineID: string, stage_ids: string[]) => request<void>(`/api/v1/crm/pipelines/${pipelineID}/stages/reorder`, json({ stage_ids })),
     leads: (params: Record<string, string | number | boolean | undefined> = {}) => request<CRMList<Lead>>(`/api/v1/crm/leads?${crmQuery(params)}`),
     lead: (id: string) => request<Lead>(`/api/v1/crm/leads/${id}`),
     createLead: (body: LeadInput) => request<Lead>('/api/v1/crm/leads', json(body)),
-    updateLead: (id: string, body: LeadInput & { version: number }) => request<Lead>(`/api/v1/crm/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    updateLead: (id: string, body: LeadPatch) => request<Lead>(`/api/v1/crm/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     leadTransition: (id: string, action: 'contact' | 'qualify' | 'disqualify' | 'reopen', body: { version: number; reason?: string }) => request<Lead>(`/api/v1/crm/leads/${id}/${action}`, json(body)),
     convertLead: (id: string, body: { pipeline_id: string; stage_id: string; contact_id?: string; create_contact: boolean; expected_revenue: string; currency: string; version: number }) => request<Opportunity>(`/api/v1/crm/leads/${id}/convert`, json(body)),
+    leadHistory: (id: string) => request<LifecycleHistory[]>(`/api/v1/crm/leads/${id}/history`),
     opportunities: (params: Record<string, string | number | boolean | undefined> = {}) => request<CRMList<Opportunity>>(`/api/v1/crm/opportunities?${crmQuery(params)}`),
     opportunity: (id: string) => request<Opportunity>(`/api/v1/crm/opportunities/${id}`),
     createOpportunity: (body: OpportunityInput) => request<Opportunity>('/api/v1/crm/opportunities', json(body)),
-    updateOpportunity: (id: string, body: OpportunityInput & { version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    updateOpportunity: (id: string, body: OpportunityPatch) => request<Opportunity>(`/api/v1/crm/opportunities/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     moveOpportunity: (id: string, body: { pipeline_id: string; stage_id: string; version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/move-stage`, json(body)),
     closeOpportunity: (id: string, won: boolean, body: { version: number; reason?: string }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/${won ? 'mark-won' : 'mark-lost'}`, json(body)),
     reopenOpportunity: (id: string, body: { stage_id: string; version: number }) => request<Opportunity>(`/api/v1/crm/opportunities/${id}/reopen`, json(body)),
+    opportunityHistory: (id: string) => request<LifecycleHistory[]>(`/api/v1/crm/opportunities/${id}/history`),
   },
   customization: {
     schema: (entity: string) => request<EffectiveSchema>(`/api/v1/customization/schema/${entity}`),
     fields: (entity: string) => request<RuntimeField[]>(`/api/v1/customization/fields/${entity}`),
     createField: (body: Omit<RuntimeField, 'id' | 'workspace_id' | 'created_at' | 'updated_at'>) => request<RuntimeField>('/api/v1/customization/fields', json(body)),
+    updateField: (id: string, body: Partial<RuntimeField>) => request<RuntimeField>(`/api/v1/customization/fields/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    views: (entity: string) => request<SavedView[]>(`/api/v1/customization/views/${entity}`),
+    createView: (body: SavedViewInput) => request<SavedView>('/api/v1/customization/views', json(body)),
   },
 }
 
@@ -169,8 +181,13 @@ export type PipelineTemplate = { key: string; name: string; description: string 
 export type CRMList<T> = { items: T[]; page: number; limit: number; total: number }
 export type Lead = { id: string; title: string; description: string; contact_name: string; company_name: string; email: string; phone: string; source: string; assigned_user_id?: string; contact_id?: string; status: 'new' | 'contacted' | 'qualified' | 'converted' | 'disqualified'; disqualification_reason?: string; custom_values: Record<string, unknown>; converted_opportunity_id?: string; version: number; created_at: string }
 export type LeadInput = Omit<Lead, 'id' | 'status' | 'converted_opportunity_id' | 'version' | 'created_at'>
+export type LeadPatch = Partial<LeadInput> & { version: number }
 export type Opportunity = { id: string; title: string; description: string; pipeline_id: string; stage_id: string; contact_id?: string; company_id?: string; assigned_user_id?: string; expected_revenue: string; currency: string; expected_close_date?: string; outcome: 'open' | 'won' | 'lost'; loss_reason?: string; custom_values: Record<string, unknown>; original_lead_id?: string; version: number; created_at: string; closed_at?: string }
 export type OpportunityInput = Omit<Opportunity, 'id' | 'outcome' | 'loss_reason' | 'original_lead_id' | 'version' | 'created_at' | 'closed_at'>
+export type OpportunityPatch = Partial<OpportunityInput> & { version: number }
+export type LifecycleHistory = { id: string; workspace_id: string; lead_id?: string; opportunity_id?: string; event_type: string; from_stage_id?: string; to_stage_id?: string; actor_id: string; created_at: string }
 export type EffectiveField = { key: string; label: string; type: 'string' | 'text' | 'boolean' | 'integer' | 'decimal' | 'date' | 'enum'; description: string; required: boolean; read_only: boolean; source: 'built_in' | 'custom'; default_value?: unknown; options: string[]; visible: boolean; display_order: number }
 export type EffectiveSchema = { entity: string; fields: EffectiveField[]; sections: { id: string; name: string; description: string; display_order: number }[] }
 export type RuntimeField = { id: string; workspace_id: string; entity: string; key: string; label: string; type: EffectiveField['type']; description: string; required: boolean; default_value?: unknown; options: string[]; visible: boolean; display_order: number; active: boolean; created_at: string; updated_at: string }
+export type SavedView = { id: string; workspace_id: string; entity: string; owner_user_id: string; name: string; shared: boolean; filters: { field: string; operator: string; value?: unknown }[]; columns: string[]; sort_field: string; sort_direction: string; created_at: string; updated_at: string }
+export type SavedViewInput = Omit<SavedView, 'id' | 'workspace_id' | 'owner_user_id' | 'created_at' | 'updated_at'>

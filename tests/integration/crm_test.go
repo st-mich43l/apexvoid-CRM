@@ -17,7 +17,12 @@ import (
 )
 
 type crmPipeline struct {
-	ID string `json:"id"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Color       string `json:"color"`
+	Status      string `json:"status"`
+	Version     int    `json:"version"`
 }
 
 func TestCRMMigrationRollbackAndReapply(t *testing.T) {
@@ -56,8 +61,13 @@ func TestCRMMigrationRollbackAndReapply(t *testing.T) {
 }
 
 type crmStage struct {
-	ID       string `json:"id"`
-	Category string `json:"category"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Color       string `json:"color"`
+	Category    string `json:"category"`
+	Probability int    `json:"probability"`
+	Version     int    `json:"version"`
 }
 type crmLead struct {
 	ID                     string         `json:"id"`
@@ -100,6 +110,10 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	workspaceID := setup.Workspace.ID
 	var pipeline crmPipeline
 	admin.must("POST", "/api/v1/crm/pipelines/initialize", workspaceID, map[string]string{"template": "standard_b2b"}, &pipeline, http.StatusCreated)
+	admin.must("PATCH", "/api/v1/crm/pipelines/"+pipeline.ID, workspaceID, map[string]any{"name": "Revenue pipeline", "description": "Configured in CRM", "color": "#4f46e5", "version": pipeline.Version}, &pipeline, http.StatusOK)
+	if pipeline.Name != "Revenue pipeline" || pipeline.Description != "Configured in CRM" || pipeline.Color != "#4f46e5" {
+		t.Fatalf("pipeline edit did not persist: %#v", pipeline)
+	}
 	var stages []crmStage
 	admin.must("GET", "/api/v1/crm/pipelines/"+pipeline.ID+"/stages", workspaceID, nil, &stages, http.StatusOK)
 	var openStage string
@@ -112,6 +126,15 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if openStage == "" {
 		t.Fatal("pipeline did not create an open stage")
 	}
+	var addedStage crmStage
+	admin.must("POST", "/api/v1/crm/pipelines/"+pipeline.ID+"/stages", workspaceID, map[string]any{"key": "discovery", "name": "Discovery", "probability": 20}, &addedStage, http.StatusCreated)
+	admin.must("PATCH", "/api/v1/crm/pipelines/"+pipeline.ID+"/stages/"+addedStage.ID, workspaceID, map[string]any{"name": "Discovery complete", "description": "A qualified discovery", "color": "#0ea5e9", "probability": 30, "version": addedStage.Version}, &addedStage, http.StatusOK)
+	if addedStage.Name != "Discovery complete" || addedStage.Probability != 30 {
+		t.Fatalf("stage edit did not persist: %#v", addedStage)
+	}
+	var clonedPipeline crmPipeline
+	admin.must("POST", "/api/v1/crm/pipelines/"+pipeline.ID+"/clone", workspaceID, map[string]string{"name": "Revenue pipeline copy"}, &clonedPipeline, http.StatusCreated)
+	admin.must("POST", "/api/v1/crm/pipelines/"+clonedPipeline.ID+"/archive", workspaceID, map[string]int{"version": clonedPipeline.Version}, nil, http.StatusNoContent)
 	var contact contactResponse
 	admin.must("POST", "/api/v1/contacts", workspaceID, map[string]any{"kind": "person", "display_name": "Existing Contact", "email": "existing@example.com"}, &contact, http.StatusCreated)
 	// System-managed lifecycle fields are rejected by strict create DTOs.

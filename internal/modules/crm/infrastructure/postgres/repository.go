@@ -81,6 +81,16 @@ func (r *Repository) UpdatePipeline(ctx context.Context, p *domain.Pipeline, v i
 	p.Version = v + 1
 	return nil
 }
+func (r *Repository) SetPipelineStatus(ctx context.Context, w, id uuid.UUID, status domain.PipelineStatus, version int) error {
+	x, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipelines SET status=$3,is_default=CASE WHEN $3='archived' THEN FALSE ELSE is_default END,version=version+1,updated_at=NOW() WHERE workspace_id=$1 AND id=$2 AND version=$4", w, id, status, version)
+	if e != nil {
+		return mapErr(e)
+	}
+	if x.RowsAffected() == 0 {
+		return domain.ErrConflict
+	}
+	return nil
+}
 func (r *Repository) SetDefault(ctx context.Context, w, id uuid.UUID) error {
 	if _, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipelines SET is_default=FALSE WHERE workspace_id=$1 AND is_default", w); e != nil {
 		return e
@@ -154,6 +164,16 @@ func (r *Repository) SetStagesActive(ctx context.Context, w, p uuid.UUID, ids []
 		}
 	}
 	return nil
+}
+func (r *Repository) CountOpenOpportunities(ctx context.Context, w, pipelineID uuid.UUID, stageID *uuid.UUID) (int, error) {
+	var count int
+	query := "SELECT count(*) FROM crm_opportunities WHERE workspace_id=$1 AND pipeline_id=$2 AND outcome='open'"
+	args := []any{w, pipelineID}
+	if stageID != nil {
+		query += " AND stage_id=$3"
+		args = append(args, *stageID)
+	}
+	return count, r.q(ctx).QueryRow(ctx, query, args...).Scan(&count)
 }
 func (r *Repository) SetTemporaryStagePositions(ctx context.Context, w, p uuid.UUID) error {
 	_, e := r.q(ctx).Exec(ctx, "UPDATE crm_pipeline_stages SET position=position+1000000 WHERE workspace_id=$1 AND pipeline_id=$2 AND active", w, p)

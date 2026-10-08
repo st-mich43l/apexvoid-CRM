@@ -114,6 +114,89 @@ func (s *Service) SetDefault(ctx context.Context, w, id uuid.UUID) error {
 		return s.r.SetDefault(c, w, id)
 	})
 }
+func (s *Service) UpdatePipeline(ctx context.Context, w, actor, id uuid.UUID, version int, name, description, color string) (domain.Pipeline, error) {
+	var out domain.Pipeline
+	err := s.with(ctx, func(c context.Context) error {
+		if err := s.r.LockWorkspace(c, w); err != nil {
+			return err
+		}
+		current, err := s.r.GetPipeline(c, w, id)
+		if err != nil {
+			return err
+		}
+		if current.Version != version {
+			return domain.ErrConflict
+		}
+		current.Name, current.Description, current.Color, current.UpdatedBy, current.UpdatedAt = name, description, color, actor, time.Now().UTC()
+		if err = current.Validate(); err != nil {
+			return err
+		}
+		if err = s.r.UpdatePipeline(c, current, version); err != nil {
+			return err
+		}
+		out = *current
+		return nil
+	})
+	return out, err
+}
+func (s *Service) SetPipelineArchived(ctx context.Context, w, id uuid.UUID, version int, archived bool) error {
+	return s.with(ctx, func(c context.Context) error {
+		if err := s.r.LockWorkspace(c, w); err != nil {
+			return err
+		}
+		item, err := s.r.GetPipeline(c, w, id)
+		if err != nil {
+			return err
+		}
+		if item.Version != version {
+			return domain.ErrConflict
+		}
+		if archived {
+			if item.Default {
+				return fmt.Errorf("set another default pipeline before archiving this pipeline")
+			}
+			open, err := s.r.CountOpenOpportunities(c, w, id, nil)
+			if err != nil {
+				return err
+			}
+			if open > 0 {
+				return fmt.Errorf("reassign or close open opportunities before archiving this pipeline")
+			}
+			return s.r.SetPipelineStatus(c, w, id, domain.PipelineArchived, version)
+		}
+		return s.r.SetPipelineStatus(c, w, id, domain.PipelineActive, version)
+	})
+}
+func (s *Service) ClonePipeline(ctx context.Context, w, actor, id uuid.UUID, name string) (domain.Pipeline, error) {
+	if strings.TrimSpace(name) == "" {
+		return domain.Pipeline{}, fmt.Errorf("pipeline name is required")
+	}
+	var sourceStages []domain.Stage
+	var source domain.Pipeline
+	err := s.with(ctx, func(c context.Context) error {
+		var err error
+		if err = s.r.LockWorkspace(c, w); err != nil {
+			return err
+		}
+		if sourcePtr, e := s.r.GetPipeline(c, w, id); e != nil {
+			return e
+		} else {
+			source = *sourcePtr
+		}
+		sourceStages, err = s.r.ListStages(c, w, id, false)
+		return err
+	})
+	if err != nil {
+		return domain.Pipeline{}, err
+	}
+	template := domain.Template{Key: slug(name), Name: name, Description: source.Description}
+	for _, stage := range sourceStages {
+		if stage.Category == domain.StageOpen {
+			template.OpenStages = append(template.OpenStages, domain.TemplateStage{Key: stage.Key, Name: stage.Name, Description: stage.Description, Color: stage.Color, Probability: stage.Probability})
+		}
+	}
+	return s.create(ctx, w, actor, template, name, source.Color)
+}
 func (s *Service) AddStage(ctx context.Context, w, p uuid.UUID, key, name string, prob int) (domain.Stage, error) {
 	var out domain.Stage
 	e := s.with(ctx, func(c context.Context) error {
@@ -151,9 +234,83 @@ func (s *Service) AddStage(ctx context.Context, w, p uuid.UUID, key, name string
 				order = append(order, item.ID)
 			}
 		}
-		return s.r.SetStagePositions(c, w, p, order)
+		if e = s.r.SetStagePositions(c, w, p, order); e != nil {
+			return e
+		}
+		// Positioning is also an optimistic update, so return the version callers
+		// must use for their first edit rather than the pre-positioning version.
+		out.Version++
+		return nil
 	})
 	return out, e
+}
+func (s *Service) UpdateStage(ctx context.Context, w, p, id uuid.UUID, version int, name, description, color string, probability int) (domain.Stage, error) {
+	var out domain.Stage
+	err := s.with(ctx, func(c context.Context) error {
+		if err := s.r.LockWorkspace(c, w); err != nil {
+			return err
+		}
+		stages, err := s.r.ListStages(c, w, p, true)
+		if err != nil {
+			return err
+		}
+		for _, stage := range stages {
+			if stage.ID == id {
+				out = stage
+				break
+			}
+		}
+		if out.ID == uuid.Nil {
+			return domain.ErrNotFound
+		}
+		if out.Version != version {
+			return domain.ErrConflict
+		}
+		out.Name, out.Description, out.Color = name, description, color
+		if out.Category == domain.StageOpen {
+			out.Probability = probability
+		}
+		out.UpdatedAt = time.Now().UTC()
+		if err = out.Validate(); err != nil {
+			return err
+		}
+		return s.r.UpdateStage(c, &out, version)
+	})
+	return out, err
+}
+func (s *Service) SetStageArchived(ctx context.Context, w, p, id uuid.UUID, archived bool) error {
+	return s.with(ctx, func(c context.Context) error {
+		if err := s.r.LockWorkspace(c, w); err != nil {
+			return err
+		}
+		stages, err := s.r.ListStages(c, w, p, true)
+		if err != nil {
+			return err
+		}
+		var stage *domain.Stage
+		for i := range stages {
+			if stages[i].ID == id {
+				stage = &stages[i]
+				break
+			}
+		}
+		if stage == nil {
+			return domain.ErrNotFound
+		}
+		if archived {
+			open, err := s.r.CountOpenOpportunities(c, w, p, &id)
+			if err != nil {
+				return err
+			}
+			if open > 0 {
+				return fmt.Errorf("reassign open opportunities before archiving this stage")
+			}
+			if stage.Category != domain.StageOpen {
+				return fmt.Errorf("terminal stages cannot be archived")
+			}
+		}
+		return s.r.SetStagesActive(c, w, p, []uuid.UUID{id}, !archived)
+	})
 }
 func (s *Service) Reorder(ctx context.Context, w, p uuid.UUID, ids []uuid.UUID) error {
 	return s.with(ctx, func(c context.Context) error {

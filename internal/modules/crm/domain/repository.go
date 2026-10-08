@@ -12,11 +12,13 @@ type Repository interface {
 	GetPipeline(context.Context, uuid.UUID, uuid.UUID) (*Pipeline, error)
 	CreatePipeline(context.Context, *Pipeline) error
 	UpdatePipeline(context.Context, *Pipeline, int) error
+	SetPipelineStatus(context.Context, uuid.UUID, uuid.UUID, PipelineStatus, int) error
 	SetDefault(context.Context, uuid.UUID, uuid.UUID) error
 	ListStages(context.Context, uuid.UUID, uuid.UUID, bool) ([]Stage, error)
 	CreateStages(context.Context, []Stage) error
 	UpdateStage(context.Context, *Stage, int) error
 	SetStagesActive(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID, bool) error
+	CountOpenOpportunities(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID) (int, error)
 	SetTemporaryStagePositions(context.Context, uuid.UUID, uuid.UUID) error
 	SetStagePositions(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID) error
 	GetLead(context.Context, uuid.UUID, uuid.UUID) (*Lead, error)
