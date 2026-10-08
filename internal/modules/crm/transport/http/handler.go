@@ -38,6 +38,7 @@ func (h *Handler) RegisterRoutes(r module.RouteRegistry) error {
 	stage := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.stage.manage"))
 	stage.Post("/crm/pipelines/{id}/stages", h.addStage)
 	stage.Post("/crm/pipelines/{id}/stages/reorder", h.reorder)
+	h.registerWorkspaceRoutes(r)
 	return nil
 }
 func ctx(r *http.Request) (uuid.UUID, uuid.UUID) {

@@ -2,13 +2,16 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/domain"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
+	"strings"
 )
 
 type Repository struct{ pool *pgxpool.Pool }
@@ -171,4 +174,204 @@ func mapErr(e error) error {
 		return domain.ErrConflict
 	}
 	return e
+}
+
+const leadColumns = "id,workspace_id,title,description,contact_name,company_name,email,phone,source,assigned_user_id,contact_id,status,disqualification_reason,custom_values,converted_opportunity_id,converted_at,created_by,updated_by,created_at,updated_at,version"
+const opportunityColumns = "id,workspace_id,title,description,pipeline_id,stage_id,contact_id,company_id,assigned_user_id,expected_revenue::text,currency,expected_close_date,outcome,loss_reason,custom_values,original_lead_id,created_by,updated_by,created_at,updated_at,closed_at,version"
+const opportunityInsertColumns = "id,workspace_id,title,description,pipeline_id,stage_id,contact_id,company_id,assigned_user_id,expected_revenue,currency,expected_close_date,outcome,loss_reason,custom_values,original_lead_id,created_by,updated_by,created_at,updated_at,closed_at,version"
+
+func scanLead(row pgx.Row) (*domain.Lead, error) {
+	var item domain.Lead
+	var values []byte
+	err := row.Scan(&item.ID, &item.WorkspaceID, &item.Title, &item.Description, &item.ContactName, &item.CompanyName, &item.Email, &item.Phone, &item.Source, &item.AssignedUserID, &item.ContactID, &item.Status, &item.DisqualificationReason, &values, &item.ConvertedOpportunityID, &item.ConvertedAt, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(values, &item.CustomValues); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func scanOpportunity(row pgx.Row) (*domain.Opportunity, error) {
+	var item domain.Opportunity
+	var values []byte
+	err := row.Scan(&item.ID, &item.WorkspaceID, &item.Title, &item.Description, &item.PipelineID, &item.StageID, &item.ContactID, &item.CompanyID, &item.AssignedUserID, &item.ExpectedRevenue, &item.Currency, &item.ExpectedCloseDate, &item.Outcome, &item.LossReason, &values, &item.OriginalLeadID, &item.CreatedBy, &item.UpdatedBy, &item.CreatedAt, &item.UpdatedAt, &item.ClosedAt, &item.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(values, &item.CustomValues); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repository) GetLead(ctx context.Context, w, id uuid.UUID) (*domain.Lead, error) {
+	return scanLead(r.q(ctx).QueryRow(ctx, "SELECT "+leadColumns+" FROM crm_leads WHERE workspace_id=$1 AND id=$2", w, id))
+}
+func (r *Repository) GetLeadForUpdate(ctx context.Context, w, id uuid.UUID) (*domain.Lead, error) {
+	return scanLead(r.q(ctx).QueryRow(ctx, "SELECT "+leadColumns+" FROM crm_leads WHERE workspace_id=$1 AND id=$2 FOR UPDATE", w, id))
+}
+func (r *Repository) ListLeads(ctx context.Context, w uuid.UUID, f domain.LeadFilter) ([]domain.Lead, int, error) {
+	where, args := []string{"workspace_id=$1"}, []any{w}
+	add := func(clause string, value any) {
+		args = append(args, value)
+		where = append(where, clause+"=$"+fmt.Sprint(len(args)))
+	}
+	if f.Status != "" {
+		add("status", f.Status)
+	}
+	if f.OwnerID != nil {
+		add("assigned_user_id", *f.OwnerID)
+	}
+	if strings.TrimSpace(f.Search) != "" {
+		args = append(args, "%"+strings.TrimSpace(f.Search)+"%")
+		where = append(where, "(title ILIKE $"+fmt.Sprint(len(args))+" OR contact_name ILIKE $"+fmt.Sprint(len(args))+" OR company_name ILIKE $"+fmt.Sprint(len(args))+" OR email ILIKE $"+fmt.Sprint(len(args))+")")
+	}
+	filter := strings.Join(where, " AND ")
+	var total int
+	if err := r.q(ctx).QueryRow(ctx, "SELECT count(*) FROM crm_leads WHERE "+filter, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	sort := map[string]string{"title": "title", "created_at": "created_at", "updated_at": "updated_at", "status": "status"}[f.Sort]
+	if sort == "" {
+		sort = "created_at"
+	}
+	direction := "ASC"
+	if f.Desc {
+		direction = "DESC"
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.Limit < 1 || f.Limit > 100 {
+		f.Limit = 25
+	}
+	args = append(args, f.Limit, (f.Page-1)*f.Limit)
+	rows, err := r.q(ctx).Query(ctx, "SELECT "+leadColumns+" FROM crm_leads WHERE "+filter+" ORDER BY "+sort+" "+direction+", id ASC LIMIT $"+fmt.Sprint(len(args)-1)+" OFFSET $"+fmt.Sprint(len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	result := []domain.Lead{}
+	for rows.Next() {
+		item, e := scanLead(rows)
+		if e != nil {
+			return nil, 0, e
+		}
+		result = append(result, *item)
+	}
+	return result, total, rows.Err()
+}
+func (r *Repository) CreateLead(ctx context.Context, item *domain.Lead) error {
+	values, err := json.Marshal(item.CustomValues)
+	if err != nil {
+		return err
+	}
+	_, err = r.q(ctx).Exec(ctx, "INSERT INTO crm_leads("+leadColumns+") VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)", item.ID, item.WorkspaceID, item.Title, item.Description, item.ContactName, item.CompanyName, item.Email, item.Phone, item.Source, item.AssignedUserID, item.ContactID, item.Status, item.DisqualificationReason, values, item.ConvertedOpportunityID, item.ConvertedAt, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, item.Version)
+	return mapErr(err)
+}
+func (r *Repository) UpdateLead(ctx context.Context, item *domain.Lead, version int) error {
+	values, err := json.Marshal(item.CustomValues)
+	if err != nil {
+		return err
+	}
+	x, err := r.q(ctx).Exec(ctx, "UPDATE crm_leads SET title=$3,description=$4,contact_name=$5,company_name=$6,email=$7,phone=$8,source=$9,assigned_user_id=$10,contact_id=$11,status=$12,disqualification_reason=$13,custom_values=$14,converted_opportunity_id=$15,converted_at=$16,updated_by=$17,updated_at=$18,version=version+1 WHERE workspace_id=$1 AND id=$2 AND version=$19", item.WorkspaceID, item.ID, item.Title, item.Description, item.ContactName, item.CompanyName, item.Email, item.Phone, item.Source, item.AssignedUserID, item.ContactID, item.Status, item.DisqualificationReason, values, item.ConvertedOpportunityID, item.ConvertedAt, item.UpdatedBy, item.UpdatedAt, version)
+	if err != nil {
+		return mapErr(err)
+	}
+	if x.RowsAffected() == 0 {
+		return domain.ErrConflict
+	}
+	item.Version = version + 1
+	return nil
+}
+func (r *Repository) GetOpportunity(ctx context.Context, w, id uuid.UUID) (*domain.Opportunity, error) {
+	return scanOpportunity(r.q(ctx).QueryRow(ctx, "SELECT "+opportunityColumns+" FROM crm_opportunities WHERE workspace_id=$1 AND id=$2", w, id))
+}
+func (r *Repository) ListOpportunities(ctx context.Context, w uuid.UUID, f domain.OpportunityFilter) ([]domain.Opportunity, int, error) {
+	where, args := []string{"workspace_id=$1"}, []any{w}
+	add := func(clause string, value any) {
+		args = append(args, value)
+		where = append(where, clause+"=$"+fmt.Sprint(len(args)))
+	}
+	if f.PipelineID != nil {
+		add("pipeline_id", *f.PipelineID)
+	}
+	if f.StageID != nil {
+		add("stage_id", *f.StageID)
+	}
+	if f.OwnerID != nil {
+		add("assigned_user_id", *f.OwnerID)
+	}
+	if f.Outcome != "" {
+		add("outcome", f.Outcome)
+	}
+	if strings.TrimSpace(f.Search) != "" {
+		args = append(args, "%"+strings.TrimSpace(f.Search)+"%")
+		where = append(where, "title ILIKE $"+fmt.Sprint(len(args)))
+	}
+	filter := strings.Join(where, " AND ")
+	var total int
+	if err := r.q(ctx).QueryRow(ctx, "SELECT count(*) FROM crm_opportunities WHERE "+filter, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	sort := map[string]string{"title": "title", "created_at": "created_at", "updated_at": "updated_at", "expected_revenue": "expected_revenue", "expected_close_date": "expected_close_date"}[f.Sort]
+	if sort == "" {
+		sort = "created_at"
+	}
+	dir := "ASC"
+	if f.Desc {
+		dir = "DESC"
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.Limit < 1 || f.Limit > 100 {
+		f.Limit = 25
+	}
+	args = append(args, f.Limit, (f.Page-1)*f.Limit)
+	rows, err := r.q(ctx).Query(ctx, "SELECT "+opportunityColumns+" FROM crm_opportunities WHERE "+filter+" ORDER BY "+sort+" "+dir+", id ASC LIMIT $"+fmt.Sprint(len(args)-1)+" OFFSET $"+fmt.Sprint(len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	result := []domain.Opportunity{}
+	for rows.Next() {
+		item, e := scanOpportunity(rows)
+		if e != nil {
+			return nil, 0, e
+		}
+		result = append(result, *item)
+	}
+	return result, total, rows.Err()
+}
+func (r *Repository) CreateOpportunity(ctx context.Context, item *domain.Opportunity) error {
+	values, err := json.Marshal(item.CustomValues)
+	if err != nil {
+		return err
+	}
+	_, err = r.q(ctx).Exec(ctx, "INSERT INTO crm_opportunities("+opportunityInsertColumns+") VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::numeric,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)", item.ID, item.WorkspaceID, item.Title, item.Description, item.PipelineID, item.StageID, item.ContactID, item.CompanyID, item.AssignedUserID, item.ExpectedRevenue, item.Currency, item.ExpectedCloseDate, item.Outcome, item.LossReason, values, item.OriginalLeadID, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, item.ClosedAt, item.Version)
+	return mapErr(err)
+}
+func (r *Repository) UpdateOpportunity(ctx context.Context, item *domain.Opportunity, version int) error {
+	values, err := json.Marshal(item.CustomValues)
+	if err != nil {
+		return err
+	}
+	x, err := r.q(ctx).Exec(ctx, "UPDATE crm_opportunities SET title=$3,description=$4,pipeline_id=$5,stage_id=$6,contact_id=$7,company_id=$8,assigned_user_id=$9,expected_revenue=$10::numeric,currency=$11,expected_close_date=$12,outcome=$13,loss_reason=$14,custom_values=$15,closed_at=$16,updated_by=$17,updated_at=$18,version=version+1 WHERE workspace_id=$1 AND id=$2 AND version=$19", item.WorkspaceID, item.ID, item.Title, item.Description, item.PipelineID, item.StageID, item.ContactID, item.CompanyID, item.AssignedUserID, item.ExpectedRevenue, item.Currency, item.ExpectedCloseDate, item.Outcome, item.LossReason, values, item.ClosedAt, item.UpdatedBy, item.UpdatedAt, version)
+	if err != nil {
+		return mapErr(err)
+	}
+	if x.RowsAffected() == 0 {
+		return domain.ErrConflict
+	}
+	item.Version = version + 1
+	return nil
 }

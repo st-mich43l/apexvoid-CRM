@@ -4,19 +4,51 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
+	contactsapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/domain"
+	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 	"strings"
 	"time"
 )
 
 type Service struct {
-	r  domain.Repository
-	tx *database.TxManager
+	r      domain.Repository
+	tx     *database.TxManager
+	custom interface {
+		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+	}
+	contacts interface {
+		contactsapi.ContactReader
+		contactsapi.ContactCreator
+	}
+	workspace organizationapi.WorkspaceResolver
+	access    organizationapi.WorkspaceAccess
+	events    *event.Bus
 }
 
-func New(r domain.Repository, tx *database.TxManager) *Service { return &Service{r, tx} }
-func (s *Service) Templates() []domain.Template                { return domain.Templates() }
+func New(r domain.Repository, tx *database.TxManager) *Service { return &Service{r: r, tx: tx} }
+
+type Dependencies struct {
+	Repository   domain.Repository
+	Transactions *database.TxManager
+	CustomValues interface {
+		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+	}
+	Contacts interface {
+		contactsapi.ContactReader
+		contactsapi.ContactCreator
+	}
+	Workspace organizationapi.WorkspaceResolver
+	Access    organizationapi.WorkspaceAccess
+	Events    *event.Bus
+}
+
+func NewWithDependencies(d Dependencies) *Service {
+	return &Service{r: d.Repository, tx: d.Transactions, custom: d.CustomValues, contacts: d.Contacts, workspace: d.Workspace, access: d.Access, events: d.Events}
+}
+func (s *Service) Templates() []domain.Template { return domain.Templates() }
 func (s *Service) List(ctx context.Context, w uuid.UUID, a bool) ([]domain.Pipeline, error) {
 	return s.r.ListPipelines(ctx, w, a)
 }
@@ -29,15 +61,15 @@ func (s *Service) Stages(ctx context.Context, w, p uuid.UUID, a bool) ([]domain.
 func (s *Service) Initialize(ctx context.Context, w, u uuid.UUID, key string) (domain.Pipeline, error) {
 	for _, t := range domain.Templates() {
 		if t.Key == key {
-			return s.create(ctx, w, u, t, t.Name)
+			return s.create(ctx, w, u, t, t.Name, "")
 		}
 	}
 	return domain.Pipeline{}, fmt.Errorf("template not found")
 }
 func (s *Service) Create(ctx context.Context, w, u uuid.UUID, name, description, color string) (domain.Pipeline, error) {
-	return s.create(ctx, w, u, domain.Template{Key: slug(name), Name: name, Description: description, OpenStages: []domain.TemplateStage{{Key: "new", Name: "New", Probability: 10}}}, name)
+	return s.create(ctx, w, u, domain.Template{Key: slug(name), Name: name, Description: description, OpenStages: []domain.TemplateStage{{Key: "new", Name: "New", Probability: 10}}}, name, color)
 }
-func (s *Service) create(ctx context.Context, w, u uuid.UUID, t domain.Template, name string) (out domain.Pipeline, err error) {
+func (s *Service) create(ctx context.Context, w, u uuid.UUID, t domain.Template, name, color string) (out domain.Pipeline, err error) {
 	err = s.with(ctx, func(c context.Context) error {
 		if e := s.r.LockWorkspace(c, w); e != nil {
 			return e
@@ -52,7 +84,10 @@ func (s *Service) create(ctx context.Context, w, u uuid.UUID, t domain.Template,
 			}
 		}
 		now := time.Now().UTC()
-		out = domain.Pipeline{ID: uuid.New(), WorkspaceID: w, Name: name, Slug: slug(name), Description: t.Description, Color: "#7c3aed", Status: domain.PipelineActive, Default: len(items) == 0, DisplayOrder: len(items), CreatedBy: u, UpdatedBy: u, Version: 1, CreatedAt: now, UpdatedAt: now}
+		if strings.TrimSpace(color) == "" {
+			color = "#7c3aed"
+		}
+		out = domain.Pipeline{ID: uuid.New(), WorkspaceID: w, Name: name, Slug: slug(name), Description: t.Description, Color: color, Status: domain.PipelineActive, Default: len(items) == 0, DisplayOrder: len(items), CreatedBy: u, UpdatedBy: u, Version: 1, CreatedAt: now, UpdatedAt: now}
 		if e = out.Validate(); e != nil {
 			return e
 		}
