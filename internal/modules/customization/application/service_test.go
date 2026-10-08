@@ -15,6 +15,8 @@ func TestContactLegacyFieldTypeMapping(t *testing.T) {
 		"selection": field.Enum,
 	}
 	for legacy, expected := range cases {
-		if got := contactFieldType(legacy); got != expected { t.Errorf("%s: got %s, want %s", legacy, got, expected) }
+		if got := contactFieldType(legacy); got != expected {
+			t.Errorf("%s: got %s, want %s", legacy, got, expected)
+		}
 	}
 }

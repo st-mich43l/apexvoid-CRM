@@ -574,26 +574,26 @@ func (s *Service) withTransaction(ctx context.Context, fn func(context.Context) 
 func (s *Service) publish(ctx context.Context, name string, payload any) {
 	if s.events == nil { return }
 	database.AfterCommit(ctx, func(ctx context.Context) {
-	var err error
-	switch value := payload.(type) {
-	case domain.ContactCreated:
-		err = event.Publish(s.events, ctx, name, value)
-	case domain.ContactUpdated:
-		err = event.Publish(s.events, ctx, name, value)
-	case domain.ContactArchived:
-		err = event.Publish(s.events, ctx, name, value)
-	case domain.RelationshipChanged:
-		err = event.Publish(s.events, ctx, name, value)
-	case domain.ActivityCreated:
-		err = event.Publish(s.events, ctx, name, value)
-	case domain.ActivityCompletedEvent:
-		err = event.Publish(s.events, ctx, name, value)
-	default:
-		return
-	}
-	if err != nil {
-		s.logger.Error("post-commit event publication failed", "event", name, "error", err)
-	}
+		var err error
+		switch value := payload.(type) {
+		case domain.ContactCreated:
+			err = event.Publish(s.events, ctx, name, value)
+		case domain.ContactUpdated:
+			err = event.Publish(s.events, ctx, name, value)
+		case domain.ContactArchived:
+			err = event.Publish(s.events, ctx, name, value)
+		case domain.RelationshipChanged:
+			err = event.Publish(s.events, ctx, name, value)
+		case domain.ActivityCreated:
+			err = event.Publish(s.events, ctx, name, value)
+		case domain.ActivityCompletedEvent:
+			err = event.Publish(s.events, ctx, name, value)
+		default:
+			return
+		}
+		if err != nil {
+			s.logger.Error("post-commit event publication failed", "event", name, "error", err)
+		}
 	})
 }
 

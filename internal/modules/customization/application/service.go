@@ -76,12 +76,18 @@ func (s *Service) EffectiveSchema(ctx context.Context, workspaceID uuid.UUID, en
 // contactFieldType translates Phase 5 Contacts types into the shared field vocabulary.
 func contactFieldType(kind string) field.Type {
 	switch kind {
-	case "text": return field.String
-	case "number": return field.Decimal
-	case "boolean": return field.Boolean
-	case "date": return field.Date
-	case "selection": return field.Enum
-	default: return field.Type(kind)
+	case "text":
+		return field.String
+	case "number":
+		return field.Decimal
+	case "boolean":
+		return field.Boolean
+	case "date":
+		return field.Date
+	case "selection":
+		return field.Enum
+	default:
+		return field.Type(kind)
 	}
 }
 
@@ -119,7 +125,9 @@ func (s *Service) CreateField(ctx context.Context, item domain.RuntimeField) (do
 // ListFields returns the managed inventory, including inactive definitions.
 // EffectiveSchema remains a consumer schema and intentionally hides inactive fields.
 func (s *Service) ListFields(ctx context.Context, workspaceID uuid.UUID, entityName string) ([]domain.RuntimeField, error) {
-	if _, err := s.workspaceEntity(entityName); err != nil { return nil, err }
+	if _, err := s.workspaceEntity(entityName); err != nil {
+		return nil, err
+	}
 	if entityName == "contacts.contact" {
 		return nil, fmt.Errorf("contacts fields are managed through the existing contacts field API")
 	}
@@ -131,19 +139,43 @@ func (s *Service) PatchField(ctx context.Context, workspaceID, id uuid.UUID, pat
 	var updated domain.RuntimeField
 	err := s.withTransaction(ctx, func(tx context.Context) error {
 		current, err := s.repository.GetField(tx, workspaceID, id)
-		if err != nil { return err }
-		if patch.Label != nil { current.Label = strings.TrimSpace(*patch.Label) }
-		if patch.Description != nil { current.Description = strings.TrimSpace(*patch.Description) }
-		if patch.Required != nil { current.Required = *patch.Required }
-		if patch.SetDefault { current.DefaultValue = patch.DefaultValue }
-		if patch.Options != nil { current.Options = *patch.Options }
-		if patch.Visible != nil { current.Visible = *patch.Visible }
-		if patch.DisplayOrder != nil { current.DisplayOrder = *patch.DisplayOrder }
-		if patch.SetSection { current.SectionID = patch.SectionID }
-		if patch.Active != nil { current.Active = *patch.Active }
-		if err := current.Validate(); err != nil { return err }
+		if err != nil {
+			return err
+		}
+		if patch.Label != nil {
+			current.Label = strings.TrimSpace(*patch.Label)
+		}
+		if patch.Description != nil {
+			current.Description = strings.TrimSpace(*patch.Description)
+		}
+		if patch.Required != nil {
+			current.Required = *patch.Required
+		}
+		if patch.SetDefault {
+			current.DefaultValue = patch.DefaultValue
+		}
+		if patch.Options != nil {
+			current.Options = *patch.Options
+		}
+		if patch.Visible != nil {
+			current.Visible = *patch.Visible
+		}
+		if patch.DisplayOrder != nil {
+			current.DisplayOrder = *patch.DisplayOrder
+		}
+		if patch.SetSection {
+			current.SectionID = patch.SectionID
+		}
+		if patch.Active != nil {
+			current.Active = *patch.Active
+		}
+		if err := current.Validate(); err != nil {
+			return err
+		}
 		current.UpdatedAt = time.Now().UTC()
-		if err := s.repository.UpdateField(tx, &current); err != nil { return err }
+		if err := s.repository.UpdateField(tx, &current); err != nil {
+			return err
+		}
 		updated = current
 		return nil
 	})

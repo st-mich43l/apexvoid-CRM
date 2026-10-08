@@ -108,7 +108,10 @@ func (h *Handler) createField(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listFields(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
 	items, err := h.service.ListFields(r.Context(), workspace.WorkspaceID, chi.URLParam(r, "entity"))
-	if err != nil { writeError(w, r, err); return }
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, items)
 }
 
@@ -128,24 +131,41 @@ type fieldPatchRequest struct {
 func (h *Handler) updateField(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
 	id, ok := parseUUID(w, r, "fieldID")
-	if !ok { return }
+	if !ok {
+		return
+	}
 	var input fieldPatchRequest
-	if !decode(w, r, &input) { return }
-	patch := domain.FieldPatch{Label: input.Label, Description: input.Description, Required: input.Required, Options: input.Options, Visible: input.Visible, DisplayOrder: input.DisplayOrder, Active: input.Active}
+	if !decode(w, r, &input) {
+		return
+	}
+	patch := domain.FieldPatch{
+		Label: input.Label, Description: input.Description,
+		Required: input.Required, Options: input.Options,
+		Visible: input.Visible, DisplayOrder: input.DisplayOrder, Active: input.Active,
+	}
 	if len(input.DefaultValue) > 0 {
 		patch.SetDefault = true
-		if err := json.Unmarshal(input.DefaultValue, &patch.DefaultValue); err != nil { httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Default value is invalid"); return }
+		if err := json.Unmarshal(input.DefaultValue, &patch.DefaultValue); err != nil {
+			httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Default value is invalid")
+			return
+		}
 	}
 	if len(input.SectionID) > 0 {
 		patch.SetSection = true
 		if string(input.SectionID) != "null" {
 			var sectionID uuid.UUID
-			if err := json.Unmarshal(input.SectionID, &sectionID); err != nil { httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Section ID is invalid"); return }
+			if err := json.Unmarshal(input.SectionID, &sectionID); err != nil {
+				httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Section ID is invalid")
+				return
+			}
 			patch.SectionID = &sectionID
 		}
 	}
 	item, err := h.service.PatchField(r.Context(), workspace.WorkspaceID, id, patch)
-	if err != nil { writeError(w, r, err); return }
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, item)
 }
 

@@ -36,7 +36,9 @@ func (m *TxManager) WithTransaction(ctx context.Context, fn func(context.Context
 	}
 	// Event callbacks never see the finished transaction, nor a cancelled request.
 	postCommitCtx := context.WithValue(context.WithoutCancel(ctx), transactionKey{}, nil)
-	for _, callback := range hooks.drain() { callback(postCommitCtx) }
+	for _, callback := range hooks.drain() {
+		callback(postCommitCtx)
+	}
 	return nil
 }
 
@@ -50,7 +52,7 @@ type transactionKey struct{}
 type afterCommitKey struct{}
 
 type commitHooks struct {
-	mu sync.Mutex
+	mu        sync.Mutex
 	callbacks []func(context.Context)
 }
 
@@ -59,6 +61,7 @@ func (h *commitHooks) add(callback func(context.Context)) {
 	defer h.mu.Unlock()
 	h.callbacks = append(h.callbacks, callback)
 }
+
 func (h *commitHooks) drain() []func(context.Context) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

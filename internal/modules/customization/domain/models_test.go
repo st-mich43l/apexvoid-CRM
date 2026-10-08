@@ -1,8 +1,8 @@
 package domain
 
 import (
-	"testing"
 	"math"
+	"testing"
 
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/field"
 )
