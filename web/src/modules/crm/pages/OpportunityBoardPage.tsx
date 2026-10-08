@@ -35,8 +35,10 @@ function BoardColumn({ column, allStages, allItems, contacts, owners, canTransit
 }
 
 function OpportunityCreateModal({ pipeline, pipelines, canCreate, onClose, onCreated }: { pipeline: Pipeline; pipelines: Pipeline[]; canCreate: boolean; onClose: () => void; onCreated: () => void }) {
+  const { user } = useAuth()
+  const { activeWorkspaceId } = useWorkspace()
   const [value, setValue] = useState<OpportunityInput>(emptyOpportunity(pipeline.id))
-  const stages = useQuery({ queryKey: ['crm-board-create-stages', value.pipeline_id], queryFn: () => api.crm.stages(value.pipeline_id), enabled: Boolean(value.pipeline_id) })
+  const stages = useQuery({ queryKey: userWorkspaceQueryKey(user?.id, activeWorkspaceId, 'crm-opportunity-board', 'create-stages', value.pipeline_id), queryFn: () => api.crm.stages(value.pipeline_id), enabled: Boolean(activeWorkspaceId && user?.id && value.pipeline_id) })
   useEffect(() => { if (!value.stage_id && stages.data?.find(stage => stage.category === 'open')) setValue(current => ({ ...current, stage_id: stages.data?.find(stage => stage.category === 'open')?.id ?? '' })) }, [stages.data, value.stage_id])
   const create = useMutation({ mutationFn: () => api.crm.createOpportunity(value), onSuccess: () => { onCreated(); onClose() } })
   if (!canCreate) return null
