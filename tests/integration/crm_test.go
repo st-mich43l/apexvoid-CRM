@@ -176,6 +176,17 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if lead.Source != "web" || lead.CustomValues["segment"] != "mid" {
 		t.Fatalf("sparse lead patch erased data: %#v", lead)
 	}
+	admin.must("PATCH", "/api/v1/crm/leads/"+lead.ID, workspaceID, map[string]any{"version": lead.Version, "custom_values": map[string]any{"segment": nil}}, &lead, http.StatusOK)
+	if _, exists := lead.CustomValues["segment"]; exists {
+		t.Fatalf("cleared custom field is still present: %#v", lead.CustomValues)
+	}
+	if lead.CustomValues["annual_revenue"] != 125000.5 {
+		t.Fatalf("clearing one custom field removed unrelated values: %#v", lead.CustomValues)
+	}
+	admin.must("GET", "/api/v1/crm/leads/"+lead.ID, workspaceID, nil, &lead, http.StatusOK)
+	if _, exists := lead.CustomValues["segment"]; exists {
+		t.Fatal("cleared custom field was restored after reload")
+	}
 	admin.must("POST", "/api/v1/crm/leads/"+lead.ID+"/contact", workspaceID, map[string]any{"version": lead.Version}, &lead, http.StatusOK)
 	admin.must("POST", "/api/v1/crm/leads/"+lead.ID+"/qualify", workspaceID, map[string]any{"version": lead.Version}, &lead, http.StatusOK)
 	var opportunity crmOpportunity
@@ -192,14 +203,19 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	}
 	admin.must("POST", "/api/v1/customization/views", workspaceID, map[string]any{
 		"entity": "crm.opportunity", "name": "Revenue pipeline opportunities", "columns": []string{"title", "pipeline_id"},
-		"filters": []map[string]any{{"field": "pipeline_id", "operator": "eq", "value": pipeline.ID}}, "sort_field": "title", "sort_direction": "asc",
+		"filters": []map[string]any{{"field": "pipeline_id", "operator": "eq", "value": pipeline.ID}, {"field": "title", "operator": "contains", "value": "Acme"}}, "sort_field": "title", "sort_direction": "desc",
 	}, &savedOpportunityView, http.StatusCreated)
 	var filteredOpportunities struct {
 		Items []crmOpportunity `json:"items"`
 	}
-	admin.must("GET", "/api/v1/crm/opportunities?pipeline_id="+pipeline.ID, workspaceID, nil, &filteredOpportunities, http.StatusOK)
-	if savedOpportunityView.ID == "" || len(filteredOpportunities.Items) != 1 || filteredOpportunities.Items[0].PipelineID != pipeline.ID {
-		t.Fatalf("saved-view filter did not map to the expected server filter: view=%#v records=%#v", savedOpportunityView, filteredOpportunities.Items)
+	admin.must("POST", "/api/v1/crm/opportunities", workspaceID, map[string]any{"title": "Beta deal", "pipeline_id": pipeline.ID, "stage_id": openStage, "expected_revenue": "100.00", "currency": "USD"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/crm/opportunities", workspaceID, map[string]any{"title": "Acme expansion", "pipeline_id": pipeline.ID, "stage_id": openStage, "expected_revenue": "200.00", "currency": "USD"}, nil, http.StatusCreated)
+	admin.must("GET", "/api/v1/crm/opportunities?view_id="+savedOpportunityView.ID, workspaceID, nil, &filteredOpportunities, http.StatusOK)
+	if len(filteredOpportunities.Items) != 2 {
+		t.Fatalf("saved view did not apply both conditions: %#v", filteredOpportunities.Items)
+	}
+	if filteredOpportunities.Items[0].ID != opportunity.ID {
+		t.Fatalf("saved view did not order by title descending: %#v", filteredOpportunities.Items)
 	}
 	admin.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "custom_values": map[string]any{"forecast_score": 87.5, "seat_count": 12, "segment": "enterprise", "priority": true, "follow_up_date": "2026-11-01"}}, &opportunity, http.StatusOK)
 	if score, ok := opportunity.CustomValues["forecast_score"].(float64); !ok || score != 87.5 || opportunity.CustomValues["seat_count"] != float64(12) || opportunity.CustomValues["segment"] != "enterprise" || opportunity.CustomValues["priority"] != true || opportunity.CustomValues["follow_up_date"] != "2026-11-01" {
@@ -239,6 +255,7 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	admin.must("PUT", "/api/v1/workspace/members/"+membership.ID+"/roles", workspaceID, map[string][]string{"role_ids": {editorRole.ID}}, nil, http.StatusOK)
 	restricted := newAPIClient(t, server.URL)
 	restricted.must("POST", "/api/v1/auth/login", "", map[string]string{"email": "crm-editor@localhost", "password": "crm-editor-password-123"}, nil, http.StatusOK)
+	restricted.must("GET", "/api/v1/crm/opportunities?view_id="+savedOpportunityView.ID, workspaceID, nil, nil, http.StatusNotFound)
 	restricted.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "description": "Allowed ordinary edit"}, &opportunity, http.StatusOK)
 	restricted.must("POST", "/api/v1/crm/opportunities/"+opportunity.ID+"/move-stage", workspaceID, map[string]any{"pipeline_id": pipeline.ID, "stage_id": openStage, "version": opportunity.Version}, nil, http.StatusForbidden)
 }
