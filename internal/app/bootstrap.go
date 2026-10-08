@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/runtime"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/access"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users"
@@ -26,6 +27,11 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	usersModule := users.New(users.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Auth: cfg.Auth})
 	organizationModule := organization.New(organization.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Users: usersModule.Service(), Directory: usersModule.Service(), Events: framework.Events, Logger: logger})
 	accessModule := access.New(access.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Permissions: framework.Permissions, Users: usersModule.Service(), Authenticator: usersModule.Service()})
+	contactsModule, err := contacts.New(contacts.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Permissions: framework.Permissions, Access: accessModule.Service(), Workspace: organizationModule.Service(), Authenticator: usersModule.Service(), Events: framework.Events, Logger: logger, UploadDir: cfg.Contacts.UploadDir, MaxUploadBytes: cfg.Contacts.MaxUploadBytes})
+	if err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("create contacts module: %w", err)
+	}
 	organizationModule.SetAccess(accessModule.Service())
 	usersModule.SetAuthorizer(accessModule.Service())
 	usersModule.SetStatusGuard(accessModule.Service())
@@ -44,6 +50,10 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	if err := framework.Modules.Register(accessModule); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register access module: %w", err)
+	}
+	if err := framework.Modules.Register(contactsModule); err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("register contacts module: %w", err)
 	}
 	if err := framework.Initialize(ctx); err != nil {
 		postgres.Close()

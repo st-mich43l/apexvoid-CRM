@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canAccessNavigation } from './navigation'
+import { canAccessNavigation, groupNavigation } from './navigation'
 import { Boxes } from 'lucide-react'
 
 describe('scope-aware navigation', () => {
@@ -10,5 +10,15 @@ describe('scope-aware navigation', () => {
     expect(canAccessNavigation(platformItem, permission => permission === 'platform.read', () => false)).toBe(true)
     expect(canAccessNavigation(workspaceItem, () => false, permission => permission === 'workspace.read')).toBe(true)
     expect(canAccessNavigation(platformItem, () => false, () => true)).toBe(false)
+  })
+
+  it('groups module navigation into predictable product sections', () => {
+    const sections = groupNavigation([
+      { id: 'dashboard', label: 'Dashboard', path: '/', order: 100, icon: Boxes },
+      { id: 'people', label: 'People', path: '/contacts/people', order: 300, icon: Boxes },
+      { id: 'roles', label: 'Roles', path: '/settings/roles', order: 900, icon: Boxes },
+    ])
+    expect(sections.map(section => section.id)).toEqual(['overview', 'workspace', 'settings'])
+    expect(sections[1].items[0].label).toBe('People')
   })
 })

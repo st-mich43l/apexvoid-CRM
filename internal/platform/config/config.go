@@ -16,6 +16,7 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Database  DatabaseConfig  `yaml:"database"`
 	Auth      AuthConfig      `yaml:"auth"`
+	Contacts  ContactsConfig  `yaml:"contacts"`
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
 	Logging   LoggingConfig   `yaml:"logging"`
 }
@@ -62,6 +63,11 @@ type BootstrapConfig struct {
 	AdminPassword string `yaml:"admin_password"`
 }
 
+type ContactsConfig struct {
+	UploadDir      string `yaml:"upload_dir"`
+	MaxUploadBytes int64  `yaml:"max_upload_bytes"`
+}
+
 func Load(path string) (Config, error) {
 	cfg := defaultConfig()
 	if path != "" {
@@ -88,6 +94,7 @@ func defaultConfig() Config {
 		Server:    ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
 		Database:  DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
 		Auth:      AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
+		Contacts:  ContactsConfig{UploadDir: "/var/lib/apexvoid/attachments", MaxUploadBytes: 25 * 1024 * 1024},
 		Bootstrap: BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
 		Logging:   LoggingConfig{Level: "INFO"},
 	}
@@ -98,6 +105,8 @@ func applyEnv(c *Config) {
 	setString(&c.App.Environment, "APP_ENV")
 	setString(&c.Server.Address, "SERVER_ADDRESS")
 	setString(&c.Database.URL, "DATABASE_URL")
+	setString(&c.Contacts.UploadDir, "CONTACTS_UPLOAD_DIR")
+	setInt64(&c.Contacts.MaxUploadBytes, "CONTACTS_MAX_UPLOAD_BYTES")
 	setDuration(&c.Auth.AccessTokenTTL, "AUTH_ACCESS_TOKEN_TTL")
 	setDuration(&c.Auth.RefreshTokenTTL, "AUTH_REFRESH_TOKEN_TTL")
 	setBool(&c.Auth.CookieSecure, "AUTH_COOKIE_SECURE")
@@ -144,6 +153,14 @@ func setInt(target *int, key string) {
 	}
 }
 
+func setInt64(target *int64, key string) {
+	if value, ok := os.LookupEnv(key); ok {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+			*target = parsed
+		}
+	}
+}
+
 func setBool(target *bool, key string) {
 	if value, ok := os.LookupEnv(key); ok {
 		if parsed, err := strconv.ParseBool(value); err == nil {
@@ -177,6 +194,9 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.CookieSameSite != "lax" && c.Auth.CookieSameSite != "strict" && c.Auth.CookieSameSite != "none" {
 		return fmt.Errorf("invalid configuration: auth cookie same-site must be lax, strict, or none")
+	}
+	if strings.TrimSpace(c.Contacts.UploadDir) == "" || c.Contacts.MaxUploadBytes <= 0 {
+		return fmt.Errorf("invalid configuration: contacts attachment storage")
 	}
 	return nil
 }

@@ -8,7 +8,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const workspaceID = window.localStorage.getItem('apexvoid.active_workspace')
   if (workspaceID) headers.set('X-ApexVoid-Workspace', workspaceID)
   headers.set('Accept', 'application/json')
-  if (options.body) headers.set('Content-Type', 'application/json')
+  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   const response = await fetch(`${baseURL}${path}`, { ...options, headers, credentials: 'include' })
   if (!response.ok) {
     let message = `API request failed with status ${response.status}`
@@ -75,6 +75,27 @@ export const api = {
     replacePermissions: (id: string, permissions: string[]) => request<Role>(`/api/v1/access/roles/${id}/permissions`, { method: 'PUT', body: JSON.stringify({ permissions }) }),
     permissions: () => request<Permission[]>('/api/v1/access/permissions'),
   },
+  contacts: {
+    list: (params: { search?: string; kind?: string; status?: string; page?: number }) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, String(value)) }); return request<ContactList>(`/api/v1/contacts?${query}`) },
+    get: (id: string) => request<Contact>(`/api/v1/contacts/${id}`),
+    create: (body: ContactInput) => request<Contact>('/api/v1/contacts', json(body)),
+    update: (id: string, body: ContactInput) => request<Contact>(`/api/v1/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    archive: (id: string) => request<void>(`/api/v1/contacts/${id}/archive`, { method: 'POST' }),
+    restore: (id: string) => request<void>(`/api/v1/contacts/${id}/restore`, { method: 'POST' }),
+    tags: () => request<Tag[]>('/api/v1/contacts/tags'),
+    createTag: (body: { name: string; color: string }) => request<Tag>('/api/v1/contacts/tags', json(body)),
+    fields: () => request<CustomField[]>('/api/v1/contacts/fields'),
+    createField: (body: Omit<CustomField, 'id' | 'workspace_id' | 'created_at' | 'updated_at' | 'active'>) => request<CustomField>('/api/v1/contacts/fields', json(body)),
+    notes: (id: string) => request<Note[]>(`/api/v1/contacts/${id}/notes`),
+    createNote: (id: string, content: string) => request<Note>(`/api/v1/contacts/${id}/notes`, json({ content })),
+    activities: (id?: string) => request<Activity[]>(id ? `/api/v1/contacts/${id}/activities` : '/api/v1/activities'),
+    createActivity: (body: ActivityInput) => request<Activity>('/api/v1/activities', json(body)),
+    relationships: (id: string) => request<Relationship[]>(`/api/v1/contacts/${id}/relationships`),
+    tagsFor: (id: string) => request<string[]>(`/api/v1/contacts/${id}/tags`),
+    attachments: (id: string) => request<Attachment[]>(`/api/v1/contacts/${id}/attachments`),
+    upload: (id: string, file: File) => { const body = new FormData(); body.append('file', file); return request<Attachment>(`/api/v1/contacts/${id}/attachments`, { method: 'POST', body }) },
+    removeAttachment: (id: string, attachmentID: string) => request<void>(`/api/v1/contacts/${id}/attachments/${attachmentID}`, { method: 'DELETE' }),
+  },
 }
 
 export type Role = { id: string; name: string; display_name: string; description: string; system: boolean; permissions: string[] }
@@ -85,3 +106,13 @@ export type WorkspaceRole = { id: string; workspace_id?: string; name: string; d
 export type SetupStatus = { required: boolean; organization: boolean; workspace: boolean }
 export type SetupResponse = { organization: Organization; workspace: Workspace; membership: Membership }
 export type WorkspaceContextResponse = { organization: Organization; workspace: Workspace; permissions: string[] }
+export type Contact = { id: string; workspace_id: string; kind: 'person' | 'company'; display_name: string; email: string; phone: string; website: string; description: string; status: 'active' | 'archived'; custom_values: Record<string, unknown>; created_at: string; updated_at: string }
+export type ContactInput = Pick<Contact, 'kind' | 'display_name' | 'email' | 'phone' | 'website' | 'description' | 'custom_values'>
+export type ContactList = { items: Contact[]; page: number; limit: number; total: number }
+export type Tag = { id: string; workspace_id: string; name: string; color: string; active: boolean; created_at: string; updated_at: string }
+export type Note = { id: string; workspace_id: string; contact_id: string; author_user_id: string; content: string; created_at: string; updated_at: string }
+export type Activity = { id: string; workspace_id: string; title: string; description: string; activity_type: string; related_contact_id?: string; assigned_user_id: string; due_at?: string; status: string; completed_at?: string; created_at: string; updated_at: string }
+export type ActivityInput = Pick<Activity, 'title' | 'description' | 'activity_type' | 'assigned_user_id'> & { related_contact_id?: string; due_at?: string; status?: string }
+export type Relationship = { id: string; person_id: string; company_id: string; relationship_type: string; job_title: string; is_primary: boolean; person_name?: string; company_name?: string }
+export type Attachment = { id: string; contact_id: string; file_name: string; size: number; content_type: string; uploaded_by: string; created_at: string }
+export type CustomField = { id: string; workspace_id: string; entity: string; key: string; label: string; type: string; description: string; required: boolean; options: string[]; display_order: number; active: boolean; created_at: string; updated_at: string }

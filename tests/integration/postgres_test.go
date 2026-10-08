@@ -123,6 +123,18 @@ type workspaceContext struct {
 	Permissions []string `json:"permissions"`
 }
 
+type contactResponse struct {
+	ID string `json:"id"`
+}
+
+type tagResponse struct {
+	ID string `json:"id"`
+}
+
+type fieldResponse struct {
+	ID string `json:"id"`
+}
+
 func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	databaseURL, cleanup := isolatedDatabaseURL(t)
 	defer cleanup()
@@ -191,6 +203,23 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	admin.must("POST", "/api/v1/workspace/roles", secondary.ID, map[string]string{"name": "administrator", "display_name": "Spoofed Administrator"}, nil, http.StatusConflict)
 	admin.must("POST", "/api/v1/access/roles", "", map[string]string{"name": "administrator", "display_name": "Spoofed Administrator"}, nil, http.StatusConflict)
 	admin.must("PUT", fmt.Sprintf("/api/v1/workspace/roles/%s/permissions", secondaryRole.ID), primaryWorkspaceID, map[string][]string{"permissions": []string{"workspace.member.read"}}, nil, http.StatusBadRequest)
+
+	var primaryPerson, primaryCompany, secondaryPerson contactResponse
+	admin.must("POST", "/api/v1/contacts", primaryWorkspaceID, map[string]any{"kind": "person", "display_name": "Primary Person", "email": "same@example.com"}, &primaryPerson, http.StatusCreated)
+	admin.must("POST", "/api/v1/contacts", primaryWorkspaceID, map[string]any{"kind": "company", "display_name": "Primary Company", "email": "same@example.com"}, &primaryCompany, http.StatusCreated)
+	admin.must("POST", "/api/v1/contacts", secondary.ID, map[string]any{"kind": "person", "display_name": "Secondary Person"}, &secondaryPerson, http.StatusCreated)
+	var customField fieldResponse
+	admin.must("POST", "/api/v1/contacts/fields", primaryWorkspaceID, map[string]any{"key": "tier", "label": "Tier", "type": "selection", "options": []string{"gold", "silver"}}, &customField, http.StatusCreated)
+	var tagged contactResponse
+	admin.must("PATCH", "/api/v1/contacts/"+primaryPerson.ID, primaryWorkspaceID, map[string]any{"kind": "person", "display_name": "Primary Person", "custom_values": map[string]any{"tier": "gold"}}, &tagged, http.StatusOK)
+	var tag tagResponse
+	admin.must("POST", "/api/v1/contacts/tags", primaryWorkspaceID, map[string]string{"name": "VIP", "color": "#7c3aed"}, &tag, http.StatusCreated)
+	admin.must("PUT", "/api/v1/contacts/"+primaryPerson.ID+"/tags", primaryWorkspaceID, []string{tag.ID}, nil, http.StatusNoContent)
+	admin.must("PUT", "/api/v1/contacts/"+primaryPerson.ID+"/relationships", primaryWorkspaceID, []map[string]any{{"person_id": primaryPerson.ID, "company_id": primaryCompany.ID, "relationship_type": "employee", "job_title": "Founder", "is_primary": true}}, nil, http.StatusNoContent)
+	admin.must("POST", "/api/v1/contacts/"+primaryPerson.ID+"/notes", primaryWorkspaceID, map[string]string{"content": "Workspace-scoped note"}, nil, http.StatusCreated)
+	admin.must("POST", "/api/v1/activities", primaryWorkspaceID, map[string]any{"title": "Welcome call", "activity_type": "call", "related_contact_id": primaryPerson.ID, "assigned_user_id": adminLogin.User.ID}, nil, http.StatusCreated)
+	admin.must("GET", "/api/v1/contacts/"+secondaryPerson.ID, primaryWorkspaceID, nil, nil, http.StatusNotFound)
+	admin.must("GET", "/api/v1/contacts/"+primaryPerson.ID+"/relationships", secondary.ID, nil, nil, http.StatusNotFound)
 
 	var createdUser struct {
 		ID string `json:"id"`
