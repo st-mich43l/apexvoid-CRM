@@ -73,6 +73,7 @@ func (h *Handler) registerWorkspaceRoutes(r module.RouteRegistry) {
 	leadRead := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.lead.read"))
 	leadRead.Get("/crm/leads", h.listLeads)
 	leadRead.Get("/crm/leads/{id}", h.getLead)
+	leadRead.Get("/crm/leads/{id}/history", h.leadHistory)
 	leadCreate := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.lead.create"))
 	leadCreate.Post("/crm/leads", h.createLead)
 	leadUpdate := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.lead.update"))
@@ -86,6 +87,7 @@ func (h *Handler) registerWorkspaceRoutes(r module.RouteRegistry) {
 	oppRead := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.opportunity.read"))
 	oppRead.Get("/crm/opportunities", h.listOpportunities)
 	oppRead.Get("/crm/opportunities/{id}", h.getOpportunity)
+	oppRead.Get("/crm/opportunities/{id}/history", h.opportunityHistory)
 	oppCreate := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.opportunity.create"))
 	oppCreate.Post("/crm/opportunities", h.createOpportunity)
 	oppUpdate := c.With(organizationapi.RequireWorkspacePermission(h.x, "crm.opportunity.update"))
@@ -200,6 +202,19 @@ func (h *Handler) getLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out(w, 200, item)
+}
+func (h *Handler) leadHistory(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := ctx(r)
+	identifier, ok := routeID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.s.LeadHistory(r.Context(), workspace, identifier)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	out(w, 200, items)
 }
 func (h *Handler) createLead(w http.ResponseWriter, r *http.Request) {
 	var body leadCreateRequest
@@ -330,6 +345,19 @@ func (h *Handler) getOpportunity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out(w, 200, item)
+}
+func (h *Handler) opportunityHistory(w http.ResponseWriter, r *http.Request) {
+	workspace, _ := ctx(r)
+	identifier, ok := routeID(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.s.OpportunityHistory(r.Context(), workspace, identifier)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	out(w, 200, items)
 }
 func (h *Handler) createOpportunity(w http.ResponseWriter, r *http.Request) {
 	var body opportunityCreateRequest

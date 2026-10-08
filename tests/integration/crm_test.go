@@ -102,4 +102,18 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if opportunity.Description != "Updated without moving stage" {
 		t.Fatalf("ordinary opportunity patch did not persist: %#v", opportunity)
 	}
+	var restrictedUser struct {
+		ID string `json:"id"`
+	}
+	admin.must("POST", "/api/v1/users", "", map[string]string{"email": "crm-editor@localhost", "username": "crm-editor", "display_name": "CRM Editor", "password": "crm-editor-password-123"}, &restrictedUser, http.StatusCreated)
+	var membership member
+	admin.must("POST", "/api/v1/workspace/members", workspaceID, map[string]string{"user_id": restrictedUser.ID}, &membership, http.StatusCreated)
+	var editorRole role
+	admin.must("POST", "/api/v1/workspace/roles", workspaceID, map[string]string{"name": "crm_editor", "display_name": "CRM editor"}, &editorRole, http.StatusCreated)
+	admin.must("PUT", "/api/v1/workspace/roles/"+editorRole.ID+"/permissions", workspaceID, map[string][]string{"permissions": {"crm.opportunity.read", "crm.opportunity.update"}}, nil, http.StatusOK)
+	admin.must("PUT", "/api/v1/workspace/members/"+membership.ID+"/roles", workspaceID, map[string][]string{"role_ids": {editorRole.ID}}, nil, http.StatusOK)
+	restricted := newAPIClient(t, server.URL)
+	restricted.must("POST", "/api/v1/auth/login", "", map[string]string{"email": "crm-editor@localhost", "password": "crm-editor-password-123"}, nil, http.StatusOK)
+	restricted.must("PATCH", "/api/v1/crm/opportunities/"+opportunity.ID, workspaceID, map[string]any{"version": opportunity.Version, "description": "Allowed ordinary edit"}, &opportunity, http.StatusOK)
+	restricted.must("POST", "/api/v1/crm/opportunities/"+opportunity.ID+"/move-stage", workspaceID, map[string]any{"pipeline_id": pipeline.ID, "stage_id": openStage, "version": opportunity.Version}, nil, http.StatusForbidden)
 }

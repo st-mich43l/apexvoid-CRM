@@ -52,6 +52,12 @@ func (s *Service) ListOpportunities(ctx context.Context, workspaceID uuid.UUID, 
 func (s *Service) GetOpportunity(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Opportunity, error) {
 	return s.r.GetOpportunity(ctx, workspaceID, id)
 }
+func (s *Service) LeadHistory(ctx context.Context, workspaceID, id uuid.UUID) ([]domain.History, error) {
+	return s.r.ListHistory(ctx, workspaceID, &id, nil)
+}
+func (s *Service) OpportunityHistory(ctx context.Context, workspaceID, id uuid.UUID) ([]domain.History, error) {
+	return s.r.ListHistory(ctx, workspaceID, nil, &id)
+}
 
 func (s *Service) CreateLead(ctx context.Context, item domain.Lead) (domain.Lead, error) {
 	item.ID = uuid.New()
@@ -301,44 +307,57 @@ func (s *Service) MoveOpportunity(ctx context.Context, workspaceID, actor, id, p
 }
 
 func (s *Service) CloseOpportunity(ctx context.Context, workspaceID, actor, id uuid.UUID, won bool, reason string, version int) (domain.Opportunity, error) {
-	item, err := s.r.GetOpportunity(ctx, workspaceID, id)
-	if err != nil {
-		return domain.Opportunity{}, err
-	}
-	if item.Outcome != domain.OpportunityOpen {
-		return domain.Opportunity{}, fmt.Errorf("opportunity is already closed")
-	}
-	stages, err := s.r.ListStages(ctx, workspaceID, item.PipelineID, false)
-	if err != nil {
-		return domain.Opportunity{}, err
-	}
-	target := domain.StageWon
-	if !won {
-		target = domain.StageLost
-	}
-	for _, stage := range stages {
-		if stage.Category == target {
-			item.StageID = stage.ID
-			break
+	var item *domain.Opportunity
+	err := s.with(ctx, func(tx context.Context) error {
+		var err error
+		item, err = s.r.GetOpportunityForUpdate(tx, workspaceID, id)
+		if err != nil {
+			return err
 		}
-	}
-	if item.StageID == uuid.Nil {
-		return domain.Opportunity{}, fmt.Errorf("pipeline has no active %s stage", target)
-	}
-	now := time.Now().UTC()
-	if won {
-		item.Outcome = domain.OpportunityWon
-		item.LossReason = ""
-	} else {
-		item.Outcome = domain.OpportunityLost
-		item.LossReason = strings.TrimSpace(reason)
-	}
-	item.ClosedAt = &now
-	item.UpdatedBy, item.UpdatedAt = actor, now
-	if err = s.validateOpportunity(ctx, item); err != nil {
-		return domain.Opportunity{}, err
-	}
-	if err = s.with(ctx, func(tx context.Context) error { return s.r.UpdateOpportunity(tx, item, version) }); err != nil {
+		if item.Outcome != domain.OpportunityOpen {
+			return fmt.Errorf("opportunity is already closed")
+		}
+		stages, err := s.r.ListStages(tx, workspaceID, item.PipelineID, false)
+		if err != nil {
+			return err
+		}
+		target := domain.StageWon
+		if !won {
+			target = domain.StageLost
+		}
+		from := item.StageID
+		for _, stage := range stages {
+			if stage.Category == target {
+				item.StageID = stage.ID
+				break
+			}
+		}
+		if item.StageID == uuid.Nil {
+			return fmt.Errorf("pipeline has no active %s stage", target)
+		}
+		now := time.Now().UTC()
+		if won {
+			item.Outcome = domain.OpportunityWon
+			item.LossReason = ""
+		} else {
+			item.Outcome = domain.OpportunityLost
+			item.LossReason = strings.TrimSpace(reason)
+		}
+		item.ClosedAt = &now
+		item.UpdatedBy, item.UpdatedAt = actor, now
+		if err = s.validateOpportunity(tx, item); err != nil {
+			return err
+		}
+		if err = s.r.UpdateOpportunity(tx, item, version); err != nil {
+			return err
+		}
+		event := "opportunity.won"
+		if !won {
+			event = "opportunity.lost"
+		}
+		return s.recordHistory(tx, workspaceID, actor, nil, &id, event, &from, &item.StageID)
+	})
+	if err != nil {
 		return domain.Opportunity{}, err
 	}
 	if won {
@@ -350,22 +369,31 @@ func (s *Service) CloseOpportunity(ctx context.Context, workspaceID, actor, id u
 }
 
 func (s *Service) ReopenOpportunity(ctx context.Context, workspaceID, actor, id, stageID uuid.UUID, version int) (domain.Opportunity, error) {
-	item, err := s.r.GetOpportunity(ctx, workspaceID, id)
+	var item *domain.Opportunity
+	err := s.with(ctx, func(tx context.Context) error {
+		var err error
+		item, err = s.r.GetOpportunityForUpdate(tx, workspaceID, id)
+		if err != nil {
+			return err
+		}
+		if item.Outcome == domain.OpportunityOpen {
+			return fmt.Errorf("opportunity is already open")
+		}
+		from := item.StageID
+		item.StageID = stageID
+		item.Outcome = domain.OpportunityOpen
+		item.LossReason = ""
+		item.ClosedAt = nil
+		item.UpdatedBy, item.UpdatedAt = actor, time.Now().UTC()
+		if err = s.validateOpportunity(tx, item); err != nil {
+			return err
+		}
+		if err = s.r.UpdateOpportunity(tx, item, version); err != nil {
+			return err
+		}
+		return s.recordHistory(tx, workspaceID, actor, nil, &id, "opportunity.reopened", &from, &stageID)
+	})
 	if err != nil {
-		return domain.Opportunity{}, err
-	}
-	if item.Outcome == domain.OpportunityOpen {
-		return domain.Opportunity{}, fmt.Errorf("opportunity is already open")
-	}
-	item.StageID = stageID
-	item.Outcome = domain.OpportunityOpen
-	item.LossReason = ""
-	item.ClosedAt = nil
-	item.UpdatedBy, item.UpdatedAt = actor, time.Now().UTC()
-	if err = s.validateOpportunity(ctx, item); err != nil {
-		return domain.Opportunity{}, err
-	}
-	if err = s.with(ctx, func(tx context.Context) error { return s.r.UpdateOpportunity(tx, item, version) }); err != nil {
 		return domain.Opportunity{}, err
 	}
 	s.publish(ctx, "crm.opportunity.reopened", workspaceID, id)
