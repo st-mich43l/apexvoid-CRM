@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type EffectiveField } from '../../../core/api/client'
 import { useAuth } from '../../../core/auth/context'
@@ -14,24 +14,27 @@ function useCRMKey(part: string) {
   return userWorkspaceQueryKey(user?.id, activeWorkspaceId, 'crm', part)
 }
 
-export function CRMFieldRenderer({ entity, values, onChange }: { entity: string; values: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void }) {
+export function CRMFieldRenderer({ entity, values, onChange, mode = 'create' }: { entity: string; values: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void; mode?: 'create' | 'edit' }) {
   const schema = useQuery({ queryKey: useCRMKey(`schema-${entity}`), queryFn: () => api.customization.schema(entity) })
   const fields = useMemo(() => schema.data?.fields.filter(field => field.source === 'custom' && field.visible) ?? [], [schema.data])
   const sections = schema.data?.sections ?? []
   const [validation, setValidation] = useState<Record<string, string>>({})
+  const initializedDefaults = useRef(new Set<string>())
 
   useEffect(() => {
-    if (!fields.length) return
+    if (mode !== 'create' || !fields.length) return
     const defaults = { ...values }
     let changed = false
     for (const field of fields) {
+      if (initializedDefaults.current.has(field.key)) continue
+      initializedDefaults.current.add(field.key)
       if (defaults[field.key] === undefined && field.default_value !== undefined) {
         defaults[field.key] = field.default_value
         changed = true
       }
     }
     if (changed) onChange(defaults)
-  }, [fields, values, onChange])
+  }, [fields, values, onChange, mode])
 
   const update = (field: EffectiveField, raw: string | boolean) => {
     const result = normalizeCRMFieldValue(field.type, raw)
@@ -41,7 +44,10 @@ export function CRMFieldRenderer({ entity, values, onChange }: { entity: string;
     }
     if (result.clear) {
       const next = { ...values }
-      delete next[field.key]
+      // Sparse PATCH removes an existing JSONB key only when its value is null.
+      // Creation requests omit optional blank values instead.
+      if (mode === 'edit') next[field.key] = null
+      else delete next[field.key]
       setValidation(current => ({ ...current, [field.key]: '' }))
       onChange(next)
       return
