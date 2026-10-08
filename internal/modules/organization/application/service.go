@@ -396,7 +396,9 @@ func (s *Service) withTransaction(ctx context.Context, fn func(context.Context) 
 }
 
 func (s *Service) publish(ctx context.Context, name string, payload any) {
-	if s.events == nil { return }
+	if s.events == nil {
+		return
+	}
 	database.AfterCommit(ctx, func(ctx context.Context) {
 		var err error
 		switch typed := payload.(type) {
