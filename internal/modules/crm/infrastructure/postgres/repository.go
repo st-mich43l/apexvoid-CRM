@@ -522,7 +522,10 @@ func (r *Repository) GetOpportunityBoard(ctx context.Context, w, pipelineID uuid
 				items = append(items, *item)
 				continue
 			}
-			cursor := domain.BoardCursor{ExpectedCloseDate: item.ExpectedCloseDate, ID: item.ID}
+			// The lookahead record has not been returned. The next page
+			// must start strictly after the last record we did return.
+			last := items[len(items)-1]
+			cursor := domain.BoardCursor{ExpectedCloseDate: last.ExpectedCloseDate, ID: last.ID}
 			byStage[stage.ID].NextCursor = &cursor
 			break
 		}
