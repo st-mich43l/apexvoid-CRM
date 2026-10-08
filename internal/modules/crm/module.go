@@ -13,6 +13,7 @@ import (
 	crmmetadata "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/metadata"
 	crmmigrations "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/migrations"
 	crmhttp "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/transport/http"
+	customdomain "github.com/st-mich43l/apexvoid-CRM/internal/modules/customization/domain"
 	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	usersapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
@@ -30,6 +31,8 @@ type Dependencies struct {
 	}
 	Customization interface {
 		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+		ListViews(context.Context, uuid.UUID, uuid.UUID, string) ([]customdomain.SavedView, error)
+		EffectiveSchema(context.Context, uuid.UUID, string) (customdomain.EffectiveSchema, error)
 	}
 	Events *event.Bus
 }

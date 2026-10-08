@@ -7,6 +7,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
 	contactsapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/domain"
+	customdomain "github.com/st-mich43l/apexvoid-CRM/internal/modules/customization/domain"
 	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 	"strings"
@@ -18,6 +19,8 @@ type Service struct {
 	tx     *database.TxManager
 	custom interface {
 		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+		ListViews(context.Context, uuid.UUID, uuid.UUID, string) ([]customdomain.SavedView, error)
+		EffectiveSchema(context.Context, uuid.UUID, string) (customdomain.EffectiveSchema, error)
 	}
 	contacts interface {
 		contactsapi.ContactReader
@@ -35,6 +38,8 @@ type Dependencies struct {
 	Transactions *database.TxManager
 	CustomValues interface {
 		ValidateCustomValues(context.Context, uuid.UUID, string, map[string]any) error
+		ListViews(context.Context, uuid.UUID, uuid.UUID, string) ([]customdomain.SavedView, error)
+		EffectiveSchema(context.Context, uuid.UUID, string) (customdomain.EffectiveSchema, error)
 	}
 	Contacts interface {
 		contactsapi.ContactReader
@@ -164,7 +169,19 @@ func (s *Service) SetPipelineArchived(ctx context.Context, w, id uuid.UUID, vers
 			}
 			return s.r.SetPipelineStatus(c, w, id, domain.PipelineArchived, version)
 		}
-		return s.r.SetPipelineStatus(c, w, id, domain.PipelineActive, version)
+		if err := s.r.SetPipelineStatus(c, w, id, domain.PipelineActive, version); err != nil {
+			return err
+		}
+		pipelines, err := s.r.ListPipelines(c, w, false)
+		if err != nil {
+			return err
+		}
+		for _, pipeline := range pipelines {
+			if pipeline.Default {
+				return nil
+			}
+		}
+		return s.r.SetDefault(c, w, id)
 	})
 }
 func (s *Service) ClonePipeline(ctx context.Context, w, actor, id uuid.UUID, name string) (domain.Pipeline, error) {
@@ -308,8 +325,41 @@ func (s *Service) SetStageArchived(ctx context.Context, w, p, id uuid.UUID, arch
 			if stage.Category != domain.StageOpen {
 				return fmt.Errorf("terminal stages cannot be archived")
 			}
+			stage.Active = false
+			if err := domain.ValidatePipelineStages(stages); err != nil {
+				return err
+			}
+			return s.r.SetStagesActive(c, w, p, []uuid.UUID{id}, false)
 		}
-		return s.r.SetStagesActive(c, w, p, []uuid.UUID{id}, !archived)
+		stage.Active = true
+		maxPosition := -1
+		for _, item := range stages {
+			if item.ID != stage.ID && item.Active && item.Position > maxPosition {
+				maxPosition = item.Position
+			}
+		}
+		stage.Position = maxPosition + 1
+		if err := domain.ValidatePipelineStages(stages); err != nil {
+			return err
+		}
+		if err := s.r.SetTemporaryStagePositions(c, w, p); err != nil {
+			return err
+		}
+		if err := s.r.SetStagesActive(c, w, p, []uuid.UUID{id}, true); err != nil {
+			return err
+		}
+		order := make([]uuid.UUID, 0, len(stages))
+		for _, item := range stages {
+			if item.Active && item.Category == domain.StageOpen {
+				order = append(order, item.ID)
+			}
+		}
+		for _, item := range stages {
+			if item.Active && item.Category != domain.StageOpen {
+				order = append(order, item.ID)
+			}
+		}
+		return s.r.SetStagePositions(c, w, p, order)
 	})
 }
 func (s *Service) Reorder(ctx context.Context, w, p uuid.UUID, ids []uuid.UUID) error {

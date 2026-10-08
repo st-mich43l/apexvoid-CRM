@@ -161,6 +161,17 @@ func (r *Repository) UpdateView(ctx context.Context, item *domain.SavedView) err
 	return nil
 }
 
+func (r *Repository) DeleteView(ctx context.Context, workspaceID uuid.UUID, entity string, id, ownerID uuid.UUID) error {
+	result, err := r.db(ctx).Exec(ctx, `DELETE FROM customization_saved_views WHERE workspace_id=$1 AND entity_name=$2 AND id=$3 AND owner_user_id=$4`, workspaceID, entity, id, ownerID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func scanField(row pgx.Row) (domain.RuntimeField, error) {
 	var item domain.RuntimeField
 	var defaultValue, options []byte

@@ -35,8 +35,21 @@ type Repository interface {
 	ListHistory(context.Context, uuid.UUID, *uuid.UUID, *uuid.UUID) ([]History, error)
 }
 
+type ViewCondition struct {
+	Field    string
+	Operator string
+	Value    any
+	Custom   bool
+	Type     string
+}
+
 type LeadFilter struct {
 	Search      string
+	ViewID      *uuid.UUID
+	ViewUserID  uuid.UUID
+	Conditions  []ViewCondition
+	SortCustom  bool
+	SortType    string
 	Status      LeadStatus
 	OwnerID     *uuid.UUID
 	Page, Limit int
@@ -45,6 +58,11 @@ type LeadFilter struct {
 }
 type OpportunityFilter struct {
 	Search                       string
+	ViewID                       *uuid.UUID
+	ViewUserID                   uuid.UUID
+	Conditions                   []ViewCondition
+	SortCustom                   bool
+	SortType                     string
 	PipelineID, StageID, OwnerID *uuid.UUID
 	Outcome                      OpportunityOutcome
 	Page, Limit                  int

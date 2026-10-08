@@ -21,10 +21,27 @@ func TestRuntimeFieldValidation(t *testing.T) {
 }
 
 func TestSavedViewRejectsUnsafeOperators(t *testing.T) {
-	fields := map[string]struct{}{"name": {}}
+	fields := map[string]EffectiveField{"name": {Key: "name", Type: field.String}}
 	view := SavedView{Name: "Bad view", Columns: []string{"name"}, Filters: []Filter{{Field: "name", Operator: "sql"}}}
 	if err := view.Validate(fields); err == nil {
 		t.Fatal("expected unsupported filter operator to fail")
+	}
+}
+
+func TestSavedViewValidatesFilterValueTypes(t *testing.T) {
+	fields := map[string]EffectiveField{
+		"name":      {Key: "name", Type: field.String},
+		"employee":  {Key: "employee", Type: field.Integer},
+		"segment":   {Key: "segment", Type: field.Enum, Options: []string{"mid", "enterprise"}},
+		"follow_up": {Key: "follow_up", Type: field.Date},
+	}
+	valid := SavedView{Name: "Typed view", Filters: []Filter{{Field: "employee", Operator: "eq", Value: float64(12)}, {Field: "segment", Operator: "in", Value: []any{"mid"}}}}
+	if err := valid.Validate(fields); err != nil {
+		t.Fatalf("expected typed filters to validate: %v", err)
+	}
+	invalid := SavedView{Name: "Invalid typed view", Filters: []Filter{{Field: "employee", Operator: "eq", Value: "12"}}}
+	if err := invalid.Validate(fields); err == nil {
+		t.Fatal("expected integer filter with string value to fail")
 	}
 }
 

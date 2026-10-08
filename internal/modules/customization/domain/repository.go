@@ -17,4 +17,5 @@ type Repository interface {
 	ListViews(context.Context, uuid.UUID, uuid.UUID, string) ([]SavedView, error)
 	CreateView(context.Context, *SavedView) error
 	UpdateView(context.Context, *SavedView) error
+	DeleteView(context.Context, uuid.UUID, string, uuid.UUID, uuid.UUID) error
 }
