@@ -98,6 +98,7 @@ describe('OpportunityBoardPage', () => {
     vi.spyOn(api.contacts, 'list').mockResolvedValue({ items: [], page: 1, limit: 100, total: 0 })
     renderPage(undefined, ['crm.opportunity.read', 'crm.opportunity.transition', 'customization.schema.read'])
     const selection = await screen.findByRole('combobox', { name: 'Saved opportunity view' })
+    await screen.findByRole('option', { name: /Second pipeline deals/ })
     fireEvent.change(selection, { target: { value: saved.id } })
     await waitFor(() => expect(boardAPI).toHaveBeenCalledWith('pipeline-2', expect.objectContaining({ view_id: saved.id })))
   })
