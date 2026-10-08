@@ -399,26 +399,28 @@ func (s *Service) publish(ctx context.Context, name string, payload any) {
 	if s.events == nil {
 		return
 	}
-	var err error
-	switch typed := payload.(type) {
-	case domain.OrganizationCreated:
-		err = event.Publish(s.events, ctx, name, typed)
-	case domain.OrganizationUpdated:
-		err = event.Publish(s.events, ctx, name, typed)
-	case domain.WorkspaceCreated:
-		err = event.Publish(s.events, ctx, name, typed)
-	case domain.WorkspaceUpdated:
-		err = event.Publish(s.events, ctx, name, typed)
-	case domain.MemberAdded:
-		err = event.Publish(s.events, ctx, name, typed)
-	case domain.MemberUpdated:
-		err = event.Publish(s.events, ctx, name, typed)
-	case domain.MemberRemoved:
-		err = event.Publish(s.events, ctx, name, typed)
-	default:
-		err = errors.New("unsupported organization event payload")
-	}
-	if err != nil {
-		s.logger.Error("post-commit event publication failed", "event", name, "error", err)
-	}
+	database.AfterCommit(ctx, func(ctx context.Context) {
+		var err error
+		switch typed := payload.(type) {
+		case domain.OrganizationCreated:
+			err = event.Publish(s.events, ctx, name, typed)
+		case domain.OrganizationUpdated:
+			err = event.Publish(s.events, ctx, name, typed)
+		case domain.WorkspaceCreated:
+			err = event.Publish(s.events, ctx, name, typed)
+		case domain.WorkspaceUpdated:
+			err = event.Publish(s.events, ctx, name, typed)
+		case domain.MemberAdded:
+			err = event.Publish(s.events, ctx, name, typed)
+		case domain.MemberUpdated:
+			err = event.Publish(s.events, ctx, name, typed)
+		case domain.MemberRemoved:
+			err = event.Publish(s.events, ctx, name, typed)
+		default:
+			err = errors.New("unsupported organization event payload")
+		}
+		if err != nil {
+			s.logger.Error("post-commit event publication failed", "event", name, "error", err)
+		}
+	})
 }
