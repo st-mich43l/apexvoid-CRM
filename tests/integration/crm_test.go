@@ -217,8 +217,9 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	var filteredOpportunities struct {
 		Items []crmOpportunity `json:"items"`
 	}
-	admin.must("POST", "/api/v1/crm/opportunities", workspaceID, map[string]any{"title": "Beta deal", "pipeline_id": pipeline.ID, "stage_id": openStage, "expected_revenue": "100.00", "currency": "USD"}, nil, http.StatusCreated)
-	admin.must("POST", "/api/v1/crm/opportunities", workspaceID, map[string]any{"title": "Acme expansion", "pipeline_id": pipeline.ID, "stage_id": openStage, "expected_revenue": "200.00", "currency": "USD"}, nil, http.StatusCreated)
+	var betaDeal, expansionDeal crmOpportunity
+	admin.must("POST", "/api/v1/crm/opportunities", workspaceID, map[string]any{"title": "Beta deal", "pipeline_id": pipeline.ID, "stage_id": openStage, "expected_revenue": "100.00", "currency": "USD", "expected_close_date": "2026-10-20"}, &betaDeal, http.StatusCreated)
+	admin.must("POST", "/api/v1/crm/opportunities", workspaceID, map[string]any{"title": "Acme expansion", "pipeline_id": pipeline.ID, "stage_id": openStage, "expected_revenue": "200.00", "currency": "USD", "expected_close_date": "2026-10-20"}, &expansionDeal, http.StatusCreated)
 	var board struct {
 		Stages []struct {
 			Stage struct {
@@ -251,19 +252,42 @@ func TestCRMLeadConversionAndSparsePatch(t *testing.T) {
 	if openBoardStage == nil || openBoardStage.Count != 3 || len(openBoardStage.Items) != 1 || openBoardStage.NextCursor == nil || openBoardStage.TotalsByCurrency["USD"] != "1550.50" {
 		t.Fatalf("board did not return bounded cards and currency totals: %#v", board)
 	}
-	var nextBoard struct {
-		Stages []struct {
-			Stage struct {
-				ID string `json:"id"`
-			} `json:"stage"`
-			Items []crmOpportunity `json:"items"`
-		} `json:"stages"`
-	}
-	admin.must("GET", "/api/v1/crm/pipelines/"+pipeline.ID+"/board?stage_id="+openStage+"&limit=1&cursor="+*openBoardStage.NextCursor, workspaceID, nil, &nextBoard, http.StatusOK)
-	for _, column := range nextBoard.Stages {
-		if column.Stage.ID == openStage && len(column.Items) != 1 {
-			t.Fatalf("board cursor did not return the next card: %#v", column.Items)
+	// The lookahead record is never itself a cursor: visit ALL records
+	// across three pages, including matching dates and a NULL close date.
+	want := map[string]bool{opportunity.ID: true, betaDeal.ID: true, expansionDeal.ID: true}
+	seen := map[string]bool{}
+	collect := func(items []crmOpportunity) {
+		for _, card := range items {
+			if !want[card.ID] || seen[card.ID] {
+				t.Fatalf("board pagination returned unknown or duplicate card: %s", card.ID)
+			}
+			seen[card.ID] = true
 		}
+	}
+	collect(openBoardStage.Items)
+	cursor := openBoardStage.NextCursor
+	for pageNumber := 2; cursor != nil && pageNumber <= 5; pageNumber++ {
+		var nextBoard struct {
+			Stages []struct {
+				Stage struct { ID string `json:"id"` } `json:"stage"`
+				Items []crmOpportunity `json:"items"`
+				NextCursor *string `json:"next_cursor"`
+			} `json:"stages"`
+		}
+		admin.must("GET", "/api/v1/crm/pipelines/"+pipeline.ID+"/board?stage_id="+openStage+"&limit=1&cursor="+*cursor, workspaceID, nil, &nextBoard, http.StatusOK)
+		found := false
+		for _, column := range nextBoard.Stages {
+			if column.Stage.ID != openStage { continue }
+			found = true
+			if len(column.Items) != 1 { t.Fatalf("expected exactly one card on page %d: %#v", pageNumber, column.Items) }
+			collect(column.Items)
+			cursor = column.NextCursor
+			break
+		}
+		if !found { t.Fatalf("board page %d omitted requested stage", pageNumber) }
+	}
+	if len(seen) != len(want) || cursor != nil {
+		t.Fatalf("board pagination omitted cards: seen=%v, wanted=%v, next_cursor=%v", seen, want, cursor)
 	}
 	admin.must("GET", "/api/v1/crm/opportunities?view_id="+savedOpportunityView.ID, workspaceID, nil, &filteredOpportunities, http.StatusOK)
 	if len(filteredOpportunities.Items) != 2 {
