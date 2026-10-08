@@ -36,11 +36,11 @@ type Repository interface {
 }
 
 type ViewCondition struct {
-	Field string
+	Field    string
 	Operator string
-	Value any
-	Custom bool
-	Type string
+	Value    any
+	Custom   bool
+	Type     string
 }
 
 type LeadFilter struct {
