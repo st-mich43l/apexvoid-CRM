@@ -1,7 +1,7 @@
 import { Boxes, Building2, ChevronDown, ChevronRight, Command, LogOut, Moon, PanelLeft, PanelLeftClose, ShieldCheck, Sun } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { NavigationItem } from '../../framework/module/types'
 import { api } from '../api/client'
 import { useAuth } from '../auth/context'
@@ -14,14 +14,21 @@ export function AppShell({ navigation }: { navigation: NavigationItem[] }) {
   const { workspaces, activeWorkspace, selectWorkspace, can: workspaceCan } = useWorkspace()
   const { resolvedTheme, toggle } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1280px)')
+    const expandOnWideScreen = () => { if (media.matches) setCollapsed(false) }
+    expandOnWideScreen()
+    media.addEventListener?.('change', expandOnWideScreen)
+    return () => media.removeEventListener?.('change', expandOnWideScreen)
+  }, [])
   const location = useLocation()
   const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: 1, refetchInterval: 30_000 })
   const healthy = health.data?.status === 'ok'
   const visible = navigation.filter(item => canAccessNavigation(item, platformCan, workspaceCan))
   const sections = groupNavigation(visible)
 
-  return <div className="flex min-h-screen bg-background text-foreground">
-    <aside className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] shadow-[8px_0_30px_-24px_rgba(16,10,45,0.65)] transition-[width,padding] duration-300 md:flex ${collapsed ? 'w-[84px] px-3' : 'w-72 px-4'}`}>
+  return <div className="flex min-h-screen overflow-x-hidden bg-background text-foreground">
+    <aside className={`relative sticky top-0 hidden h-screen shrink-0 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] shadow-[8px_0_30px_-24px_rgba(16,10,45,0.65)] transition-[width,padding] duration-300 md:flex ${collapsed ? 'w-[84px] px-3' : 'w-72 px-4'}`}>
       <div className={`flex h-20 shrink-0 items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-400 via-primary to-indigo-600 text-white shadow-lg shadow-violet-950/20"><Boxes size={20} strokeWidth={2.4} /></div>
@@ -44,7 +51,7 @@ export function AppShell({ navigation }: { navigation: NavigationItem[] }) {
       </div>
     </aside>
 
-    <main className="min-w-0 flex-1"><header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card/90 px-6 py-3 shadow-sm backdrop-blur-md md:px-10"><div className="flex items-center gap-3 md:hidden"><Boxes size={20} className="text-primary" /><span className="font-semibold">ApexVoid</span></div><div className="flex min-w-0 items-center gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-card-foreground">{activeWorkspace?.name ?? 'ApexVoid setup'}</p><p className="truncate text-xs text-muted-foreground">{activeWorkspace ? 'Current workspace' : 'Organization setup'}</p></div>{workspaces.length > 1 && <label className="relative hidden sm:block"><span className="sr-only">Switch workspace</span><select value={activeWorkspace?.id ?? ''} onChange={event => selectWorkspace(event.target.value)} className="appearance-none rounded-lg border border-border bg-background py-2 pl-3 pr-8 text-xs text-card-foreground outline-none focus:border-primary">{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><ChevronDown size={14} className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" /></label>}</div><div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground"><button type="button" onClick={toggle} aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`} className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground">{resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button><span className="hidden sm:inline">{user?.display_name}</span><button onClick={() => void logout()} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><LogOut size={16} /></button><span className={`h-2 w-2 rounded-full ${healthy ? 'bg-success' : 'bg-warning'}`} title={healthy ? 'API connected' : 'Connecting to API'} /></div></header><div className="mx-auto max-w-6xl p-6 md:p-10"><Outlet /></div></main>
+    <main className="min-w-0 flex-1 overflow-x-hidden"><header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card/90 px-6 py-3 shadow-sm backdrop-blur-md md:px-10"><div className="flex items-center gap-3 md:hidden"><Boxes size={20} className="text-primary" /><span className="font-semibold">ApexVoid</span></div><div className="flex min-w-0 items-center gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-card-foreground">{activeWorkspace?.name ?? 'ApexVoid setup'}</p><p className="truncate text-xs text-muted-foreground">{activeWorkspace ? 'Current workspace' : 'Organization setup'}</p></div>{workspaces.length > 1 && <label className="relative hidden sm:block"><span className="sr-only">Switch workspace</span><select value={activeWorkspace?.id ?? ''} onChange={event => selectWorkspace(event.target.value)} className="appearance-none rounded-lg border border-border bg-background py-2 pl-3 pr-8 text-xs text-card-foreground outline-none focus:border-primary">{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><ChevronDown size={14} className="pointer-events-none absolute right-2 top-2.5 text-muted-foreground" /></label>}</div><div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground"><button type="button" onClick={toggle} aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`} className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground">{resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button><span className="hidden sm:inline">{user?.display_name}</span><button onClick={() => void logout()} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><LogOut size={16} /></button><span className={`h-2 w-2 rounded-full ${healthy ? 'bg-success' : 'bg-warning'}`} title={healthy ? 'API connected' : 'Connecting to API'} /></div></header><div className="mx-auto w-full max-w-6xl p-6 md:p-10"><Outlet /></div></main>
   </div>
 }
 
