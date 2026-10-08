@@ -279,20 +279,24 @@ func (r *Repository) ListLeads(ctx context.Context, w uuid.UUID, f domain.LeadFi
 		args = append(args, "%"+strings.TrimSpace(f.Search)+"%")
 		where = append(where, "(title ILIKE $"+fmt.Sprint(len(args))+" OR contact_name ILIKE $"+fmt.Sprint(len(args))+" OR company_name ILIKE $"+fmt.Sprint(len(args))+" OR email ILIKE $"+fmt.Sprint(len(args))+")")
 	}
-	if err := applyViewConditions(&where, &args, f.Conditions, "crm.lead"); err != nil { return nil, 0, err }
-    filter := strings.Join(where, " AND ")
+	if err := applyViewConditions(&where, &args, f.Conditions, "crm.lead"); err != nil {
+		return nil, 0, err
+	}
+	filter := strings.Join(where, " AND ")
 	var total int
 	if err := r.q(ctx).QueryRow(ctx, "SELECT count(*) FROM crm_leads WHERE "+filter, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	sort := map[string]string{"title": "title", "created_at": "created_at", "updated_at": "updated_at", "status": "status"}[f.Sort]
-    if f.SortCustom {
-        args = append(args, f.Sort)
-        sort = viewExpression("custom_values->>$"+fmt.Sprint(len(args)), f.SortType)
-    } else if f.Sort != "" && sort == "" {
-        return nil, 0, fmt.Errorf("unsupported lead sort field %q", f.Sort)
-    }
-    if sort == "" { sort = "created_at" }
+if f.SortCustom {
+		args = append(args, f.Sort)
+		sort = viewExpression("custom_values->>$"+fmt.Sprint(len(args)), f.SortType)
+	} else if f.Sort != "" && sort == "" {
+		return nil, 0, fmt.Errorf("unsupported lead sort field %q", f.Sort)
+	}
+	if sort == "" {
+		sort = "created_at"
+	}
 	direction := "ASC"
 	if f.Desc {
 		direction = "DESC"
@@ -370,20 +374,24 @@ func (r *Repository) ListOpportunities(ctx context.Context, w uuid.UUID, f domai
 		args = append(args, "%"+strings.TrimSpace(f.Search)+"%")
 		where = append(where, "title ILIKE $"+fmt.Sprint(len(args)))
 	}
-	if err := applyViewConditions(&where, &args, f.Conditions, "crm.opportunity"); err != nil { return nil, 0, err }
-    filter := strings.Join(where, " AND ")
+	if err := applyViewConditions(&where, &args, f.Conditions, "crm.opportunity"); err != nil {
+		return nil, 0, err
+	}
+	filter := strings.Join(where, " AND ")
 	var total int
 	if err := r.q(ctx).QueryRow(ctx, "SELECT count(*) FROM crm_opportunities WHERE "+filter, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	sort := map[string]string{"title": "title", "created_at": "created_at", "updated_at": "updated_at", "expected_revenue": "expected_revenue", "expected_close_date": "expected_close_date", "outcome": "outcome", "currency": "currency"}[f.Sort]
-    if f.SortCustom {
-        args = append(args, f.Sort)
-        sort = viewExpression("custom_values->>$"+fmt.Sprint(len(args)), f.SortType)
-    } else if f.Sort != "" && sort == "" {
-        return nil, 0, fmt.Errorf("unsupported opportunity sort field %q", f.Sort)
-    }
-    if sort == "" { sort = "created_at" }
+if f.SortCustom {
+		args = append(args, f.Sort)
+		sort = viewExpression("custom_values->>$"+fmt.Sprint(len(args)), f.SortType)
+	} else if f.Sort != "" && sort == "" {
+		return nil, 0, fmt.Errorf("unsupported opportunity sort field %q", f.Sort)
+	}
+	if sort == "" {
+		sort = "created_at"
+	}
 	dir := "ASC"
 	if f.Desc {
 		dir = "DESC"
@@ -464,76 +472,95 @@ func (r *Repository) ListHistory(ctx context.Context, w uuid.UUID, leadID, oppor
 	return out, rows.Err()
 }
 
- // Supported built-in columns are fixed literals; keys for workspace custom
- // fields are always bound parameters. Never interpolate saved-view input into SQL.
+// Supported built-in columns are fixed literals; keys for workspace custom
+// fields are always bound parameters. Never interpolate saved-view input into SQL.
 var viewColumns = map[string]map[string]string{
-    "crm.lead": {
-        "title":"title","description":"description","contact_name":"contact_name","company_name":"company_name",
-        "email":"email","phone":"phone","source":"source","status":"status",
-        "assigned_user_id":"assigned_user_id","contact_id":"contact_id","created_at":"created_at","updated_at":"updated_at",
-    },
-    "crm.opportunity": {
-        "title":"title","description":"description","pipeline_id":"pipeline_id","stage_id":"stage_id",
-        "contact_id":"contact_id","company_id":"company_id","assigned_user_id":"assigned_user_id",
-        "expected_revenue":"expected_revenue","currency":"currency","expected_close_date":"expected_close_date",
-        "outcome":"outcome","loss_reason":"loss_reason","created_at":"created_at","updated_at":"updated_at",
-    },
+	"crm.lead": {
+		"title": "title", "description": "description", "contact_name": "contact_name", "company_name": "company_name",
+		"email": "email", "phone": "phone", "source": "source", "status": "status",
+		"assigned_user_id": "assigned_user_id", "contact_id": "contact_id", "created_at": "created_at", "updated_at": "updated_at",
+	},
+	"crm.opportunity": {
+		"title": "title", "description": "description", "pipeline_id": "pipeline_id", "stage_id": "stage_id",
+		"contact_id": "contact_id", "company_id": "company_id", "assigned_user_id": "assigned_user_id",
+		"expected_revenue": "expected_revenue", "currency": "currency", "expected_close_date": "expected_close_date",
+		"outcome": "outcome", "loss_reason": "loss_reason", "created_at": "created_at", "updated_at": "updated_at",
+	},
 }
 
 func viewExpression(column, kind string) string {
-    switch kind {
-    case "integer", "decimal": return "("+column+")::numeric"
-    case "boolean": return "("+column+")::boolean"
-    default: return "("+column+")::text"
-    }
+	switch kind {
+	case "integer", "decimal":
+		return "(" + column + ")::numeric"
+	case "boolean":
+		return "(" + column + ")::boolean"
+	default:
+		return "(" + column + ")::text"
+	}
 }
 
 func applyViewConditions(where *[]string, args *[]any, conditions []domain.ViewCondition, entity string) error {
-    if len(conditions) > 20 { return fmt.Errorf("saved view contains too many filters") }
-    for _, condition := range conditions {
-        var expression string
-        if condition.Custom {
-            *args = append(*args, condition.Field)
-            expression = "custom_values->>$"+fmt.Sprint(len(*args))
-        } else {
-            column := viewColumns[entity][condition.Field]
-            if column == "" { return fmt.Errorf("saved-view filter field %q is not supported by CRM", condition.Field) }
-            expression = column
-        }
-        // Compare typed numbers numerically (not lexicographically).
-        expression = viewExpression(expression, condition.Type)
-        appendValue := func(value any) string {
-            *args = append(*args, fmt.Sprint(value))
-            return "$"+fmt.Sprint(len(*args))
-        }
-        switch condition.Operator {
-        case "eq", "neq":
-            op := "="
-            if condition.Operator == "neq" { op = "<>" }
-            *where = append(*where, expression+" "+op+" "+appendValue(condition.Value))
-        case "contains":
-            if condition.Type != "string" && condition.Type != "text" {
-                return fmt.Errorf("contains requires a text field")
-            }
-            *where = append(*where, expression+" ILIKE "+appendValue("%"+fmt.Sprint(condition.Value)+"%"))
-        case "in":
-            items := []any{}
-            switch values := condition.Value.(type) {
-            case []any: items = values
-            case []string:
-                for _, v := range values { items = append(items,v) }
-            default: return fmt.Errorf("in filter must have a value list")
-            }
-            if len(items)==0 || len(items)>100 { return fmt.Errorf("in filter list must contain between 1 and 100 values") }
-            placeholders:=make([]string,0,len(items))
-            for _, item:=range items { placeholders=append(placeholders,appendValue(item)) }
-            *where=append(*where,expression+" IN ("+strings.Join(placeholders,",")+")")
-        case "is_empty":
-            if condition.Type=="string" || condition.Type=="text" {
-                *where=append(*where,"("+expression+" IS NULL OR "+expression+" = '')")
-            } else { *where=append(*where,expression+" IS NULL") }
-        default: return fmt.Errorf("unsupported view operator %q", condition.Operator)
-        }
-    }
-    return nil
+	if len(conditions) > 20 {
+		return fmt.Errorf("saved view contains too many filters")
+	}
+	for _, condition := range conditions {
+		var expression string
+		if condition.Custom {
+			*args = append(*args, condition.Field)
+			expression = "custom_values->>$" + fmt.Sprint(len(*args))
+		} else {
+			column := viewColumns[entity][condition.Field]
+			if column == "" {
+				return fmt.Errorf("saved-view filter field %q is not supported by CRM", condition.Field)
+			}
+			expression = column
+		}
+		expression = viewExpression(expression, condition.Type)
+		appendValue := func(value any) string {
+			*args = append(*args, fmt.Sprint(value))
+			return "$" + fmt.Sprint(len(*args))
+		}
+		switch condition.Operator {
+		case "eq", "neq":
+			op := "="
+			if condition.Operator == "neq" {
+				op = "<>"
+			}
+			*where = append(*where, expression+" "+op+" "+appendValue(condition.Value))
+		case "contains":
+			if condition.Type != "string" && condition.Type != "text" {
+				return fmt.Errorf("contains requires a text field")
+			}
+			*where = append(*where, expression+" ILIKE "+appendValue("%"+fmt.Sprint(condition.Value)+"%"))
+		case "in":
+			items := []any{}
+			switch values := condition.Value.(type) {
+			case []any:
+				items = values
+			case []string:
+				for _, v := range values {
+					items = append(items, v)
+				}
+			default:
+				return fmt.Errorf("in filter must have a value list")
+			}
+			if len(items) == 0 || len(items) > 100 {
+				return fmt.Errorf("in filter list must contain between 1 and 100 values")
+			}
+			placeholders := make([]string, 0, len(items))
+			for _, item := range items {
+				placeholders = append(placeholders, appendValue(item))
+			}
+			*where = append(*where, expression+" IN ("+strings.Join(placeholders, ",")+")")
+		case "is_empty":
+			if condition.Type == "string" || condition.Type == "text" {
+				*where = append(*where, "("+expression+" IS NULL OR "+expression+" = '')")
+			} else {
+				*where = append(*where, expression+" IS NULL")
+			}
+		default:
+			return fmt.Errorf("unsupported view operator %q", condition.Operator)
+		}
+	}
+	return nil
 }
