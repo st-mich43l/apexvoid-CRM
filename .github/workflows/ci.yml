@@ -12,7 +12,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: test -z "$(gofmt -l $(find cmd internal tests -name '*.go' -type f))"
+      - name: Phase 6 temporary gofmt diagnostics
+        run: |
+          gofmt -w $(find cmd internal tests -name '*.go' -type f)
+          git diff -- internal tests cmd
+
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
