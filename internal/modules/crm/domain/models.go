@@ -85,6 +85,8 @@ func (s Stage) Validate() error {
 func ValidatePipelineStages(stages []Stage) error {
 	open, won, lost := 0, 0, 0
 	keys := map[string]bool{}
+	positions := map[int]bool{}
+	var workspaceID, pipelineID uuid.UUID
 	for _, s := range stages {
 		if err := s.Validate(); err != nil {
 			return err
@@ -96,6 +98,16 @@ func ValidatePipelineStages(stages []Stage) error {
 		if !s.Active {
 			continue
 		}
+		if workspaceID == uuid.Nil {
+			workspaceID, pipelineID = s.WorkspaceID, s.PipelineID
+		}
+		if s.WorkspaceID != workspaceID || s.PipelineID != pipelineID {
+			return fmt.Errorf("stages must share workspace and pipeline")
+		}
+		if positions[s.Position] {
+			return fmt.Errorf("active stage positions must be unique")
+		}
+		positions[s.Position] = true
 		switch s.Category {
 		case StageOpen:
 			open++
