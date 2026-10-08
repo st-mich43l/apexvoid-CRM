@@ -3,7 +3,10 @@ import type { NavigationItem } from '../../framework/module/types'
 export type NavigationSection = { id: string; label: string; items: NavigationItem[] }
 
 export function canAccessNavigation(item: NavigationItem, platformCan: (permission: string) => boolean, workspaceCan: (permission: string) => boolean) {
-  if (item.permission) return item.permission.scope === 'platform' ? platformCan(item.permission.name) : workspaceCan(item.permission.name)
+  const can = (permission: { scope: 'platform' | 'workspace'; name: string }) => permission.scope === 'platform' ? platformCan(permission.name) : workspaceCan(permission.name)
+  if (item.permission && !can(item.permission)) return false
+  if (item.permissionsAny?.length && !item.permissionsAny.some(can)) return false
+  if (item.permission || item.permissionsAny?.length) return true
   return !item.requiredPermission || platformCan(item.requiredPermission)
 }
 

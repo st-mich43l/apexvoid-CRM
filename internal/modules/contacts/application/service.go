@@ -74,16 +74,16 @@ func (s *Service) CreateContact(ctx context.Context, c domain.Contact) (domain.C
 	if c.Status == "" {
 		c.Status = domain.StatusActive
 	}
+	c.DisplayName = strings.TrimSpace(c.DisplayName)
+	c.Email = strings.TrimSpace(c.Email)
+	c.Phone = strings.TrimSpace(c.Phone)
+	c.Website = strings.TrimSpace(c.Website)
 	if err := s.validateCustomValues(ctx, c.WorkspaceID, c.CustomValues); err != nil {
 		return domain.Contact{}, err
 	}
 	if err := c.Validate(); err != nil {
 		return domain.Contact{}, err
 	}
-	c.DisplayName = strings.TrimSpace(c.DisplayName)
-	c.Email = strings.TrimSpace(c.Email)
-	c.Phone = strings.TrimSpace(c.Phone)
-	c.Website = strings.TrimSpace(c.Website)
 	now := time.Now().UTC()
 	c.CreatedAt = now
 	c.UpdatedAt = now
@@ -102,6 +102,10 @@ func (s *Service) UpdateContact(ctx context.Context, c domain.Contact) (domain.C
 	if c.Status == "" {
 		c.Status = current.Status
 	}
+	c.DisplayName = strings.TrimSpace(c.DisplayName)
+	c.Email = strings.TrimSpace(c.Email)
+	c.Phone = strings.TrimSpace(c.Phone)
+	c.Website = strings.TrimSpace(c.Website)
 	if err := s.validateCustomValues(ctx, c.WorkspaceID, c.CustomValues); err != nil {
 		return domain.Contact{}, err
 	}
@@ -268,17 +272,20 @@ func (s *Service) ListActivities(ctx context.Context, w uuid.UUID, c, user *uuid
 	}
 	return s.repository.ListActivities(ctx, w, c, user, status)
 }
+func (s *Service) ListActivitiesPage(ctx context.Context, w uuid.UUID, filter domain.ActivityListFilter) ([]domain.Activity, int, error) {
+	if filter.ContactID != nil {
+		if err := s.requireContact(ctx, w, *filter.ContactID); err != nil {
+			return nil, 0, err
+		}
+	}
+	return s.repository.ListActivitiesPage(ctx, w, filter)
+}
 func (s *Service) FindActivity(ctx context.Context, w, id uuid.UUID) (domain.Activity, error) {
-	items, err := s.repository.ListActivities(ctx, w, nil, nil, "")
+	item, err := s.repository.GetActivityByID(ctx, w, id)
 	if err != nil {
 		return domain.Activity{}, err
 	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, nil
-		}
-	}
-	return domain.Activity{}, domain.ErrNotFound
+	return *item, nil
 }
 func (s *Service) CreateActivity(ctx context.Context, a domain.Activity) (domain.Activity, error) {
 	if err := s.validateActivity(ctx, &a); err != nil {
@@ -294,6 +301,22 @@ func (s *Service) CreateActivity(ctx context.Context, a domain.Activity) (domain
 	return a, nil
 }
 func (s *Service) UpdateActivity(ctx context.Context, a domain.Activity) (domain.Activity, error) {
+	current, err := s.repository.GetActivityByID(ctx, a.WorkspaceID, a.ID)
+	if err != nil {
+		return domain.Activity{}, err
+	}
+	if a.Status == "" {
+		a.Status = current.Status
+	}
+	if a.Status != current.Status {
+		transition := *current
+		if err := transition.TransitionTo(a.Status); err != nil {
+			return domain.Activity{}, err
+		}
+		if a.CompletedAt == nil {
+			a.CompletedAt = transition.CompletedAt
+		}
+	}
 	if err := s.validateActivity(ctx, &a); err != nil {
 		return domain.Activity{}, err
 	}
@@ -335,6 +358,7 @@ func (s *Service) UploadAttachment(ctx context.Context, a domain.Attachment, rea
 	}
 	return a, nil
 }
+func (s *Service) MaxUploadBytes() int64 { return s.maxUploadBytes }
 func (s *Service) OpenAttachment(ctx context.Context, w, c, id uuid.UUID) (domain.Attachment, io.ReadCloser, error) {
 	a, key, err := s.repository.GetAttachment(ctx, w, c, id)
 	if err != nil {
@@ -377,6 +401,50 @@ func (s *Service) CreateCustomField(ctx context.Context, f domain.CustomFieldDef
 	return f, nil
 }
 func (s *Service) UpdateCustomField(ctx context.Context, f domain.CustomFieldDefinition) (domain.CustomFieldDefinition, error) {
+	fields, err := s.repository.ListCustomFields(ctx, f.WorkspaceID, false)
+	if err != nil {
+		return domain.CustomFieldDefinition{}, err
+	}
+	var current *domain.CustomFieldDefinition
+	for i := range fields {
+		if fields[i].ID == f.ID {
+			current = &fields[i]
+			break
+		}
+	}
+	if current == nil {
+		return domain.CustomFieldDefinition{}, domain.ErrNotFound
+	}
+	if f.Key != current.Key {
+		return domain.CustomFieldDefinition{}, errors.New("custom field key cannot be changed")
+	}
+	if f.Type != current.Type {
+		count, err := s.repository.CountContactsWithCustomFieldValues(ctx, f.WorkspaceID, f.Key)
+		if err != nil {
+			return domain.CustomFieldDefinition{}, err
+		}
+		if count > 0 {
+			return domain.CustomFieldDefinition{}, errors.New("custom field type cannot change while values exist")
+		}
+	}
+	if f.Type == domain.FieldSelection && current.Type == domain.FieldSelection {
+		removed, err := s.repository.CountContactsUsingCustomFieldOptions(ctx, f.WorkspaceID, f.Key, f.Options)
+		if err != nil {
+			return domain.CustomFieldDefinition{}, err
+		}
+		if removed > 0 {
+			return domain.CustomFieldDefinition{}, errors.New("custom field options cannot remove values used by existing contacts")
+		}
+	}
+	if f.Required && !current.Required {
+		missing, err := s.repository.CountContactsMissingCustomField(ctx, f.WorkspaceID, f.Key)
+		if err != nil {
+			return domain.CustomFieldDefinition{}, err
+		}
+		if missing > 0 {
+			return domain.CustomFieldDefinition{}, errors.New("custom field cannot be required while existing contacts are missing a value")
+		}
+	}
 	f.UpdatedAt = time.Now().UTC()
 	if err := f.Validate(); err != nil {
 		return domain.CustomFieldDefinition{}, err

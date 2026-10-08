@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -78,6 +79,15 @@ type contactRequest struct {
 	Website      string             `json:"website"`
 	Description  string             `json:"description"`
 	CustomValues map[string]any     `json:"custom_values"`
+}
+type contactPatchRequest struct {
+	Kind         *domain.ContactKind `json:"kind"`
+	DisplayName  *string             `json:"display_name"`
+	Email        *string             `json:"email"`
+	Phone        *string             `json:"phone"`
+	Website      *string             `json:"website"`
+	Description  *string             `json:"description"`
+	CustomValues *map[string]any     `json:"custom_values"`
 }
 type tagRequest struct {
 	Name   string `json:"name"`
@@ -159,11 +169,38 @@ func (h *Handler) updateContact(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input contactRequest
+	var input contactPatchRequest
 	if !decode(w, r, &input) {
 		return
 	}
-	c, err := h.service.UpdateContact(r.Context(), domain.Contact{ID: id, WorkspaceID: workspace.WorkspaceID, Kind: input.Kind, DisplayName: input.DisplayName, Email: input.Email, Phone: input.Phone, Website: input.Website, Description: input.Description, CustomValues: input.CustomValues, UpdatedBy: principal.UserID})
+	current, err := h.service.GetContact(r.Context(), workspace.WorkspaceID, id)
+	if err != nil {
+		writeDomainError(w, r, err)
+		return
+	}
+	if input.Kind != nil {
+		current.Kind = *input.Kind
+	}
+	if input.DisplayName != nil {
+		current.DisplayName = *input.DisplayName
+	}
+	if input.Email != nil {
+		current.Email = *input.Email
+	}
+	if input.Phone != nil {
+		current.Phone = *input.Phone
+	}
+	if input.Website != nil {
+		current.Website = *input.Website
+	}
+	if input.Description != nil {
+		current.Description = *input.Description
+	}
+	if input.CustomValues != nil {
+		current.CustomValues = *input.CustomValues
+	}
+	current.UpdatedBy = principal.UserID
+	c, err := h.service.UpdateContact(r.Context(), current)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
@@ -361,12 +398,13 @@ func (h *Handler) listActivities(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) listWorkspaceActivities(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
-	x, err := h.service.ListActivities(r.Context(), workspace.WorkspaceID, uuidQuery(r, "contact_id"), uuidQuery(r, "assigned_user_id"), domain.ActivityStatus(r.URL.Query().Get("status")))
+	page, limit := intQuery(r, "page", 1), intQuery(r, "limit", 25)
+	x, total, err := h.service.ListActivitiesPage(r.Context(), workspace.WorkspaceID, domain.ActivityListFilter{ContactID: uuidQuery(r, "contact_id"), AssignedUserID: uuidQuery(r, "assigned_user_id"), Status: domain.ActivityStatus(r.URL.Query().Get("status")), Page: page, Limit: limit})
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, x)
+	writeJSON(w, http.StatusOK, map[string]any{"items": x, "page": page, "limit": limit, "total": total})
 }
 func (h *Handler) createActivity(w http.ResponseWriter, r *http.Request) {
 	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
@@ -469,13 +507,22 @@ func (h *Handler) uploadAttachment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeDomainError(w, r, err)
+	r.Body = http.MaxBytesReader(w, r.Body, h.service.MaxUploadBytes()+1<<20)
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpserver.WriteError(w, r, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Attachment request exceeds the upload limit")
+			return
+		}
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid multipart upload request")
 		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		writeDomainError(w, r, err)
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "An attachment file is required")
 		return
 	}
 	defer file.Close()
@@ -508,7 +555,8 @@ func (h *Handler) downloadAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 	w.Header().Set("Content-Type", a.ContentType)
-	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(a.FileName, `"`, "")+`"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": a.FileName}))
 	w.Header().Set("Content-Length", strconv.FormatInt(a.Size, 10))
 	_, _ = io.Copy(w, reader)
 }
@@ -588,7 +636,7 @@ func sniff(file multipart.File) (string, io.Reader, error) {
 	}
 	contentType := http.DetectContentType(head[:n])
 	if !allowedContentType(contentType) {
-		return "", nil, errors.New("unsupported attachment content type")
+		return "", nil, domain.ErrUnsupportedAttachment
 	}
 	return contentType, io.MultiReader(bytes.NewReader(head[:n]), file), nil
 }
@@ -648,9 +696,15 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, message = http.StatusConflict, "CONFLICT", "Contact resource already exists"
 	case errors.Is(err, domain.ErrInvalidStatus), errors.Is(err, domain.ErrInvalidCustomValue), errors.Is(err, domain.ErrInactiveMember):
 		status, code, message = http.StatusBadRequest, "VALIDATION_ERROR", err.Error()
+	case errors.Is(err, domain.ErrInvalidActivityTransition):
+		status, code, message = http.StatusConflict, "INVALID_STATE_TRANSITION", err.Error()
+	case errors.Is(err, domain.ErrUnsupportedAttachment):
+		status, code, message = http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", err.Error()
+	case errors.Is(err, domain.ErrAttachmentTooLarge):
+		status, code, message = http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", err.Error()
 	case strings.Contains(err.Error(), "exceeds"):
 		status, code, message = http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", err.Error()
-	case strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "invalid"), strings.Contains(err.Error(), "relationship"), strings.Contains(err.Error(), "tag"):
+	case strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "invalid"), strings.Contains(err.Error(), "relationship"), strings.Contains(err.Error(), "tag"), strings.Contains(err.Error(), "custom field"):
 		status, code, message = http.StatusBadRequest, "VALIDATION_ERROR", err.Error()
 	}
 	httpserver.WriteError(w, r, status, code, message)

@@ -76,7 +76,7 @@ export const api = {
     permissions: () => request<Permission[]>('/api/v1/access/permissions'),
   },
   contacts: {
-    list: (params: { search?: string; kind?: string; status?: string; page?: number }) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, String(value)) }); return request<ContactList>(`/api/v1/contacts?${query}`) },
+    list: (params: { search?: string; kind?: string; status?: string; tag_id?: string; page?: number; limit?: number; sort?: string; desc?: boolean }) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)) }); return request<ContactList>(`/api/v1/contacts?${query}`) },
     get: (id: string) => request<Contact>(`/api/v1/contacts/${id}`),
     create: (body: ContactInput) => request<Contact>('/api/v1/contacts', json(body)),
     update: (id: string, body: ContactInput) => request<Contact>(`/api/v1/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -84,16 +84,23 @@ export const api = {
     restore: (id: string) => request<void>(`/api/v1/contacts/${id}/restore`, { method: 'POST' }),
     tags: () => request<Tag[]>('/api/v1/contacts/tags'),
     createTag: (body: { name: string; color: string }) => request<Tag>('/api/v1/contacts/tags', json(body)),
+    updateTag: (id: string, body: { name: string; color: string; active: boolean }) => request<Tag>(`/api/v1/contacts/tags/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     fields: () => request<CustomField[]>('/api/v1/contacts/fields'),
     createField: (body: Omit<CustomField, 'id' | 'workspace_id' | 'created_at' | 'updated_at' | 'active'>) => request<CustomField>('/api/v1/contacts/fields', json(body)),
+    updateField: (id: string, body: Partial<CustomField>) => request<CustomField>(`/api/v1/contacts/fields/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     notes: (id: string) => request<Note[]>(`/api/v1/contacts/${id}/notes`),
     createNote: (id: string, content: string) => request<Note>(`/api/v1/contacts/${id}/notes`, json({ content })),
-    activities: (id?: string) => request<Activity[]>(id ? `/api/v1/contacts/${id}/activities` : '/api/v1/activities'),
+    updateNote: (contactID: string, noteID: string, content: string) => request<Note>(`/api/v1/contacts/${contactID}/notes/${noteID}`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+    activities: (id?: string, params: { status?: string; page?: number; limit?: number; assigned_user_id?: string } = {}) => { const query = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value) query.set(key, String(value)) }); return request<Activity[] | ActivityList>(id ? `/api/v1/contacts/${id}/activities?${query}` : `/api/v1/activities?${query}`) },
     createActivity: (body: ActivityInput) => request<Activity>('/api/v1/activities', json(body)),
+    completeActivity: (id: string) => request<Activity>(`/api/v1/activities/${id}/complete`, { method: 'POST' }),
+    cancelActivity: (id: string) => request<Activity>(`/api/v1/activities/${id}/cancel`, { method: 'POST' }),
     relationships: (id: string) => request<Relationship[]>(`/api/v1/contacts/${id}/relationships`),
     tagsFor: (id: string) => request<string[]>(`/api/v1/contacts/${id}/tags`),
+    replaceTags: (id: string, tagIDs: string[]) => request<void>(`/api/v1/contacts/${id}/tags`, { method: 'PUT', body: JSON.stringify(tagIDs) }),
     attachments: (id: string) => request<Attachment[]>(`/api/v1/contacts/${id}/attachments`),
     upload: (id: string, file: File) => { const body = new FormData(); body.append('file', file); return request<Attachment>(`/api/v1/contacts/${id}/attachments`, { method: 'POST', body }) },
+    download: async (id: string, attachmentID: string) => { const workspaceID = window.localStorage.getItem('apexvoid.active_workspace'); const headers = new Headers(); if (workspaceID) headers.set('X-ApexVoid-Workspace', workspaceID); const response = await fetch(`${baseURL}/api/v1/contacts/${id}/attachments/${attachmentID}`, { headers, credentials: 'include' }); if (!response.ok) throw new Error(`Download failed with status ${response.status}`); return response.blob() },
     removeAttachment: (id: string, attachmentID: string) => request<void>(`/api/v1/contacts/${id}/attachments/${attachmentID}`, { method: 'DELETE' }),
   },
 }
@@ -112,6 +119,7 @@ export type ContactList = { items: Contact[]; page: number; limit: number; total
 export type Tag = { id: string; workspace_id: string; name: string; color: string; active: boolean; created_at: string; updated_at: string }
 export type Note = { id: string; workspace_id: string; contact_id: string; author_user_id: string; content: string; created_at: string; updated_at: string }
 export type Activity = { id: string; workspace_id: string; title: string; description: string; activity_type: string; related_contact_id?: string; assigned_user_id: string; due_at?: string; status: string; completed_at?: string; created_at: string; updated_at: string }
+export type ActivityList = { items: Activity[]; page: number; limit: number; total: number }
 export type ActivityInput = Pick<Activity, 'title' | 'description' | 'activity_type' | 'assigned_user_id'> & { related_contact_id?: string; due_at?: string; status?: string }
 export type Relationship = { id: string; person_id: string; company_id: string; relationship_type: string; job_title: string; is_primary: boolean; person_name?: string; company_name?: string }
 export type Attachment = { id: string; contact_id: string; file_name: string; size: number; content_type: string; uploaded_by: string; created_at: string }
