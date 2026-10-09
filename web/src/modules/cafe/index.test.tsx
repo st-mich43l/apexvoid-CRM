@@ -48,7 +48,7 @@ describe('Café & Photo Booth application', () => {
     fireEvent.click(tile.closest('button')!)
     fireEvent.click(screen.getByRole('button', { name: 'Add one Iced Latte' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create order' }))
-    await waitFor(() => expect(create).toHaveBeenCalledWith({
+    await waitFor(() => expect(create.mock.calls[0]?.[0]).toEqual({
       note: '', lines: [{ product_id: 'product-1', quantity: 2 }],
     }))
     expect(screen.queryByText('Photo Session 20m')).not.toBeInTheDocument()
@@ -73,7 +73,7 @@ describe('Café & Photo Booth application', () => {
     const local = new Date(future.getTime() - future.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
     fireEvent.change(screen.getByLabelText('Start time'), { target: { value: local } })
     fireEvent.click(screen.getByRole('button', { name: 'Reserve booth' }))
-    await waitFor(() => expect(reserve).toHaveBeenCalledWith(expect.objectContaining({
+    await waitFor(() => expect(reserve.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       booth_id: 'booth-1', package_product_id: 'service-1', guest_name: 'Group One',
     })))
   })
