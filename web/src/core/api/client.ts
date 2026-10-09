@@ -1,4 +1,4 @@
-import type { EntityMetadata, HealthResponse, ModuleMetadata, PermissionMetadata, ReadinessResponse } from '../../framework/metadata/types'
+import type { ApplicationMetadata, EntityMetadata, HealthResponse, ModuleMetadata, PermissionMetadata, ReadinessResponse } from '../../framework/metadata/types'
 import type { AuthResponse, CurrentUser, Permission } from '../../framework/auth/types'
 
 const baseURL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -36,6 +36,7 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
   readiness: () => request<ReadinessResponse>('/ready'),
   framework: {
+    applications: () => request<ApplicationMetadata[]>('/api/v1/framework/applications'),
     modules: () => request<ModuleMetadata[]>('/api/v1/framework/modules'),
     entities: () => request<EntityMetadata[]>('/api/v1/framework/entities'),
     permissions: () => request<PermissionMetadata[]>('/api/v1/framework/permissions'),

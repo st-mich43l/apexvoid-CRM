@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/module"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
@@ -54,8 +55,24 @@ func New(d Dependencies) (*Module, error) {
 func (Module) Descriptor() module.Descriptor {
 	return module.Descriptor{Name: "contacts", DisplayName: "Contacts", Version: "1.0.0", Dependencies: []string{"access", "organization"}}
 }
-func (m *Module) Service() *application.Service      { return m.service }
-func (m *Module) Register(ctx *module.Context) error { return contactsmetadata.Register(ctx) }
+func (m *Module) Service() *application.Service { return m.service }
+func (m *Module) Register(ctx *module.Context) error {
+	if err := contactsmetadata.Register(ctx); err != nil {
+		return err
+	}
+	return ctx.Applications.Register(frameworkapplication.Descriptor{
+		ID:                  "contacts",
+		DisplayName:         "Contacts",
+		Description:         "Workspace-scoped people, companies, activities, and shared relationship records.",
+		Version:             "1.0.0",
+		APIContractVersion:  "v1",
+		ModuleDependencies:  []string{"contacts"},
+		RequiredPermissions: []string{"contacts.contact.read"},
+		Frontend:            frameworkapplication.Frontend{EntryRoute: "/contacts/people", NavigationID: "contacts"},
+		Settings:            &frameworkapplication.Settings{Route: "/contacts/settings"},
+		Access:              frameworkapplication.Access{Entry: frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"contacts.contact.read"}}, Settings: &frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAny, Permissions: []string{"contacts.field.manage", "contacts.tag.manage"}}},
+	})
+}
 func (m *Module) RegisterRoutes(routes module.RouteRegistry) error {
 	return contactshttp.NewHandler(m.service, m.authenticator, m.workspace, m.access).RegisterRoutes(routes)
 }

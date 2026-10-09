@@ -11,7 +11,7 @@ export function canAccessNavigation(item: NavigationItem, platformCan: (permissi
 }
 
 const sectionOrder = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'platform', label: 'Platform' },
   { id: 'workspace', label: 'Workspace' },
   { id: 'administration', label: 'Administration' },
   { id: 'settings', label: 'Settings' },
@@ -22,7 +22,7 @@ function sectionFor(item: NavigationItem): string {
   if (item.path.startsWith('/crm')) return item.path.includes('/settings') ? 'settings' : 'workspace'
   if (item.path.startsWith('/admin') || item.path.startsWith('/framework')) return 'administration'
   if (item.path.startsWith('/settings')) return 'settings'
-  return 'overview'
+  return 'platform'
 }
 
 export function groupNavigation(items: NavigationItem[]): NavigationSection[] {

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/capability"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/event"
@@ -29,6 +30,7 @@ type Module interface {
 }
 
 type Context struct {
+	Applications *application.Registry
 	Entities     *entity.Registry
 	Permissions  *permission.Registry
 	Capabilities *capability.Registry

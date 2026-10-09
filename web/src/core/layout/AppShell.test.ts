@@ -18,7 +18,7 @@ describe('scope-aware navigation', () => {
       { id: 'people', label: 'People', path: '/contacts/people', order: 300, icon: Boxes },
       { id: 'roles', label: 'Roles', path: '/settings/roles', order: 900, icon: Boxes },
     ])
-    expect(sections.map(section => section.id)).toEqual(['overview', 'workspace', 'settings'])
+    expect(sections.map(section => section.id)).toEqual(['platform', 'workspace', 'settings'])
     expect(sections[1].items[0].label).toBe('People')
   })
 })

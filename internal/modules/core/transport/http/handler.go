@@ -4,8 +4,25 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
+	usersapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/httpserver"
 )
+
+func (h *Handler) applications(w http.ResponseWriter, r *http.Request) {
+	principal, _ := usersapi.PrincipalFromContext(r.Context())
+	workspace, _ := organizationapi.WorkspaceContextFromContext(r.Context())
+	items, err := h.service.Applications(r.Context(), principal.UserID, workspace.WorkspaceID)
+	if err != nil {
+		httpserver.WriteApplicationError(w, r, err)
+		return
+	}
+	result := make([]applicationResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, toApplicationResponse(item))
+	}
+	writeJSON(w, http.StatusOK, result)
+}
 
 func (h *Handler) modules(w http.ResponseWriter, r *http.Request) {
 	items := h.service.Modules(r.Context())

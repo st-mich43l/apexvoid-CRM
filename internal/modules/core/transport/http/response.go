@@ -7,7 +7,32 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/field"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
+	coreapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/core/api"
 )
+
+type applicationResponse struct {
+	ID                   string            `json:"id"`
+	DisplayName          string            `json:"display_name"`
+	Description          string            `json:"description"`
+	Version              string            `json:"version"`
+	APIContractVersion   string            `json:"api_contract_version"`
+	ModuleDependencies   []string          `json:"module_dependencies"`
+	RequiredPermissions  []string          `json:"required_permissions"`
+	RequiredCapabilities []string          `json:"required_capabilities"`
+	Frontend             frontendResponse  `json:"frontend"`
+	Settings             *settingsResponse `json:"settings,omitempty"`
+	EntryAuthorized      bool              `json:"entry_authorized"`
+	SettingsAuthorized   bool              `json:"settings_authorized"`
+}
+
+type frontendResponse struct {
+	EntryRoute   string `json:"entry_route"`
+	NavigationID string `json:"navigation_id"`
+}
+
+type settingsResponse struct {
+	Route string `json:"route"`
+}
 
 type moduleResponse struct {
 	Name         string   `json:"name"`
@@ -42,6 +67,14 @@ type entityResponse struct {
 
 func toModuleResponse(item metadata.ModuleMetadata) moduleResponse {
 	return moduleResponse{Name: item.Name, DisplayName: item.DisplayName, Version: item.Version, Dependencies: append([]string{}, item.Dependencies...)}
+}
+func toApplicationResponse(item coreapi.DiscoveredApplication) applicationResponse {
+	definition := item.Descriptor
+	result := applicationResponse{ID: definition.ID, DisplayName: definition.DisplayName, Description: definition.Description, Version: definition.Version, APIContractVersion: definition.APIContractVersion, ModuleDependencies: append([]string{}, definition.ModuleDependencies...), RequiredPermissions: append([]string{}, definition.RequiredPermissions...), RequiredCapabilities: append([]string{}, definition.RequiredCapabilities...), Frontend: frontendResponse{EntryRoute: definition.Frontend.EntryRoute, NavigationID: definition.Frontend.NavigationID}, EntryAuthorized: item.EntryAuthorized, SettingsAuthorized: item.SettingsAuthorized}
+	if definition.Settings != nil {
+		result.Settings = &settingsResponse{Route: definition.Settings.Route}
+	}
+	return result
 }
 func toPermissionResponse(item metadata.PermissionMetadata) permissionResponse {
 	return permissionResponse{Name: item.Name, Module: item.Module, DisplayName: item.DisplayName, Description: item.Description}
