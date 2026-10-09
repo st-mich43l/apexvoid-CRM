@@ -1,6 +1,9 @@
 SHELL := /bin/sh
 
-.PHONY: dev build test test-integration test-external-docker lint fmt backend frontend compose-up compose-down compose-logs migrate-up migrate-down
+APEXVOID_APPS_NETWORK ?= apexvoid-apps
+APEXVOID_DATA_NETWORK ?= apexvoid-data
+
+.PHONY: dev build test test-integration test-external-docker lint fmt backend frontend ensure-compose-networks compose-up compose-down compose-logs migrate-up migrate-down
 
 dev: compose-up
 
@@ -32,7 +35,17 @@ backend:
 frontend:
 	npm --prefix web run dev
 
-compose-up:
+ensure-compose-networks:
+	@for network in "$(APEXVOID_APPS_NETWORK)" "$(APEXVOID_DATA_NETWORK)"; do \
+		if docker network inspect "$$network" >/dev/null 2>&1; then \
+			echo "Docker network already exists: $$network"; \
+		else \
+			echo "Creating Docker network: $$network"; \
+			docker network create "$$network" >/dev/null; \
+		fi; \
+	done
+
+compose-up: ensure-compose-networks
 	docker compose up --build
 
 compose-down:

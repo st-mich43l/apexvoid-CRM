@@ -34,9 +34,7 @@ Requirements: Go 1.25+, Node.js 22+, npm, Docker, and Docker Compose.
 
 ```bash
 cp .env.example .env
-docker network create apexvoid-apps 2>/dev/null || true
-docker network create apexvoid-data 2>/dev/null || true
-docker compose up -d
+make compose-up
 ```
 
 To register an external application from the local Docker stack, set

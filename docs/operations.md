@@ -2,17 +2,16 @@
 
 ## Development
 
-Create the shared networks once, copy `.env.example` to `.env`, and run
-`docker compose up -d`. The backend is attached to both networks: `apexvoid-apps`
+Copy `.env.example` to `.env` and run `make compose-up`. The Makefile creates
+the shared networks when they are missing, then starts Compose. The backend is
+attached to both networks: `apexvoid-apps`
 for service-to-service traffic and `apexvoid-data` for PostgreSQL. A Café
 Compose project must join both networks, use the service alias `cafe`, and
 must not publish its database or backend to the public host.
 
 ```bash
-docker network create apexvoid-apps 2>/dev/null || true
-docker network create apexvoid-data 2>/dev/null || true
 cp .env.example .env
-docker compose up -d
+make compose-up
 ```
 
 The backend receives the integration variables explicitly; Docker does not
