@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/st-mich43l/apexvoid-CRM/internal/app"
-	crmmigrations "github.com/st-mich43l/apexvoid-CRM/internal/modules/crm/migrations"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 )
@@ -35,7 +34,16 @@ func TestCRMMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer application.Close(context.Background())
-	runner := database.NewMigrationRunner(application.Database, crmmigrations.All())
+	all, err := application.Runtime.Modules.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := database.NewMigrationRunner(application.Database, all)
+	// Down applies to the newest globally registered migration first. With
+	// ERP registered after CRM, undo ERP's catalog before older CRM revisions.
+	if err := runner.Down(ctx); err != nil {
+		t.Fatalf("rollback ERP catalog: %v", err)
+	}
 	if err := runner.Down(ctx); err != nil {
 		t.Fatalf("rollback lifecycle history: %v", err)
 	}
@@ -50,7 +58,7 @@ func TestCRMMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatalf("crm_leads remained after rollback: %s", *leadTable)
 	}
 	if err := runner.Up(ctx); err != nil {
-		t.Fatalf("reapply CRM migrations: %v", err)
+		t.Fatalf("reapply platform migrations: %v", err)
 	}
 	if err := application.Database.QueryRow(ctx, "SELECT to_regclass(current_schema() || '.crm_lifecycle_history')").Scan(&leadTable); err != nil {
 		t.Fatal(err)
