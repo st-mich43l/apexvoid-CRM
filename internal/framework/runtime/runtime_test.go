@@ -29,9 +29,10 @@ func (m applicationFixtureModule) Register(ctx *module.Context) error {
 		requiredPermission = "fixture.record.manage"
 	}
 	return ctx.Applications.Register(frameworkapplication.Descriptor{
-		ID: "fixture", DisplayName: "Framework Fixture", Description: "A non-business framework registration fixture.", Version: "1.0.0",
+		ID: "fixture", DisplayName: "Framework Fixture", Description: "A non-business framework registration fixture.", Version: "1.0.0", APIContractVersion: "v1",
 		ModuleDependencies: []string{"fixture"}, RequiredPermissions: []string{requiredPermission}, RequiredCapabilities: []string{"fixture.auditable"},
 		Frontend: frameworkapplication.Frontend{EntryRoute: "/fixture", NavigationID: "fixture-home"},
+		Access:   frameworkapplication.Access{Entry: frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{requiredPermission}}},
 	})
 }
 

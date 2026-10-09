@@ -81,6 +81,18 @@ func (r *Runtime) Validate() error {
 				return fmt.Errorf("application %q requires unregistered capability %q", definition.ID, required)
 			}
 		}
+		for _, required := range definition.Access.Entry.Permissions {
+			if !r.Permissions.Contains(required) {
+				return fmt.Errorf("application %q entry access references unregistered permission %q", definition.ID, required)
+			}
+		}
+		if definition.Access.Settings != nil {
+			for _, required := range definition.Access.Settings.Permissions {
+				if !r.Permissions.Contains(required) {
+					return fmt.Errorf("application %q settings access references unregistered permission %q", definition.ID, required)
+				}
+			}
+		}
 	}
 	if err := r.Entities.ValidateCapabilities(r.Capabilities.Contains); err != nil {
 		return err

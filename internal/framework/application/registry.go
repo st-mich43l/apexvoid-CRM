@@ -28,19 +28,47 @@ type Settings struct {
 	Route string
 }
 
+// PermissionMatch declares whether every permission or at least one
+// permission in a policy is required. Policies are intentionally small and
+// typed; they are not a general purpose authorization-expression language.
+type PermissionMatch string
+
+const (
+	PermissionMatchAll PermissionMatch = "all"
+	PermissionMatchAny PermissionMatch = "any"
+)
+
+// PermissionPolicy controls access to an application entry or settings route.
+// Permission scope is resolved from the registered permission definition at
+// runtime, so platform and workspace permissions retain their normal
+// authorization boundaries.
+type PermissionPolicy struct {
+	Match       PermissionMatch
+	Permissions []string
+}
+
+type Access struct {
+	Entry    PermissionPolicy
+	Settings *PermissionPolicy
+}
+
 // Descriptor is the stable registration contract for a compiled-in
 // application. ModuleDependencies, permissions, and capabilities are
 // validated by the runtime after every module has registered its metadata.
 type Descriptor struct {
-	ID                   string
-	DisplayName          string
-	Description          string
-	Version              string
-	ModuleDependencies   []string
+	ID                 string
+	DisplayName        string
+	Description        string
+	Version            string
+	APIContractVersion string
+	ModuleDependencies []string
+	// RequiredPermissions are static framework dependencies validated during
+	// startup. They are not the user-authorization policy for opening an app.
 	RequiredPermissions  []string
 	RequiredCapabilities []string
 	Frontend             Frontend
 	Settings             *Settings
+	Access               Access
 }
 
 type Registry struct{ definitions map[string]Descriptor }
@@ -59,6 +87,9 @@ func (r *Registry) Register(definition Descriptor) error {
 	}
 	if strings.TrimSpace(definition.Version) == "" {
 		return fmt.Errorf("application %q version cannot be empty", definition.ID)
+	}
+	if !regexp.MustCompile(`^v[1-9][0-9]*$`).MatchString(definition.APIContractVersion) {
+		return fmt.Errorf("application %q API contract version must use the form vN", definition.ID)
 	}
 	if len(definition.ModuleDependencies) == 0 {
 		return fmt.Errorf("application %q must declare at least one module dependency", definition.ID)
@@ -81,11 +112,35 @@ func (r *Registry) Register(definition Descriptor) error {
 	if definition.Settings != nil && !strings.HasPrefix(definition.Settings.Route, "/") {
 		return fmt.Errorf("application %q settings route must start with /", definition.ID)
 	}
+	if err := validatePolicy(definition.ID, "entry", definition.Access.Entry); err != nil {
+		return err
+	}
+	if definition.Settings == nil && definition.Access.Settings != nil {
+		return fmt.Errorf("application %q declares settings access without a settings route", definition.ID)
+	}
+	if definition.Settings != nil {
+		if definition.Access.Settings == nil {
+			return fmt.Errorf("application %q settings route requires an access policy", definition.ID)
+		}
+		if err := validatePolicy(definition.ID, "settings", *definition.Access.Settings); err != nil {
+			return err
+		}
+	}
 	if _, exists := r.definitions[definition.ID]; exists {
 		return fmt.Errorf("application %q is already registered", definition.ID)
 	}
 	r.definitions[definition.ID] = clone(definition)
 	return nil
+}
+
+func validatePolicy(applicationID, name string, policy PermissionPolicy) error {
+	if policy.Match != PermissionMatchAll && policy.Match != PermissionMatchAny {
+		return fmt.Errorf("application %q %s access policy has invalid permission match %q", applicationID, name, policy.Match)
+	}
+	if len(policy.Permissions) == 0 {
+		return fmt.Errorf("application %q %s access policy must declare permissions", applicationID, name)
+	}
+	return validateIdentifiers(name+" access permission", applicationID, policy.Permissions)
 }
 
 func (r *Registry) Get(id string) (Descriptor, bool) {
@@ -120,6 +175,12 @@ func clone(definition Descriptor) Descriptor {
 	definition.ModuleDependencies = append([]string{}, definition.ModuleDependencies...)
 	definition.RequiredPermissions = append([]string{}, definition.RequiredPermissions...)
 	definition.RequiredCapabilities = append([]string{}, definition.RequiredCapabilities...)
+	definition.Access.Entry.Permissions = append([]string{}, definition.Access.Entry.Permissions...)
+	if definition.Access.Settings != nil {
+		policy := *definition.Access.Settings
+		policy.Permissions = append([]string{}, policy.Permissions...)
+		definition.Access.Settings = &policy
+	}
 	if definition.Settings != nil {
 		settings := *definition.Settings
 		definition.Settings = &settings

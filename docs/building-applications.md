@@ -39,15 +39,25 @@ func (Module) Register(ctx *module.Context) error {
     return ctx.Applications.Register(application.Descriptor{
         ID: "sample", DisplayName: "Sample", Description: "A compiled sample app.", Version: "1.0.0",
         ModuleDependencies: []string{"sample"},
+        // Startup dependencies are not user access rules.
         RequiredPermissions: []string{"sample.record.read"},
         Frontend: application.Frontend{EntryRoute: "/sample", NavigationID: "sample"},
+        APIContractVersion: "v1",
+        Access: application.Access{Entry: application.PermissionPolicy{
+            Match: application.PermissionMatchAll,
+            Permissions: []string{"sample.record.read"},
+        }},
     })
 }
 ```
 
 The runtime validates the application descriptor after all modules initialize:
-module dependencies, required permissions, and required capabilities must have
-registered successfully. The non-business fixture in
+module dependencies, static permissions, capabilities, and access-policy
+permissions must have registered successfully. `RequiredPermissions` expresses
+registration dependencies only. `Access.Entry` and optional `Access.Settings`
+are the user authorization policies: each explicitly requires either all or
+any listed permissions, whose registered scope (platform or workspace) is
+enforced by the discovery service. The non-business fixture in
 `internal/framework/runtime/runtime_test.go` exercises this contract.
 
 ## Frontend
@@ -55,12 +65,15 @@ registered successfully. The non-business fixture in
 1. Create `web/src/modules/<application>/` and export one compiled `AppModule`.
 2. Add typed React routes and permission-aware navigation. Reuse shared UI
    primitives from `web/src/components/ui.tsx` and the existing AppShell.
-3. Add `application: { id, entryRoute, navigationID }` to the module. Those
-   values must exactly match the backend application descriptor.
+3. Add `application: { id, entryRoute, navigationID, apiContractVersion }` to
+   the module. All four values must exactly match the backend descriptor.
 4. Register the frontend module in `web/src/app/bootstrap/modules.ts`.
 5. Test module resolution, routes, navigation permissions, and error/empty
-   states. The Applications page compares backend discovery metadata against
-   the compiled frontend contract and reports mismatches clearly.
+states. The Applications page compares backend discovery metadata against the
+compiled frontend contract and reports mismatches clearly. Compatibility does
+not authorize access: backend-provided entry/settings authorization controls
+whether action links are rendered, and every target route remains server-side
+protected.
 
 The browser never evaluates JavaScript received from the backend. Application
 settings belong to the application route declared in its manifest; platform,

@@ -11,10 +11,12 @@ func fixture() Descriptor {
 		DisplayName:          "Framework Fixture",
 		Description:          "A non-business registration fixture.",
 		Version:              "1.0.0",
+		APIContractVersion:   "v1",
 		ModuleDependencies:   []string{"fixture"},
 		RequiredPermissions:  []string{"fixture.record.read"},
 		RequiredCapabilities: []string{"fixture.auditable"},
 		Frontend:             Frontend{EntryRoute: "/fixture", NavigationID: "fixture-home"},
+		Access:               Access{Entry: PermissionPolicy{Match: PermissionMatchAll, Permissions: []string{"fixture.record.read"}}},
 	}
 }
 
@@ -36,6 +38,11 @@ func TestRegistryRejectsInvalidAndDuplicateApplicationContracts(t *testing.T) {
 	definition.ModuleDependencies = []string{"fixture", "fixture"}
 	if err := NewRegistry().Register(definition); err == nil || !strings.Contains(err.Error(), "duplicate module dependency") {
 		t.Fatalf("unexpected duplicate dependency error: %v", err)
+	}
+	definition = fixture()
+	definition.Access.Entry.Match = PermissionMatch("sometimes")
+	if err := NewRegistry().Register(definition); err == nil || !strings.Contains(err.Error(), "invalid permission match") {
+		t.Fatalf("unexpected invalid access policy error: %v", err)
 	}
 }
 

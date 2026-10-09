@@ -42,11 +42,20 @@ contracts and preserve workspace context at every boundary.
 
 Application modules register `framework/application.Descriptor` during module
 initialization. A descriptor includes a stable ID, display metadata, module
-dependencies, required permissions/capabilities, a frontend entry route,
-navigation identity, and an optional application-owned settings route. Runtime
-validation confirms every referenced module, permission, and capability was
-registered. The core discovery endpoint exposes this metadata at
-`/api/v1/framework/applications`.
+dependencies, static permissions/capabilities, a frontend entry route,
+navigation identity, API contract version, explicit entry access policy, and
+an optional settings route with its own access policy. Runtime validation
+confirms every referenced module, permission, capability, and policy permission
+was registered.
+
+Application registration, runtime availability, and user authorization are
+separate. The authenticated, workspace-scoped discovery endpoint at
+`/api/v1/framework/applications` exposes safe compiled metadata plus evaluated
+`entry_authorized` and `settings_authorized` flags. A policy is a deliberately
+small all-of or any-of list; each permission's registered platform/workspace
+scope selects the existing access service. Frontend contract matching checks
+identity, route, navigation identity, and API contract version. It never acts
+as an authorization decision or loads untrusted code.
 
 React modules remain compiled into the web release. The frontend module
 registry verifies the matching entry route and navigation ID and the

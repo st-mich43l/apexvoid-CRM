@@ -65,10 +65,12 @@ func (m *Module) Register(ctx *module.Context) error {
 		DisplayName:         "Contacts",
 		Description:         "Workspace-scoped people, companies, activities, and shared relationship records.",
 		Version:             "1.0.0",
+		APIContractVersion:  "v1",
 		ModuleDependencies:  []string{"contacts"},
 		RequiredPermissions: []string{"contacts.contact.read"},
 		Frontend:            frameworkapplication.Frontend{EntryRoute: "/contacts/people", NavigationID: "contacts"},
 		Settings:            &frameworkapplication.Settings{Route: "/contacts/settings"},
+		Access:              frameworkapplication.Access{Entry: frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"contacts.contact.read"}}, Settings: &frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAny, Permissions: []string{"contacts.field.manage", "contacts.tag.manage"}}},
 	})
 }
 func (m *Module) RegisterRoutes(routes module.RouteRegistry) error {

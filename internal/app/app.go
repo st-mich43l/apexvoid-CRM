@@ -16,6 +16,7 @@ import (
 )
 
 type App struct {
+	Environment  string
 	Logger       *slog.Logger
 	Database     *pgxpool.Pool
 	Transactions *database.TxManager
@@ -49,7 +50,7 @@ func (r chiRoutes) With(middleware ...func(http.Handler) http.Handler) module.Ro
 }
 
 func (a *App) healthHandler(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "apexvoid-crm"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "apexvoid-crm", "environment": a.Environment})
 }
 
 func (a *App) readyHandler(w http.ResponseWriter, r *http.Request) {

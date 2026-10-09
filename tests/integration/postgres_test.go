@@ -182,6 +182,12 @@ type attachmentResponse struct {
 	ID string `json:"id"`
 }
 
+type discoveredApplication struct {
+	ID                 string `json:"id"`
+	EntryAuthorized    bool   `json:"entry_authorized"`
+	SettingsAuthorized bool   `json:"settings_authorized"`
+}
+
 func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	databaseURL, cleanup := isolatedDatabaseURL(t)
 	defer cleanup()
@@ -228,6 +234,11 @@ func TestOrganizationWorkspaceAccessAndLastAdministrator(t *testing.T) {
 	admin.must("POST", "/api/v1/setup/organization", "", map[string]string{"organization_name": "Integration Org", "workspace_name": "Primary", "timezone": "UTC"}, &setup, http.StatusCreated)
 	primaryWorkspaceID := setup.Workspace.ID
 	primaryMembershipID := setup.Membership.ID
+	var applications []discoveredApplication
+	admin.must("GET", "/api/v1/framework/applications", primaryWorkspaceID, nil, &applications, http.StatusOK)
+	if !applicationAuthorized(applications, "contacts") || !applicationAuthorized(applications, "crm") {
+		t.Fatalf("workspace administrator could not discover authorized applications: %#v", applications)
+	}
 	admin.must("POST", "/api/v1/setup/organization", "", map[string]string{"organization_name": "Duplicate", "workspace_name": "Duplicate", "timezone": "UTC"}, nil, http.StatusConflict)
 	var organizations, workspaces, memberships int
 	if err := application.Database.QueryRow(ctx, "SELECT COUNT(*) FROM organization_organizations").Scan(&organizations); err != nil {
@@ -425,6 +436,15 @@ func contains(items []string, expected string) bool {
 	for _, item := range items {
 		if item == expected {
 			return true
+		}
+	}
+	return false
+}
+
+func applicationAuthorized(applications []discoveredApplication, id string) bool {
+	for _, application := range applications {
+		if application.ID == id {
+			return application.EntryAuthorized
 		}
 	}
 	return false

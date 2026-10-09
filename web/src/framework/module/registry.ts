@@ -56,10 +56,12 @@ export class ModuleRegistry {
       const application = backend.get(id)
       if (!application) return { id, frontend, status: 'missing-backend' as const, message: `This frontend includes ${id}, but the connected backend did not register it.` }
       if (!frontend) return { id, application, status: 'missing-frontend' as const, message: `The backend registered ${id}, but this frontend build has no compiled entry for it.` }
-      if (application.frontend.entry_route !== frontend.entryRoute || application.frontend.navigation_id !== frontend.navigationID) return { id, application, frontend, status: 'mismatch' as const, message: `The compiled frontend contract does not match the backend registration for ${id}.` }
-      return { id, application, frontend, status: 'ready' as const, message: 'Compiled frontend and backend registration agree.' }
+      if (application.frontend.entry_route !== frontend.entryRoute) return { id, application, frontend, status: 'route-mismatch' as const, message: `The compiled frontend entry route does not match the backend registration for ${id}.` }
+      if (application.frontend.navigation_id !== frontend.navigationID) return { id, application, frontend, status: 'navigation-mismatch' as const, message: `The compiled frontend navigation identity does not match the backend registration for ${id}.` }
+      if (application.api_contract_version !== frontend.apiContractVersion) return { id, application, frontend, status: 'api-version-mismatch' as const, message: `The compiled frontend API contract version does not match the backend registration for ${id}.` }
+      return { id, application, frontend, status: 'compatible' as const, message: 'Registration metadata and declared API contract version agree.' }
     })
   }
 }
 
-export type ApplicationContract = { id: string; application?: ApplicationMetadata; frontend?: FrontendApplication; status: 'ready' | 'missing-backend' | 'missing-frontend' | 'mismatch'; message: string }
+export type ApplicationContract = { id: string; application?: ApplicationMetadata; frontend?: FrontendApplication; status: 'compatible' | 'missing-backend' | 'missing-frontend' | 'route-mismatch' | 'navigation-mismatch' | 'api-version-mismatch'; message: string }

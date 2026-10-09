@@ -63,10 +63,12 @@ func (Module) Register(ctx *module.Context) error {
 		DisplayName:         "CRM",
 		Description:         "Workspace-scoped lead, opportunity, and pipeline collaboration.",
 		Version:             "1.0.0",
+		APIContractVersion:  "v1",
 		ModuleDependencies:  []string{"crm", "contacts"},
-		RequiredPermissions: []string{"crm.lead.read"},
-		Frontend:            frameworkapplication.Frontend{EntryRoute: "/crm/leads", NavigationID: "crm"},
+		RequiredPermissions: []string{"crm.lead.read", "crm.opportunity.read"},
+		Frontend:            frameworkapplication.Frontend{EntryRoute: "/crm", NavigationID: "crm"},
 		Settings:            &frameworkapplication.Settings{Route: "/crm/settings/pipelines"},
+		Access:              frameworkapplication.Access{Entry: frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAny, Permissions: []string{"crm.lead.read", "crm.opportunity.read"}}, Settings: &frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAny, Permissions: []string{"crm.pipeline.manage", "crm.stage.manage"}}},
 	})
 }
 func (Module) Migrations() []module.Migration { return crmmigrations.All() }
