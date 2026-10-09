@@ -46,10 +46,10 @@ ensure-compose-networks:
 	done
 
 compose-up: ensure-compose-networks
-	docker compose up --build
+	docker compose up --build -d --force-recreate
 
 compose-down:
-	docker compose down
+	docker compose down -v --remove-orphans
 
 compose-logs:
 	docker compose logs -f
