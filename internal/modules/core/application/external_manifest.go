@@ -248,14 +248,14 @@ func migrationChecksum(body []byte) string {
 }
 
 func (s *ExternalStore) Discover(ctx context.Context, input DiscoverExternalInput) (ExternalInstallation, error) {
-	if err := validateServiceURL(input.ServiceURL, s.allowedHosts); err != nil || len(input.EnrollmentCode) < 8 || len(input.EnrollmentCode) > 256 {
+	if err := validateServiceURL(input.ServiceURL, s.allowedHosts); err != nil || len(input.EnrollmentCode) < minEnrollmentCodeLength || len(input.EnrollmentCode) > 256 {
 		return ExternalInstallation{}, fmt.Errorf("%w: invalid service URL or enrollment code", ErrInvalidManifest)
 	}
 	endpoint, err := manifestEndpoint(strings.TrimRight(input.ServiceURL, "/"), ExternalManifestPath)
 	if err != nil {
 		return ExternalInstallation{}, err
 	}
-	request, err := httpRequest(ctx, s.client, http.MethodGet, endpoint, input.EnrollmentCode, nil)
+	request, err := authenticatedManifest(ctx, s.client, endpoint, input.EnrollmentCode)
 	if err != nil {
 		return ExternalInstallation{}, err
 	}
@@ -484,13 +484,16 @@ func (s *ExternalStore) failInstallation(ctx context.Context, plan ExternalInsta
 }
 
 func postEnrollment(ctx context.Context, client *http.Client, endpoint, code string, payload []byte) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	encrypted, err := sealEnrollment(code, payload)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encrypted))
 	if err != nil {
 		return err
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-ApexVoid-Enrollment-Code", code)
 	response, err := client.Do(request)
 	if err != nil {
 		return err
@@ -553,7 +556,6 @@ func httpRequestLimit(ctx context.Context, client *http.Client, method, endpoint
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("X-ApexVoid-Enrollment-Code", enrollmentCode)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
