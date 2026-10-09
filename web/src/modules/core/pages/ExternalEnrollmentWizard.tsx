@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Check, ChevronLeft, Database, KeyRound, Search, ShieldCheck, Sparkles, Workflow } from 'lucide-react'
 import { api, type ExternalInstallation } from '../../../core/api/client'
@@ -15,7 +15,7 @@ const requirements: Array<{ key: Approval; label: string; detail: string }> = [
 ]
 const blankApprovals = (): Record<Approval, boolean> => ({ registration: false, permissions: false, database: false, schema: false, migrations: false })
 
-export function ExternalEnrollmentWizard({ onComplete }: { onComplete: () => void }) {
+export function ExternalEnrollmentWizard({ onComplete, onBusyChange }: { onComplete: () => void; onBusyChange?: (busy: boolean) => void }) {
   const { workspaces, activeWorkspaceId } = useWorkspace()
   const [serviceURL, setServiceURL] = useState('')
   const [enrollmentCode, setEnrollmentCode] = useState('')
@@ -39,6 +39,7 @@ export function ExternalEnrollmentWizard({ onComplete }: { onComplete: () => voi
     onSuccess: onComplete,
     onError: value => setError(value instanceof Error ? value.message : 'The application could not be activated.'),
   })
+  useEffect(() => { onBusyChange?.(discover.isPending || approve.isPending) }, [discover.isPending, approve.isPending, onBusyChange])
   const startDiscovery = (event: FormEvent) => {
     event.preventDefault()
     if (!serviceURL.trim() || enrollmentCode.trim().length < 32) {
