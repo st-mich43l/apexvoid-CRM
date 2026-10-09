@@ -190,6 +190,17 @@ Use public `integration.OpenEnrollment(code, payload)` to authenticate/decrypt,
 validate expected identity, persist secrets securely, and mark the code
 consumed before acknowledging completion.
 
+Enterprise also sends a fresh random
+`X-ApexVoid-Enrollment-Challenge` header. After **persisting** the received
+service secret, the application MUST return
+`X-ApexVoid-Enrollment-Ack: sha256=<HMAC hex>`. Compute that HMAC using the
+permanent service credential as key and UTF-8
+`apexvoid-enrollment-ack-v1\n` concatenated with the challenge as its
+message. Use the SDK helper
+`integration.SignEnrollmentAcknowledgement(serviceCredential, challenge)`.
+Enterprise checks this proof before activating the application. Do not return
+a successful acknowledgement when credentials have not been durably saved.
+
 This protects permanent bootstrap secrets on an administrator-controlled
 internal HTTP network, but TLS is additionally required for deployments
 across untrusted networks. Protect the enrollment code at its source;
