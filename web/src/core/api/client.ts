@@ -125,6 +125,18 @@ export const api = {
     download: async (id: string, attachmentID: string) => { const workspaceID = window.localStorage.getItem('apexvoid.active_workspace'); const headers = new Headers(); if (workspaceID) headers.set('X-ApexVoid-Workspace', workspaceID); const response = await fetch(`${baseURL}/api/v1/contacts/${id}/attachments/${attachmentID}`, { headers, credentials: 'include' }); if (!response.ok) throw new Error(`Download failed with status ${response.status}`); return response.blob() },
     removeAttachment: (id: string, attachmentID: string) => request<void>(`/api/v1/contacts/${id}/attachments/${attachmentID}`, { method: 'DELETE' }),
   },
+  cafe: {
+    booths: () => request<CafeBooth[]>('/api/v1/cafe/booths'),
+    addBooth: (name: string) => request<CafeBooth>('/api/v1/cafe/booths', json({ name })),
+    bookings: () => request<CafeBooking[]>('/api/v1/cafe/bookings'),
+    reserve: (body: CafeBookingInput) => request<CafeBooking>('/api/v1/cafe/bookings', json(body)),
+    bookingAction: (id: string, action: 'check-in' | 'complete' | 'cancel') =>
+      request<CafeBooking>(`/api/v1/cafe/bookings/${id}/${action}`, { method: 'POST' }),
+    orders: () => request<CafeOrder[]>('/api/v1/cafe/orders'),
+    createOrder: (body: CafeOrderInput) => request<CafeOrder>('/api/v1/cafe/orders', json(body)),
+    orderAction: (id: string, action: 'complete' | 'cancel') =>
+      request<CafeOrder>(`/api/v1/cafe/orders/${id}/${action}`, { method: 'POST' }),
+  },
   erp: {
     products: (params: { search?: string; page?: number; limit?: number; include_archived?: boolean } = {}) => {
       const query = new URLSearchParams()
@@ -232,3 +244,9 @@ export type SavedViewInput = Omit<SavedView, 'id' | 'workspace_id' | 'owner_user
 export type ERPProductInput = { sku: string; name: string; description: string; kind: 'good' | 'service'; unit: 'unit' | 'hour' | 'kg'; unit_price: string; currency: string }
 export type ERPProduct = ERPProductInput & { id: string; workspace_id: string; status: 'active' | 'archived'; version: number; created_at: string; updated_at: string }
 export type ERPProductList = { items: ERPProduct[]; total: number; page: number; limit: number }
+
+export type CafeBooth = { id: string; workspace_id: string; name: string; active: boolean; created_at: string }
+export type CafeBooking = { id: string; workspace_id: string; booth_id: string; booth_name: string; package_product_id: string; guest_name: string; starts_at: string; ends_at: string; status: 'reserved' | 'checked_in' | 'completed' | 'cancelled'; price: string; currency: string; created_at: string }
+export type CafeBookingInput = { booth_id: string; package_product_id: string; guest_name: string; starts_at: string; ends_at: string }
+export type CafeOrder = { id: string; workspace_id: string; status: 'open' | 'completed' | 'cancelled'; total: string; currency: string; note: string; line_count: number; created_at: string }
+export type CafeOrderInput = { note: string; lines: Array<{ product_id: string; quantity: number }> }
