@@ -1,10 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../core/api/client'
 import { Badge, Card, CardHeader, EmptyState, LoadingState, PageContainer, PageHeader } from '../../../components/ui'
+import { useAuth } from '../../../core/auth/context'
+import { useWorkspace } from '../../../core/workspace/context'
+import { userWorkspaceQueryKey } from '../../../core/workspace/query'
 
 export function FrameworkPage() {
+  const { user } = useAuth()
+  const { activeWorkspaceId } = useWorkspace()
   const modules = useQuery({ queryKey: ['framework', 'modules'], queryFn: api.framework.modules })
-  const applications = useQuery({ queryKey: ['framework', 'applications'], queryFn: api.framework.applications })
+  const applications = useQuery({ queryKey: userWorkspaceQueryKey(user?.id, activeWorkspaceId, 'framework', 'applications'), queryFn: api.framework.applications, enabled: Boolean(user && activeWorkspaceId), retry: false })
   const entities = useQuery({ queryKey: ['framework', 'entities'], queryFn: api.framework.entities })
   const permissions = useQuery({ queryKey: ['framework', 'permissions'], queryFn: api.framework.permissions })
   const loading = modules.isLoading || applications.isLoading || entities.isLoading || permissions.isLoading

@@ -6,6 +6,8 @@ import { api } from '../../../core/api/client'
 import type { ApplicationMetadata } from '../../../framework/metadata/types'
 import type { FrontendApplication } from '../../../framework/module/types'
 import { ApplicationsPage } from './ApplicationsPage'
+import { AuthContext } from '../../../core/auth/context'
+import { WorkspaceContext } from '../../../core/workspace/context'
 
 const compiled: FrontendApplication[] = [{ id: 'crm', entryRoute: '/crm', navigationID: 'crm', apiContractVersion: 'v1' }]
 const registered = (overrides: Partial<ApplicationMetadata> = {}): ApplicationMetadata => ({
@@ -14,7 +16,9 @@ const registered = (overrides: Partial<ApplicationMetadata> = {}): ApplicationMe
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><MemoryRouter><Routes><Route element={<Outlet context={{ applications: compiled }} />}><Route index element={<ApplicationsPage />} /></Route></Routes></MemoryRouter></QueryClientProvider>)
+  const auth = { user: { id: 'user-a', email: 'a@example.test', display_name: 'A', status: 'active', must_change_password: false }, loading: false, platformPermissions: [], platformCan: () => false, login: async () => {}, logout: async () => {}, reload: async () => {} }
+  const workspace = { workspaces: [], activeWorkspace: null, activeWorkspaceId: 'workspace-a', setup: null, workspacePermissions: [], loading: false, selectWorkspace: () => {}, can: () => false, reload: async () => {} }
+  return render(<QueryClientProvider client={client}><AuthContext.Provider value={auth}><WorkspaceContext.Provider value={workspace}><MemoryRouter><Routes><Route element={<Outlet context={{ applications: compiled }} />}><Route index element={<ApplicationsPage />} /></Route></Routes></MemoryRouter></WorkspaceContext.Provider></AuthContext.Provider></QueryClientProvider>)
 }
 
 afterEach(() => vi.restoreAllMocks())

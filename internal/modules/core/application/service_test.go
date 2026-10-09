@@ -15,6 +15,14 @@ type metadataReaderStub struct{ snapshot metadata.Snapshot }
 
 func (s metadataReaderStub) Snapshot() metadata.Snapshot           { return s.snapshot }
 func (metadataReaderStub) Entity(string) (entity.Definition, bool) { return entity.Definition{}, false }
+func (s metadataReaderStub) SnapshotPermission(name string) (permission.Definition, bool) {
+	for _, item := range s.snapshot.Permissions {
+		if item.Name == name {
+			return item, true
+		}
+	}
+	return permission.Definition{}, false
+}
 
 type authorizerStub struct {
 	platform  map[string]bool

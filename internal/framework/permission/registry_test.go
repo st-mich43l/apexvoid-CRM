@@ -18,3 +18,17 @@ func TestRegistryRejectsInvalidAndDuplicatePermissions(t *testing.T) {
 		t.Fatalf("unexpected validation error: %v", err)
 	}
 }
+
+func TestRegistryUpdatesPresentationWithoutChangingPermissionIdentity(t *testing.T) {
+	registry := NewRegistry()
+	if err := registry.Register(Definition{Name: "reports.report.read", Module: "external.reports", Scope: ScopeWorkspace, DisplayName: "Read reports"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.UpdatePresentation("reports.report.read", "Read workspace reports", "Updated safely"); err != nil {
+		t.Fatal(err)
+	}
+	item, ok := registry.Get("reports.report.read")
+	if !ok || item.Scope != ScopeWorkspace || item.Module != "external.reports" || item.DisplayName != "Read workspace reports" {
+		t.Fatalf("unexpected updated permission: %#v", item)
+	}
+}

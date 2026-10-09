@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: dev build test test-integration lint fmt backend frontend compose-up compose-down compose-logs migrate-up migrate-down
+.PHONY: dev build test test-integration test-external-docker lint fmt backend frontend compose-up compose-down compose-logs migrate-up migrate-down
 
 dev: compose-up
 
@@ -15,6 +15,9 @@ test:
 
 test-integration:
 	go test -tags=integration ./tests/integration
+
+test-external-docker:
+	./scripts/test-external-module-docker.sh
 
 lint:
 	go vet ./...

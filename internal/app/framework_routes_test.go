@@ -66,18 +66,13 @@ func TestFrameworkDiscoveryEndpoints(t *testing.T) {
 	for _, path := range []string{"/api/v1/framework/modules", "/api/v1/framework/entities", "/api/v1/framework/permissions", "/api/v1/framework/entities/core.example"} {
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("%s returned %d", path, recorder.Code)
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("%s must require authentication, returned %d", path, recorder.Code)
 		}
 	}
 	applications := httptest.NewRecorder()
 	router.ServeHTTP(applications, httptest.NewRequest(http.MethodGet, "/api/v1/framework/applications", nil))
 	if applications.Code != http.StatusUnauthorized {
 		t.Fatalf("application discovery must require authentication, got %d", applications.Code)
-	}
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/framework/entities/missing.entity", nil))
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("unknown entity returned %d", recorder.Code)
 	}
 }

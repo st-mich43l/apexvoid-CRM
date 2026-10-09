@@ -14,13 +14,14 @@ import (
 )
 
 type Config struct {
-	App       AppConfig       `yaml:"app"`
-	Server    ServerConfig    `yaml:"server"`
-	Database  DatabaseConfig  `yaml:"database"`
-	Auth      AuthConfig      `yaml:"auth"`
-	Contacts  ContactsConfig  `yaml:"contacts"`
-	Bootstrap BootstrapConfig `yaml:"bootstrap"`
-	Logging   LoggingConfig   `yaml:"logging"`
+	App          AppConfig          `yaml:"app"`
+	Server       ServerConfig       `yaml:"server"`
+	Database     DatabaseConfig     `yaml:"database"`
+	Auth         AuthConfig         `yaml:"auth"`
+	Contacts     ContactsConfig     `yaml:"contacts"`
+	Integrations IntegrationsConfig `yaml:"integrations"`
+	Bootstrap    BootstrapConfig    `yaml:"bootstrap"`
+	Logging      LoggingConfig      `yaml:"logging"`
 }
 
 type AppConfig struct {
@@ -76,6 +77,13 @@ type ContactsConfig struct {
 	MaxUploadBytes int64  `yaml:"max_upload_bytes"`
 }
 
+// IntegrationsConfig controls trusted Docker-network applications. Production
+// deployments must provide both an assertion secret and explicit service hosts.
+type IntegrationsConfig struct {
+	AssertionSecret     string   `yaml:"assertion_secret"`
+	AllowedServiceHosts []string `yaml:"allowed_service_hosts"`
+}
+
 func Load(path string) (Config, error) {
 	cfg := defaultConfig()
 	if path != "" {
@@ -98,13 +106,14 @@ func Load(path string) (Config, error) {
 
 func defaultConfig() Config {
 	return Config{
-		App:       AppConfig{Name: "apexvoid-crm", Environment: "development"},
-		Server:    ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
-		Database:  DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
-		Auth:      AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
-		Contacts:  ContactsConfig{UploadDir: "/var/lib/apexvoid/attachments", MaxUploadBytes: 25 * 1024 * 1024},
-		Bootstrap: BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
-		Logging:   LoggingConfig{Level: "INFO"},
+		App:          AppConfig{Name: "apexvoid-crm", Environment: "development"},
+		Server:       ServerConfig{Address: ":6868", ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, RequestTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, CORSOrigins: []string{"http://localhost:8386"}},
+		Database:     DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
+		Auth:         AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
+		Contacts:     ContactsConfig{UploadDir: "/var/lib/apexvoid/attachments", MaxUploadBytes: 25 * 1024 * 1024},
+		Integrations: IntegrationsConfig{},
+		Bootstrap:    BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
+		Logging:      LoggingConfig{Level: "INFO"},
 	}
 }
 
@@ -125,6 +134,8 @@ func applyEnv(c *Config) {
 	}
 	setString(&c.Contacts.UploadDir, "CONTACTS_UPLOAD_DIR")
 	setInt64(&c.Contacts.MaxUploadBytes, "CONTACTS_MAX_UPLOAD_BYTES")
+	setString(&c.Integrations.AssertionSecret, "INTEGRATIONS_ASSERTION_SECRET")
+	setStringSlice(&c.Integrations.AllowedServiceHosts, "INTEGRATIONS_ALLOWED_SERVICE_HOSTS")
 	setDuration(&c.Auth.AccessTokenTTL, "AUTH_ACCESS_TOKEN_TTL")
 	setDuration(&c.Auth.RefreshTokenTTL, "AUTH_REFRESH_TOKEN_TTL")
 	setBool(&c.Auth.CookieSecure, "AUTH_COOKIE_SECURE")
@@ -255,6 +266,11 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Contacts.UploadDir) == "" || c.Contacts.MaxUploadBytes <= 0 {
 		return fmt.Errorf("invalid configuration: contacts attachment storage")
+	}
+	if len(c.Integrations.AllowedServiceHosts) > 0 {
+		if len(strings.TrimSpace(c.Integrations.AssertionSecret)) < 32 {
+			return fmt.Errorf("invalid configuration: integrations.assertion_secret must be at least 32 characters when external service hosts are enabled")
+		}
 	}
 	if err := c.validateProductionSecurity(); err != nil {
 		return err

@@ -51,6 +51,7 @@ type PermissionReader interface {
 }
 
 type contextKey struct{}
+type accessTokenContextKey struct{}
 
 func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 	return context.WithValue(ctx, contextKey{}, principal)
@@ -59,6 +60,14 @@ func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	principal, ok := ctx.Value(contextKey{}).(Principal)
 	return principal, ok
+}
+
+// AccessTokenFromContext is intentionally available only to trusted server
+// middleware. It lets the external gateway seal (never forward) the opaque
+// token in a short-lived assertion for Core to revalidate later.
+func AccessTokenFromContext(ctx context.Context) (string, bool) {
+	token, ok := ctx.Value(accessTokenContextKey{}).(string)
+	return token, ok
 }
 
 func RequireAuthentication(auth Authenticator) func(http.Handler) http.Handler {
@@ -85,7 +94,9 @@ func RequireAuthentication(auth Authenticator) func(http.Handler) http.Handler {
 				httpserver.WriteError(w, r, http.StatusForbidden, "PASSWORD_CHANGE_REQUIRED", "Change your password before continuing")
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+			ctx := WithPrincipal(r.Context(), principal)
+			ctx = context.WithValue(ctx, accessTokenContextKey{}, token)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
