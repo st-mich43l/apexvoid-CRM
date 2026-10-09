@@ -91,19 +91,37 @@ func TestProvisioningEncryptionAndCanonicalOwnership(t *testing.T) {
 func TestEnrollmentServiceProvesCredentialReceipt(t *testing.T) {
 	const code = "local-pairing-secret-long-random-value-123456789"
 	credential := strings.Repeat("c", 64)
-	clear := []byte(`{"application_id":"cafe","api_contract_version":"v1","service_credential":"`+credential+`","database":{"name":"apexvoid_cafe","schema":"cafe","role":"apexvoid_cafe","password":"`+strings.Repeat("p",40)+`","migration_bundle_version":"0.1.0"}}`)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
-		if r.Header.Get("X-ApexVoid-Enrollment-Code") != "" { t.Error("enrollment leaked one-time code in HTTP headers") }
-		body,err:=io.ReadAll(r.Body)
-		if err!=nil{t.Error(err);w.WriteHeader(400);return}
-		values,err:=integration.OpenEnrollment(code,body)
-		if err!=nil || values.ServiceCredential!=credential {t.Error("invalid authenticated service enrollment",err);w.WriteHeader(400);return}
-		proof,err:=integration.SignEnrollmentAcknowledgement(values.ServiceCredential,r.Header.Get("X-ApexVoid-Enrollment-Challenge"))
-		if err!=nil{t.Error(err);w.WriteHeader(400);return}
-		w.Header().Set("X-ApexVoid-Enrollment-Ack",proof)
+	clear := []byte(`{"application_id":"cafe","api_contract_version":"v1","service_credential":"` + credential + `","database":{"name":"apexvoid_cafe","schema":"cafe","role":"apexvoid_cafe","password":"` + strings.Repeat("p", 40) + `","migration_bundle_version":"0.1.0"}}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-ApexVoid-Enrollment-Code") != "" {
+			t.Error("enrollment leaked one-time code in HTTP headers")
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		values, err := integration.OpenEnrollment(code, body)
+		if err != nil || values.ServiceCredential != credential {
+			t.Error("invalid authenticated service enrollment", err)
+			w.WriteHeader(400)
+			return
+		}
+		proof, err := integration.SignEnrollmentAcknowledgement(values.ServiceCredential, r.Header.Get("X-ApexVoid-Enrollment-Challenge"))
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(400)
+			return
+		}
+		w.Header().Set("X-ApexVoid-Enrollment-Ack", proof)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	if err:=postEnrollment(context.Background(),server.Client(),server.URL,code,credential,clear);err!=nil{t.Fatal(err)}
-	if err:=postEnrollment(context.Background(),server.Client(),server.URL,code,strings.Repeat("z",64),clear);err==nil{t.Fatal("incorrect credential acknowledgment passed")}
+	if err := postEnrollment(context.Background(), server.Client(), server.URL, code, credential, clear); err != nil {
+		t.Fatal(err)
+	}
+	if err := postEnrollment(context.Background(), server.Client(), server.URL, code, strings.Repeat("z", 64), clear); err == nil {
+		t.Fatal("incorrect credential acknowledgment passed")
+	}
 }
