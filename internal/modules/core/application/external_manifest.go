@@ -416,11 +416,11 @@ func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, inp
 	if err != nil {
 		return ExternalInstallation{}, ExternalApplication{}, "", err
 	}
-	if time.Now().After(plan.ExpiresAt) {
-		return s.failInstallation(ctx, plan, ErrInstallationExpired)
-	}
 	if plan.Status != "pending_approval" && plan.Status != "failed" {
 		return ExternalInstallation{}, ExternalApplication{}, "", ErrInstallationState
+	}
+	if time.Now().After(plan.ExpiresAt) {
+		return s.failInstallation(ctx, plan, ErrInstallationExpired)
 	}
 	if !input.ApproveRegistration || !input.ApprovePermissions || !input.ApproveDatabase || !input.ApproveSchema || !input.ApproveMigrations || len(input.WorkspaceIDs) == 0 {
 		return ExternalInstallation{}, ExternalApplication{}, "", fmt.Errorf("%w: every approval and at least one workspace are required", ErrInvalidManifest)
