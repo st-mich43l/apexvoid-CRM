@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -21,8 +22,22 @@ type apiClient struct {
 }
 
 func main() {
+	phase := flag.String("phase", "full", "setup, verify, outage, finalize, or full")
+	flag.Parse()
 	frontendURL := env("APEXVOID_EXTERNAL_TEST_URL", "http://localhost:18386")
 	backendURL := env("APEXVOID_EXTERNAL_BACKEND_URL", "http://localhost:16868")
+	if *phase == "verify" {
+		verifyPersistentRegistration(frontendURL)
+		return
+	}
+	if *phase == "outage" {
+		verifyFixtureOutage(frontendURL)
+		return
+	}
+	if *phase == "finalize" {
+		finalizeLifecycle(frontendURL, backendURL)
+		return
+	}
 	admin := newClient(frontendURL)
 	must(admin.request(http.MethodPost, "/api/v1/auth/login", map[string]string{"email": "admin@external.test", "password": "admin"}, http.StatusOK, nil))
 	must(admin.request(http.MethodPost, "/api/v1/auth/change-password", map[string]string{"current_password": "admin", "new_password": "admin-password-123"}, http.StatusOK, nil))
@@ -49,7 +64,22 @@ func main() {
 	must(admin.request(http.MethodPut, "/api/v1/applications/external/reports/workspaces/"+workspaceID, map[string]bool{"enabled": false}, http.StatusOK, nil))
 	must(admin.request(http.MethodGet, "/api/apps/reports/records", nil, http.StatusForbidden, nil))
 	must(admin.request(http.MethodPut, "/api/v1/applications/external/reports/workspaces/"+workspaceID, map[string]bool{"enabled": true}, http.StatusOK, nil))
+	if *phase == "setup" {
+		fmt.Println("external Docker gateway setup: ok")
+		return
+	}
+	finalize(admin, backendURL)
+	fmt.Println("external Docker gateway integration: ok")
+}
 
+func finalizeLifecycle(frontendURL, backendURL string) {
+	admin := newClient(frontendURL)
+	must(admin.request(http.MethodPost, "/api/v1/auth/login", map[string]string{"email": "admin@external.test", "password": "admin-password-123"}, http.StatusOK, nil))
+	finalize(admin, backendURL)
+	fmt.Println("external Docker gateway finalization: ok")
+}
+
+func finalize(admin *apiClient, backendURL string) {
 	var rotated struct {
 		ServiceCredential string `json:"service_credential"`
 	}
@@ -62,7 +92,33 @@ func main() {
 	must(serviceRequest(backendURL, rotated.ServiceCredential, http.StatusUnauthorized))
 	must(admin.request(http.MethodDelete, "/api/v1/applications/external/reports", nil, http.StatusNoContent, nil))
 	must(admin.request(http.MethodGet, "/apps/reports", nil, http.StatusNotFound, nil))
-	fmt.Println("external Docker gateway integration: ok")
+}
+
+func verifyPersistentRegistration(frontendURL string) {
+	admin := newClient(frontendURL)
+	must(admin.request(http.MethodPost, "/api/v1/auth/login", map[string]string{"email": "admin@external.test", "password": "admin-password-123"}, http.StatusOK, nil))
+	var applications []struct {
+		ID string `json:"id"`
+	}
+	must(admin.request(http.MethodGet, "/api/v1/applications/external", nil, http.StatusOK, &applications))
+	found := false
+	for _, application := range applications {
+		if application.ID == "reports" {
+			found = true
+		}
+	}
+	if !found {
+		panic("registered external application was not restored after restart")
+	}
+	must(admin.request(http.MethodGet, "/api/apps/reports/records", nil, http.StatusOK, nil))
+	fmt.Println("external Docker gateway restart recovery: ok")
+}
+
+func verifyFixtureOutage(frontendURL string) {
+	admin := newClient(frontendURL)
+	must(admin.request(http.MethodPost, "/api/v1/auth/login", map[string]string{"email": "admin@external.test", "password": "admin-password-123"}, http.StatusOK, nil))
+	must(admin.request(http.MethodGet, "/api/apps/reports/records", nil, http.StatusBadGateway, nil))
+	fmt.Println("external Docker fixture outage: safe gateway failure")
 }
 
 func newClient(baseURL string) *apiClient {

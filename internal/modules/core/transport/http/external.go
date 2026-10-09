@@ -1,12 +1,15 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -86,9 +89,24 @@ func externalError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusConflict, "CONFLICT", "External application or permission already exists")
 	case errors.Is(err, application.ErrInvalidExternalModule):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+	case errors.Is(err, application.ErrUnsupportedContract):
+		httpserver.WriteError(w, r, http.StatusBadRequest, "UNSUPPORTED_CONTRACT", err.Error())
 	default:
 		httpserver.WriteApplicationError(w, r, err)
 	}
+}
+func auditExternal(w http.ResponseWriter, r *http.Request, applicationID, action string, workspaceID *uuid.UUID) (context.Context, bool) {
+	principal, ok := usersapi.PrincipalFromContext(r.Context())
+	if !ok {
+		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
+		return nil, false
+	}
+	event := application.ExternalAuditEvent{
+		ApplicationID: applicationID, ActorUserID: principal.UserID,
+		WorkspaceID: workspaceID, Action: action,
+		RequestID: httpserver.RequestIDFromContext(r.Context()),
+	}
+	return application.WithExternalAudit(r.Context(), event), true
 }
 func (h *Handler) registerExternal(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -99,7 +117,11 @@ func (h *Handler) registerExternal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, credential, err := store.Register(r.Context(), application.RegisterExternalInput{Application: toExternal(request), Credential: request.Credential})
+	auditContext, ok := auditExternal(w, r, request.ID, "external_application.registered", nil)
+	if !ok {
+		return
+	}
+	item, credential, err := store.Register(auditContext, application.RegisterExternalInput{Application: toExternal(request), Credential: request.Credential})
 	if err != nil {
 		externalError(w, r, err)
 		return
@@ -165,7 +187,11 @@ func (h *Handler) updateExternal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request.ID = chi.URLParam(r, "application")
-	item, err := store.Update(r.Context(), toExternal(request))
+	auditContext, ok := auditExternal(w, r, request.ID, "external_application.updated", nil)
+	if !ok {
+		return
+	}
+	item, err := store.Update(auditContext, toExternal(request))
 	if err != nil {
 		externalError(w, r, err)
 		return
@@ -177,7 +203,12 @@ func (h *Handler) unregisterExternal(w http.ResponseWriter, r *http.Request) {
 	if store == nil {
 		return
 	}
-	if err := store.Unregister(r.Context(), chi.URLParam(r, "application")); err != nil {
+	applicationID := chi.URLParam(r, "application")
+	auditContext, ok := auditExternal(w, r, applicationID, "external_application.retired", nil)
+	if !ok {
+		return
+	}
+	if err := store.Unregister(auditContext, applicationID); err != nil {
 		externalError(w, r, err)
 		return
 	}
@@ -198,7 +229,11 @@ func (h *Handler) setWorkspaceAvailability(w http.ResponseWriter, r *http.Reques
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid workspace identifier")
 		return
 	}
-	if err = store.SetWorkspaceEnabled(r.Context(), chi.URLParam(r, "application"), workspaceID, request.Enabled); err != nil {
+	auditContext, ok := auditExternal(w, r, chi.URLParam(r, "application"), "external_application.workspace_availability_changed", &workspaceID)
+	if !ok {
+		return
+	}
+	if err = store.SetWorkspaceEnabled(auditContext, chi.URLParam(r, "application"), workspaceID, request.Enabled); err != nil {
 		externalError(w, r, err)
 		return
 	}
@@ -209,7 +244,12 @@ func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
 	if store == nil {
 		return
 	}
-	if err := store.RevokeCredential(r.Context(), chi.URLParam(r, "application")); err != nil {
+	applicationID := chi.URLParam(r, "application")
+	auditContext, ok := auditExternal(w, r, applicationID, "external_application.credential_revoked", nil)
+	if !ok {
+		return
+	}
+	if err := store.RevokeCredential(auditContext, applicationID); err != nil {
 		externalError(w, r, err)
 		return
 	}
@@ -220,7 +260,12 @@ func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
 	if store == nil {
 		return
 	}
-	credential, err := store.RotateCredential(r.Context(), chi.URLParam(r, "application"))
+	applicationID := chi.URLParam(r, "application")
+	auditContext, ok := auditExternal(w, r, applicationID, "external_application.credential_rotated", nil)
+	if !ok {
+		return
+	}
+	credential, err := store.RotateCredential(auditContext, applicationID)
 	if err != nil {
 		externalError(w, r, err)
 		return
@@ -270,7 +315,7 @@ func (h *Handler) introspectSession(w http.ResponseWriter, r *http.Request) {
 		httpserver.WriteError(w, r, http.StatusUnauthorized, "INVALID_ASSERTION", "A valid gateway identity assertion is required")
 		return
 	}
-	principal, err := h.authenticator.AuthenticateAccess(r.Context(), claims.AccessToken)
+	principal, err := h.authenticator.AuthenticateSession(r.Context(), claims.UserID, claims.SessionID)
 	if err != nil || principal.MustChangePassword {
 		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Active session is required")
 		return
@@ -343,6 +388,14 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		httpserver.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "External application has no gateway frontend")
 		return
 	}
+	const maxExternalRequestBytes = 10 << 20
+	if api && r.ContentLength > maxExternalRequestBytes {
+		httpserver.WriteError(w, r, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "External application request body is too large")
+		return
+	}
+	if api {
+		r.Body = http.MaxBytesReader(w, r.Body, maxExternalRequestBytes)
+	}
 	workspace, ok := organizationapi.WorkspaceContextFromContext(r.Context())
 	if !ok {
 		httpserver.WriteError(w, r, http.StatusForbidden, "WORKSPACE_FORBIDDEN", "Workspace context is required")
@@ -354,8 +407,7 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		return
 	}
 	principal, principalOK := usersapi.PrincipalFromContext(r.Context())
-	accessToken, tokenOK := usersapi.AccessTokenFromContext(r.Context())
-	if !principalOK || !tokenOK {
+	if !principalOK {
 		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
 		return
 	}
@@ -368,7 +420,7 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		httpserver.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "You do not have permission to open this application")
 		return
 	}
-	assertion, err := h.issuer.Issue(applicationID, principal.UserID, principal.SessionID, workspace.WorkspaceID, accessToken)
+	assertion, err := h.issuer.Issue(applicationID, principal.UserID, principal.SessionID, workspace.WorkspaceID)
 	if err != nil {
 		httpserver.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not establish external application identity")
 		return
@@ -379,20 +431,33 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		return
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 3 * time.Second, KeepAlive: 30 * time.Second}).DialContext, ResponseHeaderTimeout: 5 * time.Second, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 3 * time.Second}
 	original := proxy.Director
 	proxy.Director = func(request *http.Request) {
 		original(request)
 		request.URL.Path = "/" + strings.TrimPrefix(chi.URLParam(r, "*"), "/")
 		request.Header.Del("Authorization")
+		request.Header.Del("Proxy-Authorization")
 		request.Header.Del("Cookie")
-		for _, header := range []string{"X-User-ID", "X-Workspace-ID", "X-Role", "X-Permissions", "X-ApexVoid-Gateway", "X-ApexVoid-Identity-Assertion"} {
-			request.Header.Del(header)
+		request.Header.Del("Forwarded")
+		// Treat every identity-related namespace as reserved. A fixed list
+		// misses future ApexVoid and proxy identity headers supplied by browsers.
+		for header := range request.Header {
+			lower := strings.ToLower(header)
+			if strings.HasPrefix(lower, "x-apexvoid-") ||
+				strings.HasPrefix(lower, "x-forwarded-") ||
+				strings.HasPrefix(lower, "x-authenticated-") ||
+				lower == "x-user-id" || lower == "x-workspace-id" ||
+				lower == "x-role" || lower == "x-permissions" {
+				request.Header.Del(header)
+			}
 		}
 		request.Header.Set("X-ApexVoid-Gateway", "external-application")
 		request.Header.Set("X-ApexVoid-Identity-Assertion", assertion)
 	}
 	proxy.ModifyResponse = func(response *http.Response) error {
 		response.Header.Del("Set-Cookie")
+		response.Header.Del("Location")
 		response.Header.Set("X-Content-Type-Options", "nosniff")
 		response.Header.Set("Cache-Control", "no-store")
 		return nil

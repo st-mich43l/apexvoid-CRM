@@ -14,12 +14,12 @@ func TestIdentityAssertionIsAudienceBoundAndExpires(t *testing.T) {
 	}
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	issuer.now = func() time.Time { return now }
-	assertion, err := issuer.Issue("reports", uuid.New(), uuid.New(), uuid.New(), "opaque-access-token")
+	assertion, err := issuer.Issue("reports", uuid.New(), uuid.New(), uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
 	claims, err := issuer.Verify(assertion, "reports")
-	if err != nil || claims.AccessToken != "opaque-access-token" {
+	if err != nil {
 		t.Fatalf("valid assertion failed: %#v %v", claims, err)
 	}
 	if _, err := issuer.Verify(assertion, "other"); err == nil {

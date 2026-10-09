@@ -59,5 +59,18 @@ CREATE TABLE IF NOT EXISTS core_external_permission_tombstones (
 ALTER TABLE core_external_applications DROP CONSTRAINT IF EXISTS core_external_applications_status_check;
 ALTER TABLE core_external_applications DROP COLUMN IF EXISTS credential_rotated_at;
 ALTER TABLE core_external_applications DROP COLUMN IF EXISTS status;`,
+	}, {
+		Module: "core", Version: 3, Name: "audit_external_application_administration",
+		UpSQL: `CREATE TABLE IF NOT EXISTS core_external_application_audit (
+  id UUID PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  actor_user_id UUID NOT NULL,
+  workspace_id UUID NULL,
+  action TEXT NOT NULL,
+  request_id TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS core_external_application_audit_application_idx ON core_external_application_audit(application_id, created_at DESC);`,
+		DownSQL: `DROP TABLE IF EXISTS core_external_application_audit;`,
 	}}
 }

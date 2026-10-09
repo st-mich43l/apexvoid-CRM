@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
@@ -29,8 +30,11 @@ var (
 	ErrExternalNotFound      = errors.New("external application not found")
 	ErrExternalDuplicate     = errors.New("external application is already registered")
 	ErrInvalidExternalModule = errors.New("invalid external application contract")
+	ErrUnsupportedContract   = errors.New("unsupported external application API contract")
 	ErrInvalidCredential     = errors.New("external service authentication failed")
 )
+
+const SupportedExternalContractVersion = "v1"
 
 type ExternalPermission struct {
 	Name, DisplayName, Description string
@@ -51,6 +55,16 @@ type ExternalApplication struct {
 type RegisterExternalInput struct {
 	Application ExternalApplication
 	Credential  string
+}
+
+// ExternalAuditEvent records an administrative state transition without any
+// credential, token, assertion, or endpoint secret material.
+type ExternalAuditEvent struct {
+	ApplicationID string
+	ActorUserID   uuid.UUID
+	WorkspaceID   *uuid.UUID
+	Action        string
+	RequestID     string
 }
 
 type ExternalStore struct {
@@ -118,7 +132,26 @@ func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInpu
 		_, _ = s.pool.Exec(ctx, `DELETE FROM core_external_applications WHERE id=$1 AND status='registering'`, app.ID)
 		return ExternalApplication{}, "", fmt.Errorf("register live permission catalog: %w", err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET status='active',updated_at=NOW() WHERE id=$1 AND status='registering'`, app.ID); err != nil {
+	// Activate and record the successful registration in one transaction. A
+	// failed audit must never strand an active app with an undisclosed credential.
+	activation, err := s.pool.Begin(ctx)
+	if err == nil {
+		var command pgconn.CommandTag
+		command, err = activation.Exec(ctx, `UPDATE core_external_applications SET status='active',updated_at=NOW() WHERE id=$1 AND status='registering'`, app.ID)
+		if err == nil && command.RowsAffected() != 1 {
+			err = ErrExternalNotFound
+		}
+		if err == nil {
+			err = s.recordAuditTx(ctx, activation, app.ID)
+		}
+		if err == nil {
+			err = activation.Commit(ctx)
+		}
+		if err != nil {
+			_ = activation.Rollback(ctx)
+		}
+	}
+	if err != nil {
 		s.unregisterPermissions(app)
 		_, _ = s.pool.Exec(ctx, `DELETE FROM core_external_applications WHERE id=$1 AND status='registering'`, app.ID)
 		return ExternalApplication{}, "", fmt.Errorf("activate external application: %w", err)
@@ -154,6 +187,9 @@ func (s *ExternalStore) Update(ctx context.Context, app ExternalApplication) (Ex
 		return ExternalApplication{}, err
 	}
 	if err = s.writePermissions(ctx, tx, app); err != nil {
+		return ExternalApplication{}, err
+	}
+	if err = s.recordAuditTx(ctx, tx, app.ID); err != nil {
 		return ExternalApplication{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -217,21 +253,29 @@ func (s *ExternalStore) Get(ctx context.Context, id string) (ExternalApplication
 }
 
 func (s *ExternalStore) SetWorkspaceEnabled(ctx context.Context, applicationID string, workspaceID uuid.UUID, enabled bool) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	var exists bool
-	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspace_workspaces WHERE id=$1)`, workspaceID).Scan(&exists); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspace_workspaces WHERE id=$1)`, workspaceID).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {
 		return ErrExternalNotFound
 	}
-	command, err := s.pool.Exec(ctx, `INSERT INTO core_external_application_workspaces(application_id,workspace_id,enabled) VALUES($1,$2,$3) ON CONFLICT(application_id,workspace_id) DO UPDATE SET enabled=EXCLUDED.enabled,updated_at=NOW()`, applicationID, workspaceID, enabled)
+	command, err := tx.Exec(ctx, `INSERT INTO core_external_application_workspaces(application_id,workspace_id,enabled) VALUES($1,$2,$3) ON CONFLICT(application_id,workspace_id) DO UPDATE SET enabled=EXCLUDED.enabled,updated_at=NOW()`, applicationID, workspaceID, enabled)
 	if err != nil {
 		return err
 	}
 	if command.RowsAffected() == 0 {
 		return ErrExternalNotFound
 	}
-	return nil
+	if err := s.recordAuditTx(ctx, tx, applicationID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 func (s *ExternalStore) EnabledInWorkspace(ctx context.Context, applicationID string, workspaceID uuid.UUID) (bool, error) {
 	var global bool
@@ -253,14 +297,22 @@ func (s *ExternalStore) EnabledInWorkspace(ctx context.Context, applicationID st
 	return enabled, err
 }
 func (s *ExternalStore) RevokeCredential(ctx context.Context, id string) error {
-	command, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET credential_revoked_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active'`, id)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	command, err := tx.Exec(ctx, `UPDATE core_external_applications SET credential_revoked_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active'`, id)
 	if err != nil {
 		return err
 	}
 	if command.RowsAffected() == 0 {
 		return ErrExternalNotFound
 	}
-	return nil
+	if err := s.recordAuditTx(ctx, tx, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 func (s *ExternalStore) RotateCredential(ctx context.Context, id string) (string, error) {
 	s.mu.Lock()
@@ -269,14 +321,45 @@ func (s *ExternalStore) RotateCredential(ctx context.Context, id string) (string
 	if err != nil {
 		return "", err
 	}
-	command, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET credential_hash=$2,credential_rotated_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active' AND credential_revoked_at IS NULL`, id, hashCredential(credential))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	command, err := tx.Exec(ctx, `UPDATE core_external_applications SET credential_hash=$2,credential_rotated_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active' AND credential_revoked_at IS NULL`, id, hashCredential(credential))
 	if err != nil {
 		return "", err
 	}
 	if command.RowsAffected() == 0 {
 		return "", ErrExternalNotFound
 	}
+	if err := s.recordAuditTx(ctx, tx, id); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
 	return credential, nil
+}
+
+type externalAuditContextKey struct{}
+
+// WithExternalAudit attaches validated administrator identity to one mutation.
+// The mutation itself writes the audit record in its database transaction.
+func WithExternalAudit(ctx context.Context, event ExternalAuditEvent) context.Context {
+	return context.WithValue(ctx, externalAuditContextKey{}, event)
+}
+
+func (s *ExternalStore) recordAuditTx(ctx context.Context, tx pgx.Tx, applicationID string) error {
+	event, ok := ctx.Value(externalAuditContextKey{}).(ExternalAuditEvent)
+	if !ok {
+		return nil // Non-HTTP callers may not have an administrator audit identity.
+	}
+	if event.ApplicationID != applicationID || event.ActorUserID == uuid.Nil || event.Action == "" {
+		return errors.New("invalid external application audit context")
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO core_external_application_audit(id,application_id,actor_user_id,workspace_id,action,request_id) VALUES($1,$2,$3,$4,$5,$6)`, uuid.New(), event.ApplicationID, event.ActorUserID, event.WorkspaceID, event.Action, event.RequestID)
+	return err
 }
 func (s *ExternalStore) Unregister(ctx context.Context, id string) error {
 	s.mu.Lock()
@@ -304,6 +387,9 @@ func (s *ExternalStore) Unregister(ctx context.Context, id string) error {
 	}
 	if command.RowsAffected() == 0 {
 		return ErrExternalNotFound
+	}
+	if err = s.recordAuditTx(ctx, tx, id); err != nil {
+		return err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
@@ -434,6 +520,9 @@ func validateExternalWithHosts(app *ExternalApplication, allowedHosts map[string
 	}
 	if !externalIdentifierPattern.MatchString(app.ID) || !externalIdentifierPattern.MatchString(app.ServiceIdentity) || !apiContractPattern.MatchString(app.APIContractVersion) {
 		return fmt.Errorf("%w: invalid application identity or API contract version", ErrInvalidExternalModule)
+	}
+	if app.APIContractVersion != SupportedExternalContractVersion {
+		return fmt.Errorf("%w: %s is supported", ErrUnsupportedContract, SupportedExternalContractVersion)
 	}
 	for _, value := range []string{app.ServiceEndpoint, app.HealthEndpoint} {
 		if err := validateServiceURL(value, allowedHosts); err != nil {

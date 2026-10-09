@@ -96,6 +96,39 @@ A service can check its own workspace availability at:
 GET /api/v1/integrations/v1/applications/{application}/availability?workspace_id=<UUID>
 ```
 
+## Go client
+
+Go services should import the public client from this repository rather than
+copying the protocol. It has no dependency on ApexVoid internals or database
+packages:
+
+```go
+client, err := integration.NewClient(integration.Config{
+    PlatformURL: "http://backend:6868", ApplicationID: "reports",
+    ServiceCredential: os.Getenv("APEXVOID_SERVICE_CREDENTIAL"),
+})
+if err != nil { /* fail service startup safely */ }
+
+assertion, err := integration.IdentityAssertionFromRequest(request)
+decision, err := client.Introspect(request.Context(), assertion, "reports.report.read")
+if err != nil || !decision.Allowed { /* deny the operation */ }
+```
+
+The client uses bounded timeouts and at most two retries for transient gateway
+failures. Its typed errors contain status, API error code, and request ID only;
+they never retain credentials or assertions. A service must make a separate
+introspection request for every protected operation and must not treat entry
+authorization as operation authorization.
+
+The only supported integration API contract is `v1`. `version` is the service
+release version; `api_contract_version` is the compatible ApexVoid wire
+contract. Registration and updates reject unsupported contract versions with
+`UNSUPPORTED_CONTRACT`. All standard API failures use the existing safe shape:
+
+```json
+{"error":{"code":"FORBIDDEN","message":"…","request_id":"…"}}
+```
+
 ## Gateway routes and trust boundary
 
 An external frontend route is `/apps/{application-id}` (or a descendant), and
@@ -107,9 +140,11 @@ does not forward upstream cookies back to the browser.
 
 An external frontend is still trusted same-origin code after an administrator
 registers it. Keep the service image and its dependencies under change control,
-serve only application assets, and do not treat this gateway as a sandbox. The
-standard web gateway sends a restrictive baseline CSP and no-store responses
-for proxied external content.
+serve only application assets, and do not treat this gateway or its CSP as a
+security sandbox or a separate-origin isolation boundary. The standard web
+gateway sends a restrictive baseline CSP and no-store responses for proxied
+external content, strips response cookies and redirects, bounds API request
+bodies, and uses bounded upstream connection/header timeouts.
 
 ## Docker fixture and verification
 

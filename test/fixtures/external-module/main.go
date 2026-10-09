@@ -3,12 +3,14 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/st-mich43l/apexvoid-CRM/integration"
 )
 
 func main() {
@@ -16,35 +18,20 @@ func main() {
 	if address == "" {
 		address = ":8090"
 	}
+	client, err := integration.NewClient(integration.Config{PlatformURL: fixtureEnv("APEXVOID_URL", "http://backend:6868"), ApplicationID: fixtureEnv("APEXVOID_APPLICATION_ID", "reports"), ServiceCredential: fixtureEnv("APEXVOID_SERVICE_CREDENTIAL", ""), Timeout: 3 * time.Second, RetryAttempts: 1})
+	if err != nil {
+		log.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("/records", func(w http.ResponseWriter, r *http.Request) {
-		assertion := r.Header.Get("X-ApexVoid-Identity-Assertion")
-		if assertion == "" {
+		assertion, err := integration.IdentityAssertionFromRequest(r)
+		if err != nil {
 			http.Error(w, "gateway identity assertion is required", http.StatusUnauthorized)
 			return
 		}
-		payload, _ := json.Marshal(map[string]string{"identity_assertion": assertion, "permission": fixtureEnv("APEXVOID_FIXTURE_PERMISSION", "reports.report.read")})
-		request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, strings.TrimRight(fixtureEnv("APEXVOID_URL", "http://backend:6868"), "/")+"/api/v1/integrations/v1/session/introspect", bytes.NewReader(payload))
-		if err != nil {
-			http.Error(w, "could not create introspection request", http.StatusBadGateway)
-			return
-		}
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("X-ApexVoid-Application-ID", fixtureEnv("APEXVOID_APPLICATION_ID", "reports"))
-		request.Header.Set("X-ApexVoid-Service-Credential", fixtureEnv("APEXVOID_SERVICE_CREDENTIAL", ""))
-		response, err := (&http.Client{Timeout: 3 * time.Second}).Do(request)
-		if err != nil {
-			http.Error(w, "introspection unavailable", http.StatusBadGateway)
-			return
-		}
-		defer response.Body.Close()
-		var decision struct {
-			UserID      string `json:"user_id"`
-			WorkspaceID string `json:"workspace_id"`
-			Allowed     bool   `json:"allowed"`
-		}
-		if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&decision) != nil || !decision.Allowed {
+		decision, err := client.Introspect(r.Context(), assertion, fixtureEnv("APEXVOID_FIXTURE_PERMISSION", "reports.report.read"))
+		if err != nil || !decision.Allowed {
 			http.Error(w, "permission denied", http.StatusForbidden)
 			return
 		}
