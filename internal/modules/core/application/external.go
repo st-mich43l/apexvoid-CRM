@@ -79,18 +79,19 @@ type ExternalStore struct {
 	metadata        coreapi.MetadataReader
 	allowedHosts    map[string]struct{}
 	provisioningURL string
+	provisioningKey string
 	mu              sync.Mutex
 	client          *http.Client
 }
 
-func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, allowedHosts []string, provisioningURL string) *ExternalStore {
+func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, allowedHosts []string, provisioningURL, provisioningKey string) *ExternalStore {
 	hosts := make(map[string]struct{}, len(allowedHosts))
 	for _, host := range allowedHosts {
 		if normalized := strings.ToLower(strings.TrimSpace(host)); normalized != "" {
 			hosts[normalized] = struct{}{}
 		}
 	}
-	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, allowedHosts: hosts, provisioningURL: provisioningURL, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, allowedHosts: hosts, provisioningURL: provisioningURL, provisioningKey: provisioningKey, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInput) (ExternalApplication, string, error) {
