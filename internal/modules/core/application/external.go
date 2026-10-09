@@ -50,11 +50,17 @@ type ExternalApplication struct {
 	Enabled                                                   bool
 	CredentialRevoked                                         bool
 	Status                                                    string
+	WorkspaceDefaultEnabled                                   bool
+	InstallationID                                            *uuid.UUID
+	DatabaseName, DatabaseSchema, DatabaseRole                string
+	MigrationBundleVersion                                    string
+	InstalledManifest                                         json.RawMessage
 }
 
 type RegisterExternalInput struct {
-	Application ExternalApplication
-	Credential  string
+	Application         ExternalApplication
+	Credential          string
+	WorkspaceDefaultSet bool
 }
 
 // ExternalAuditEvent records an administrative state transition without any
@@ -68,28 +74,32 @@ type ExternalAuditEvent struct {
 }
 
 type ExternalStore struct {
-	pool         *pgxpool.Pool
-	permissions  *permission.Registry
-	metadata     coreapi.MetadataReader
-	allowedHosts map[string]struct{}
-	mu           sync.Mutex
-	client       *http.Client
+	pool            *pgxpool.Pool
+	permissions     *permission.Registry
+	metadata        coreapi.MetadataReader
+	allowedHosts    map[string]struct{}
+	provisioningURL string
+	mu              sync.Mutex
+	client          *http.Client
 }
 
-func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, allowedHosts []string) *ExternalStore {
+func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, allowedHosts []string, provisioningURL string) *ExternalStore {
 	hosts := make(map[string]struct{}, len(allowedHosts))
 	for _, host := range allowedHosts {
 		if normalized := strings.ToLower(strings.TrimSpace(host)); normalized != "" {
 			hosts[normalized] = struct{}{}
 		}
 	}
-	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, allowedHosts: hosts, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, allowedHosts: hosts, provisioningURL: provisioningURL, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInput) (ExternalApplication, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	app := input.Application
+	if !input.WorkspaceDefaultSet {
+		app.WorkspaceDefaultEnabled = true
+	}
 	if err := s.validateExternal(&app); err != nil {
 		return ExternalApplication{}, "", err
 	}
@@ -115,7 +125,7 @@ func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInpu
 	if err = s.validateCatalog(ctx, tx, app); err != nil {
 		return ExternalApplication{}, "", err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO core_external_applications (id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_hash,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,'registering')`, app.ID, app.DisplayName, app.Description, app.Version, app.APIContractVersion, app.ServiceIdentity, app.ServiceEndpoint, app.HealthEndpoint, app.FrontendRoute, app.SettingsRoute, app.Access.Match, mustJSON(app.Access.Permissions), hashCredential(credential))
+	_, err = tx.Exec(ctx, `INSERT INTO core_external_applications (id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_hash,status,workspace_default_enabled,installation_id,database_name,database_schema,database_role,migration_bundle_version,installed_manifest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,'registering',$14,$15,$16,$17,$18,$19,$20)`, app.ID, app.DisplayName, app.Description, app.Version, app.APIContractVersion, app.ServiceIdentity, app.ServiceEndpoint, app.HealthEndpoint, app.FrontendRoute, app.SettingsRoute, app.Access.Match, mustJSON(app.Access.Permissions), hashCredential(credential), app.WorkspaceDefaultEnabled, app.InstallationID, nullableText(app.DatabaseName), nullableText(app.DatabaseSchema), nullableText(app.DatabaseRole), nullableText(app.MigrationBundleVersion), nullableJSON(app.InstalledManifest))
 	if err != nil {
 		if isUnique(err) {
 			return ExternalApplication{}, "", ErrExternalDuplicate
@@ -215,7 +225,7 @@ func (s *ExternalStore) writePermissions(ctx context.Context, tx pgx.Tx, app Ext
 }
 
 func (s *ExternalStore) List(ctx context.Context) ([]ExternalApplication, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status FROM core_external_applications WHERE status='active' ORDER BY id`)
+	rows, err := s.pool.Query(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status,workspace_default_enabled,installation_id,COALESCE(database_name,''),COALESCE(database_schema,''),COALESCE(database_role,''),COALESCE(migration_bundle_version,''),COALESCE(installed_manifest,'null'::jsonb) FROM core_external_applications WHERE status='active' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +247,7 @@ func (s *ExternalStore) List(ctx context.Context) ([]ExternalApplication, error)
 }
 
 func (s *ExternalStore) Get(ctx context.Context, id string) (ExternalApplication, error) {
-	row := s.pool.QueryRow(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status FROM core_external_applications WHERE id=$1 AND status='active'`, id)
+	row := s.pool.QueryRow(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status,workspace_default_enabled,installation_id,COALESCE(database_name,''),COALESCE(database_schema,''),COALESCE(database_role,''),COALESCE(migration_bundle_version,''),COALESCE(installed_manifest,'null'::jsonb) FROM core_external_applications WHERE id=$1 AND status='active'`, id)
 	app, err := scanExternal(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ExternalApplication{}, ErrExternalNotFound
@@ -279,7 +289,8 @@ func (s *ExternalStore) SetWorkspaceEnabled(ctx context.Context, applicationID s
 }
 func (s *ExternalStore) EnabledInWorkspace(ctx context.Context, applicationID string, workspaceID uuid.UUID) (bool, error) {
 	var global bool
-	err := s.pool.QueryRow(ctx, `SELECT enabled FROM core_external_applications WHERE id=$1`, applicationID).Scan(&global)
+	var workspaceDefault bool
+	err := s.pool.QueryRow(ctx, `SELECT enabled,workspace_default_enabled FROM core_external_applications WHERE id=$1`, applicationID).Scan(&global, &workspaceDefault)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrExternalNotFound
 	}
@@ -292,7 +303,7 @@ func (s *ExternalStore) EnabledInWorkspace(ctx context.Context, applicationID st
 	var enabled bool
 	err = s.pool.QueryRow(ctx, `SELECT enabled FROM core_external_application_workspaces WHERE application_id=$1 AND workspace_id=$2`, applicationID, workspaceID).Scan(&enabled)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return true, nil
+		return workspaceDefault, nil
 	}
 	return enabled, err
 }
@@ -498,7 +509,7 @@ func (s *ExternalStore) Descriptor(app ExternalApplication) frameworkapplication
 		policy := app.Access
 		access.Settings = &policy
 	}
-	return frameworkapplication.Descriptor{ID: app.ID, DisplayName: app.DisplayName, Description: app.Description, Version: app.Version, APIContractVersion: app.APIContractVersion, Frontend: frameworkapplication.Frontend{EntryRoute: app.FrontendRoute}, Settings: settings(app.SettingsRoute), Access: access, Deployment: frameworkapplication.DeploymentExternal, External: &frameworkapplication.ExternalService{ServiceIdentity: app.ServiceIdentity, Endpoint: app.ServiceEndpoint, HealthEndpoint: app.HealthEndpoint}}
+	return frameworkapplication.Descriptor{ID: app.ID, DisplayName: app.DisplayName, Description: app.Description, Version: app.Version, APIContractVersion: app.APIContractVersion, Frontend: frameworkapplication.Frontend{EntryRoute: app.FrontendRoute, NavigationID: app.ID}, Settings: settings(app.SettingsRoute), Access: access, Deployment: frameworkapplication.DeploymentExternal, External: &frameworkapplication.ExternalService{ServiceIdentity: app.ServiceIdentity, Endpoint: app.ServiceEndpoint, HealthEndpoint: app.HealthEndpoint}}
 }
 func settings(route string) *frameworkapplication.Settings {
 	if route == "" {
@@ -629,7 +640,7 @@ func samePermissionCatalog(left, right []ExternalPermission) bool {
 func scanExternal(row pgx.Row) (ExternalApplication, error) {
 	var app ExternalApplication
 	var raw []byte
-	err := row.Scan(&app.ID, &app.DisplayName, &app.Description, &app.Version, &app.APIContractVersion, &app.ServiceIdentity, &app.ServiceEndpoint, &app.HealthEndpoint, &app.FrontendRoute, &app.SettingsRoute, &app.Access.Match, &raw, &app.Enabled, &app.CredentialRevoked, &app.Status)
+	err := row.Scan(&app.ID, &app.DisplayName, &app.Description, &app.Version, &app.APIContractVersion, &app.ServiceIdentity, &app.ServiceEndpoint, &app.HealthEndpoint, &app.FrontendRoute, &app.SettingsRoute, &app.Access.Match, &raw, &app.Enabled, &app.CredentialRevoked, &app.Status, &app.WorkspaceDefaultEnabled, &app.InstallationID, &app.DatabaseName, &app.DatabaseSchema, &app.DatabaseRole, &app.MigrationBundleVersion, &app.InstalledManifest)
 	if err != nil {
 		return app, err
 	}
@@ -637,6 +648,18 @@ func scanExternal(row pgx.Row) (ExternalApplication, error) {
 	return app, err
 }
 func mustJSON(value any) []byte { raw, _ := json.Marshal(value); return raw }
+func nullableText(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
+}
+func nullableJSON(value json.RawMessage) any {
+	if len(value) == 0 {
+		return nil
+	}
+	return value
+}
 func newCredential() (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {

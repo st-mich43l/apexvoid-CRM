@@ -1,7 +1,7 @@
 import { Boxes, Building2, ChevronDown, ChevronRight, Command, LogOut, Menu, Moon, PanelLeftClose, Search, ShieldCheck, Sun, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { FrontendApplication, NavigationItem } from '../../framework/module/types'
 import { api } from '../api/client'
 import { useAuth } from '../auth/context'
@@ -24,7 +24,7 @@ function readSidebarPreferences(key: string): Record<string, boolean> {
 
 export function AppShell({ navigation, applications }: { navigation: NavigationItem[]; applications: FrontendApplication[] }) {
   const { user, logout, platformCan } = useAuth()
-  const { workspaces, activeWorkspace, selectWorkspace, can: workspaceCan } = useWorkspace()
+  const { workspaces, activeWorkspace, activeWorkspaceId, selectWorkspace, can: workspaceCan } = useWorkspace()
   const { resolvedTheme, toggle } = useTheme()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
@@ -33,9 +33,15 @@ export function AppShell({ navigation, applications }: { navigation: NavigationI
   const [closedSections, setClosedSections] = useState<Record<string, boolean>>(() => readSidebarPreferences(sectionsStorageKey))
   const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>(() => readSidebarPreferences(groupsStorageKey))
   const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: 1, refetchInterval: 30_000 })
+  const discovered = useQuery({ queryKey: ['framework-applications', user?.id ?? '', activeWorkspaceId ?? ''], queryFn: api.framework.applications, enabled: Boolean(user && activeWorkspaceId), retry: false, refetchInterval: 30_000 })
+  const dynamicNavigation = useMemo(() => {
+    const existing = new Set(navigation.map(item => item.id))
+    const external = (discovered.data ?? []).filter(item => item.deployment === 'external' && item.frontend_external && item.entry_authorized && item.frontend.entry_route && !existing.has(item.frontend.navigation_id))
+    return [...navigation, ...external.map(item => ({ id: item.frontend.navigation_id, label: item.display_name, path: item.frontend.entry_route, order: 500, icon: Boxes }))]
+  }, [discovered.data, navigation])
   const healthy = health.data?.status === 'ok'
   const environment = health.data?.environment ? `${health.data.environment.charAt(0).toUpperCase()}${health.data.environment.slice(1)} environment` : 'Runtime environment'
-  const visible = navigation.filter(item => canAccessNavigation(item, platformCan, workspaceCan))
+  const visible = dynamicNavigation.filter(item => canAccessNavigation(item, platformCan, workspaceCan))
   const sections = groupNavigation(visible)
 
   useEffect(() => {

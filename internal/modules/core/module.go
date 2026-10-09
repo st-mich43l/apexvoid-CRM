@@ -26,6 +26,7 @@ type Dependencies struct {
 	Permissions         *permission.Registry
 	AssertionSecret     string
 	AllowedServiceHosts []string
+	ProvisioningURL     string
 }
 type Module struct {
 	service       *application.Service
@@ -39,7 +40,7 @@ type Module struct {
 func New(dependencies Dependencies) *Module {
 	var external *application.ExternalStore
 	if dependencies.Pool != nil && dependencies.Permissions != nil {
-		external = application.NewExternalStore(dependencies.Pool, dependencies.Permissions, dependencies.Metadata, dependencies.AllowedServiceHosts)
+		external = application.NewExternalStore(dependencies.Pool, dependencies.Permissions, dependencies.Metadata, dependencies.AllowedServiceHosts, dependencies.ProvisioningURL)
 	}
 	issuer, _ := application.NewAssertionIssuer(dependencies.AssertionSecret)
 	return &Module{service: application.NewService(dependencies.Metadata, dependencies.Access, external), authenticator: dependencies.Authenticator, workspace: dependencies.Workspace, external: external, access: dependencies.Access, issuer: issuer}

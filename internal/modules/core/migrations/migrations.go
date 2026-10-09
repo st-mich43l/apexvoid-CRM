@@ -72,5 +72,46 @@ ALTER TABLE core_external_applications DROP COLUMN IF EXISTS status;`,
 );
 CREATE INDEX IF NOT EXISTS core_external_application_audit_application_idx ON core_external_application_audit(application_id, created_at DESC);`,
 		DownSQL: `DROP TABLE IF EXISTS core_external_application_audit;`,
+	}, {
+		Module: "core", Version: 4, Name: "add_external_application_installations",
+		UpSQL: `ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS workspace_default_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS installation_id UUID NULL;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS database_name TEXT NULL;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS database_schema TEXT NULL;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS database_role TEXT NULL;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS migration_bundle_version TEXT NULL;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS installed_manifest JSONB NULL;
+ALTER TABLE core_external_applications DROP CONSTRAINT IF EXISTS core_external_applications_status_check;
+ALTER TABLE core_external_applications ADD CONSTRAINT core_external_applications_status_check CHECK (status IN ('registering', 'discovered', 'pending_approval', 'provisioning', 'migrating', 'verifying', 'failed', 'active', 'retired'));
+CREATE UNIQUE INDEX IF NOT EXISTS core_external_applications_installation_idx ON core_external_applications(installation_id) WHERE installation_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS core_external_application_installations (
+  id UUID PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  service_url TEXT NOT NULL,
+  manifest JSONB NOT NULL,
+  enrollment_code_hash TEXT NOT NULL,
+  status TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  last_step TEXT NOT NULL DEFAULT 'discovered',
+  error_message TEXT NOT NULL DEFAULT '',
+  selected_workspace_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_by UUID NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT core_external_application_installations_status_check CHECK (status IN ('discovered', 'pending_approval', 'provisioning', 'migrating', 'verifying', 'failed', 'active', 'retired'))
+);
+CREATE INDEX IF NOT EXISTS core_external_application_installations_status_idx ON core_external_application_installations(status, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS core_external_application_installations_application_idx ON core_external_application_installations(application_id) WHERE status NOT IN ('failed', 'retired');`,
+		DownSQL: `DROP TABLE IF EXISTS core_external_application_installations;
+DROP INDEX IF EXISTS core_external_applications_installation_idx;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS workspace_default_enabled;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS installation_id;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS database_name;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS database_schema;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS database_role;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS migration_bundle_version;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS installed_manifest;
+ALTER TABLE core_external_applications DROP CONSTRAINT IF EXISTS core_external_applications_status_check;
+ALTER TABLE core_external_applications ADD CONSTRAINT core_external_applications_status_check CHECK (status IN ('registering', 'active', 'retired'));`,
 	}}
 }

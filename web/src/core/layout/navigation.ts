@@ -18,6 +18,7 @@ const sectionOrder = [
 ]
 
 function sectionFor(item: NavigationItem): string {
+	if (item.path.startsWith('/apps')) return 'workspace'
   if (item.path.startsWith('/contacts')) return item.path.includes('/settings') ? 'settings' : 'workspace'
   if (item.path.startsWith('/crm')) return item.path.includes('/settings') ? 'settings' : 'workspace'
   if (item.path.startsWith('/erp')) return item.path.includes('/settings') ? 'settings' : 'workspace'
