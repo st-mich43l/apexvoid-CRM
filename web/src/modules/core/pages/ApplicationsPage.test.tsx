@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../../core/api/client'
@@ -14,9 +14,9 @@ const registered = (overrides: Partial<ApplicationMetadata> = {}): ApplicationMe
   id: 'crm', display_name: 'CRM', description: 'Sales workspace', version: '1.0.0', api_contract_version: 'v1', module_dependencies: ['crm'], required_permissions: ['crm.lead.read'], required_capabilities: [], frontend: { entry_route: '/crm', navigation_id: 'crm' }, entry_authorized: true, settings_authorized: false, ...overrides,
 })
 
-function renderPage() {
+function renderPage(canManage = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const auth = { user: { id: 'user-a', email: 'a@example.test', display_name: 'A', status: 'active', must_change_password: false }, loading: false, platformPermissions: [], platformCan: () => false, login: async () => {}, logout: async () => {}, reload: async () => {} }
+  const auth = { user: { id: 'user-a', email: 'a@example.test', display_name: 'A', status: 'active', must_change_password: false }, loading: false, platformPermissions: [], platformCan: () => canManage, login: async () => {}, logout: async () => {}, reload: async () => {} }
   const workspace = { workspaces: [], activeWorkspace: null, activeWorkspaceId: 'workspace-a', setup: null, workspacePermissions: [], loading: false, selectWorkspace: () => {}, can: () => false, reload: async () => {} }
   return render(<QueryClientProvider client={client}><AuthContext.Provider value={auth}><WorkspaceContext.Provider value={workspace}><MemoryRouter><Routes><Route element={<Outlet context={{ applications: compiled }} />}><Route index element={<ApplicationsPage />} /></Route></Routes></MemoryRouter></WorkspaceContext.Provider></AuthContext.Provider></QueryClientProvider>)
 }
@@ -47,5 +47,16 @@ describe('ApplicationsPage', () => {
     expect(await screen.findByText('Contract issue')).toBeInTheDocument()
     expect(screen.getByText(/API contract version does not match/i)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /open application/i })).not.toBeInTheDocument()
+  })
+
+  it('gives platform administrators a structured external application registration flow', async () => {
+    vi.spyOn(api.framework, 'applications').mockResolvedValue([registered()])
+    vi.spyOn(api.integrations, 'external').mockResolvedValue([])
+    renderPage(true)
+    fireEvent.click(await screen.findByRole('button', { name: /register application/i }))
+    expect(screen.getByText(/register trusted external application/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Application ID')).toBeInTheDocument()
+    expect(screen.getByLabelText('Service endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Application permissions')).toBeInTheDocument()
   })
 })
