@@ -1,6 +1,6 @@
 # ApexVoid Enterprise
 
-ApexVoid is a modular business application framework built as a Go/React modular monolith. The runtime includes the shared platform foundation and compiled-in Contacts, CRM, and ERP applications. ERP starts with a workspace-scoped Products & Services catalog, extending the same modular Go/React application without a new service.
+ApexVoid is a modular business application framework built as a Go/React modular monolith. The runtime includes the shared platform foundation and compiled-in Contacts, CRM, ERP, and Café & Photo Booth applications. ERP starts with a workspace-scoped Products & Services catalog, extending the same modular Go/React application without a new service.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ ApexVoid is a modular business application framework built as a Go/React modular
 
 Application startup creates one owned framework runtime, registers built-in modules, resolves dependencies, validates metadata, and only then starts HTTP serving.
 
-See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition. See [ERP architecture](docs/erp.md) for the initial product catalog and future ERP domain boundaries.
+See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition. See [ERP architecture](docs/erp.md) for the initial product catalog and future ERP domain boundaries. See [Café & Photo Booth](docs/cafe-photo-booth.md) for the first complete business application and the MVP scope.
 
 ## Framework concepts
 
