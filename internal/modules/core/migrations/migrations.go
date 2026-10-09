@@ -115,7 +115,8 @@ ALTER TABLE core_external_applications DROP CONSTRAINT IF EXISTS core_external_a
 ALTER TABLE core_external_applications ADD CONSTRAINT core_external_applications_status_check CHECK (status IN ('registering', 'active', 'retired'));`,
 	}, {
 		Module: "core", Version: 5, Name: "external_application_resource_ownership_and_ledger",
-		UpSQL: `CREATE TABLE core_external_application_resources (
+		UpSQL: `ALTER TABLE core_external_application_installations ADD COLUMN service_credential_encrypted BYTEA NULL;
+CREATE TABLE core_external_application_resources (
   application_id TEXT PRIMARY KEY,
   installation_id UUID NOT NULL UNIQUE REFERENCES core_external_application_installations(id),
   database_name TEXT NOT NULL UNIQUE,
@@ -132,6 +133,7 @@ CREATE TABLE core_external_application_migrations (
   PRIMARY KEY (application_id,version)
 );`,
 		DownSQL: `DROP TABLE IF EXISTS core_external_application_migrations;
-DROP TABLE IF EXISTS core_external_application_resources;`,
+DROP TABLE IF EXISTS core_external_application_resources;
+ALTER TABLE core_external_application_installations DROP COLUMN IF EXISTS service_credential_encrypted;`,
 	}}
 }
