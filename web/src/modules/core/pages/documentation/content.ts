@@ -169,7 +169,8 @@ export const guides: DocGuide[] = [
       { id: 'signing', title: 'Signed discovery and one-time code', blocks: [
         p('Discovery GET does not send the enrollment code to the service. The service signs the exact manifest response bytes using the enrollment code as an HMAC key, with the domain prefix apexvoid-manifest-v1 followed by a newline. Enterprise validates the signature before trusting metadata.'),
         snippet('Use the public Go integration helper', 'go',
-          'signature := integration.SignManifest(enrollmentCode, manifestJSON)',
+          'signature, err := integration.SignManifest(enrollmentCode, manifestJSON)',
+          'if err != nil { /* reject invalid enrollment code */ }',
           '// Send unchanged manifestJSON response bytes.',
           'w.Header().Set("X-ApexVoid-Manifest-Signature", signature)'),
         p('The service should disable redirects and avoid intermediary transforms of signed JSON bytes. Enrollment codes must be randomly generated and persisted as single-use state.'),
