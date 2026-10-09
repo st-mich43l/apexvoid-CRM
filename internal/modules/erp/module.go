@@ -69,7 +69,7 @@ func (Module) Register(ctx *module.Context) error {
 	})
 }
 func (m *Module) Service() *application.Service { return m.service }
-func (Module) Migrations() []module.Migration { return migrations.All() }
+func (Module) Migrations() []module.Migration   { return migrations.All() }
 func (m *Module) RegisterRoutes(r module.RouteRegistry) error {
 	return erphttp.New(m.service, m.auth, m.workspace, m.access).RegisterRoutes(r)
 }
