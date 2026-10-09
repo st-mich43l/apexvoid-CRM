@@ -39,19 +39,20 @@ func TestCRMMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := database.NewMigrationRunner(application.Database, all)
-	// Down follows global migration order: café depends on ERP, so undo it
-	// before ERP, then roll back the two latest CRM migrations.
-	if err := runner.Down(ctx); err != nil {
-		t.Fatalf("rollback cafe app: %v", err)
+	// Roll back through CRM's lead/opportunity migration regardless of
+	// the number and dependency order of subsequently added applications.
+	foundTarget := false
+	for i := len(all)-1; i >= 0; i-- {
+		if err := runner.Down(ctx); err != nil {
+			t.Fatalf("rollback %s:%d: %v", all[i].Module, all[i].Version, err)
+		}
+		if all[i].Module == "crm" && all[i].Version == 3 {
+			foundTarget = true
+			break
+		}
 	}
-	if err := runner.Down(ctx); err != nil {
-		t.Fatalf("rollback ERP catalog: %v", err)
-	}
-	if err := runner.Down(ctx); err != nil {
-		t.Fatalf("rollback lifecycle history: %v", err)
-	}
-	if err := runner.Down(ctx); err != nil {
-		t.Fatalf("rollback leads/opportunities: %v", err)
+	if !foundTarget {
+		t.Fatal("CRM lead migration was not registered")
 	}
 	var leadTable *string
 	if err := application.Database.QueryRow(ctx, "SELECT to_regclass(current_schema() || '.crm_leads')").Scan(&leadTable); err != nil {
