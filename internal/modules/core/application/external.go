@@ -61,7 +61,7 @@ type RegisterExternalInput struct {
 	Application         ExternalApplication
 	Credential          string
 	WorkspaceDefaultSet bool
-	DeferActivation bool
+	DeferActivation     bool
 }
 
 // ExternalAuditEvent records an administrative state transition without any

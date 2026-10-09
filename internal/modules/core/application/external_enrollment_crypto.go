@@ -20,8 +20,8 @@ import (
 
 const (
 	manifestSignatureHeader = "X-ApexVoid-Manifest-Signature"
-	enrollmentContext = "apexvoid-enrollment-v1"
-	manifestContext = "apexvoid-manifest-v1\n"
+	enrollmentContext       = "apexvoid-enrollment-v1"
+	manifestContext         = "apexvoid-manifest-v1\n"
 	minEnrollmentCodeLength = 32
 )
 
@@ -29,10 +29,14 @@ const (
 // network. The service signs the exact response bytes using the setup code.
 func authenticatedManifest(ctx context.Context, client *http.Client, endpoint, code string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Accept", "application/json")
 	response, err := client.Do(req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: manifest endpoint returned status %d", ErrInvalidManifest, response.StatusCode)
@@ -56,8 +60,8 @@ func authenticatedManifest(ctx context.Context, client *http.Client, endpoint, c
 }
 
 type sealedEnrollment struct {
-	Version string `json:"version"`
-	Nonce string `json:"nonce"`
+	Version    string `json:"version"`
+	Nonce      string `json:"nonce"`
 	Ciphertext string `json:"ciphertext"`
 }
 
@@ -70,15 +74,21 @@ func sealEnrollment(code string, clear []byte) ([]byte, error) {
 	}
 	key := sha256.Sum256([]byte(enrollmentContext + ":" + code))
 	block, err := aes.NewCipher(key[:])
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	gcm, err := cipher.NewGCM(block)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil { return nil, err }
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
 	ciphertext := gcm.Seal(nil, nonce, clear, []byte(enrollmentContext))
 	return json.Marshal(sealedEnrollment{
-		Version:"v1",Nonce:base64.RawURLEncoding.EncodeToString(nonce),
-		Ciphertext:base64.RawURLEncoding.EncodeToString(ciphertext),
+		Version: "v1", Nonce: base64.RawURLEncoding.EncodeToString(nonce),
+		Ciphertext: base64.RawURLEncoding.EncodeToString(ciphertext),
 	})
 }
 
@@ -93,14 +103,24 @@ func unsealEnrollment(code string, raw []byte) ([]byte, error) {
 		return nil, errors.New("invalid encrypted enrollment envelope")
 	}
 	nonce, err := base64.RawURLEncoding.DecodeString(payload.Nonce)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	ciphertext, err := base64.RawURLEncoding.DecodeString(payload.Ciphertext)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	key := sha256.Sum256([]byte(enrollmentContext + ":" + code))
 	block, err := aes.NewCipher(key[:])
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	gcm, err := cipher.NewGCM(block)
-	if err != nil { return nil, err }
-	if len(nonce) != gcm.NonceSize() { return nil, errors.New("invalid enrollment nonce") }
+	if err != nil {
+		return nil, err
+	}
+	if len(nonce) != gcm.NonceSize() {
+		return nil, errors.New("invalid enrollment nonce")
+	}
 	return gcm.Open(nil, nonce, ciphertext, []byte(enrollmentContext))
 }
