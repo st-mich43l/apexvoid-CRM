@@ -11,6 +11,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/customization"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/erp"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/organization"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/users"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/config"
@@ -66,6 +67,10 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	if err := framework.Modules.Register(crm.New(crm.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service(), Contacts: contactsModule.Service(), Customization: customizationModule.Service(), Events: framework.Events, Logger: logger})); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register crm module: %w", err)
+	}
+	if err := framework.Modules.Register(erp.New(erp.Dependencies{Pool: postgres, Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service()})); err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("register ERP module: %w", err)
 	}
 	if err := framework.Initialize(ctx); err != nil {
 		postgres.Close()
