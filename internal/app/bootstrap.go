@@ -39,7 +39,7 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 	organizationModule.SetAccess(accessModule.Service())
 	usersModule.SetAuthorizer(accessModule.Service())
 	usersModule.SetStatusGuard(accessModule.Service())
-	coreModule := core.New(core.Dependencies{Metadata: framework.Metadata, Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service(), Pool: postgres, Permissions: framework.Permissions, AssertionSecret: cfg.Integrations.AssertionSecret, AllowedServiceHosts: cfg.Integrations.AllowedServiceHosts, ProvisioningURL: cfg.Integrations.ProvisioningURL})
+	coreModule := core.New(core.Dependencies{Metadata: framework.Metadata, Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service(), Pool: postgres, Permissions: framework.Permissions, AssertionSecret: cfg.Integrations.AssertionSecret, AllowedServiceHosts: cfg.Integrations.AllowedServiceHosts, ProvisioningURL: cfg.Integrations.ProvisioningURL, ProvisioningKey: cfg.Integrations.ProvisioningKey})
 	if err := framework.Modules.Register(coreModule); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register built-in modules: %w", err)
