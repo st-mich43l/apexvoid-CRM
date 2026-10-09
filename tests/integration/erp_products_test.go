@@ -95,6 +95,25 @@ func TestERPProductCatalogLifecycle(t *testing.T) {
 	if listed.Total != 1 || len(listed.Items) != 1 || listed.Items[0].ID != created.ID {
 		t.Fatalf("unexpected catalog response %#v", listed)
 	}
+	// Two valid workspaces owned by the same user must not share catalog data.
+	var secondary struct {
+		ID string `json:"id"`
+	}
+	admin.must(http.MethodPost, "/api/v1/workspaces", workspaceID, map[string]any{"name": "Secondary", "timezone": "UTC"}, &secondary, http.StatusCreated)
+	admin.must(http.MethodGet, "/api/v1/erp/products", secondary.ID, nil, &listed, http.StatusOK)
+	if listed.Total != 0 {
+		t.Fatal("primary workspace products leaked into secondary workspace")
+	}
+	admin.must(http.MethodGet, "/api/v1/erp/products/"+created.ID.String(), secondary.ID, nil, nil, http.StatusNotFound)
+	admin.must(http.MethodPost, "/api/v1/erp/products", secondary.ID, product, nil, http.StatusCreated)
+	admin.must(http.MethodGet, "/api/v1/erp/products", secondary.ID, nil, &listed, http.StatusOK)
+	if listed.Total != 1 {
+		t.Fatal("workspace-scoped SKU reuse or workspace ownership failed")
+	}
+	admin.must(http.MethodGet, "/api/v1/erp/products", workspaceID, nil, &listed, http.StatusOK)
+	if listed.Total != 1 || listed.Items[0].ID != created.ID {
+		t.Fatal("secondary workspace contaminated primary catalog")
+	}
 	forgedWorkspace := uuid.New().String()
 	admin.must(http.MethodGet, "/api/v1/erp/products", forgedWorkspace, nil, nil, http.StatusForbidden)
 	admin.must(http.MethodGet, "/api/v1/erp/products/"+created.ID.String(), forgedWorkspace, nil, nil, http.StatusForbidden)
