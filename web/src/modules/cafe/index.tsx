@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -212,7 +213,6 @@ function CafeEntry() {
   return <EmptyState title="Café access unavailable" description="Ask an administrator to grant the café role permissions." />
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const cafeModule: AppModule = {
   name: 'cafe', version: '1.0.0', dependencies: ['core', 'erp'],
   application: { id: 'cafe', entryRoute: '/cafe', navigationID: 'cafe', apiContractVersion: 'v1' },
