@@ -439,8 +439,18 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		request.Header.Del("Authorization")
 		request.Header.Del("Proxy-Authorization")
 		request.Header.Del("Cookie")
-		for _, header := range []string{"X-User-ID", "X-Workspace-ID", "X-Role", "X-Permissions", "X-ApexVoid-Gateway", "X-ApexVoid-Identity-Assertion", "X-ApexVoid-Application-ID", "X-ApexVoid-Service-Credential"} {
-			request.Header.Del(header)
+		request.Header.Del("Forwarded")
+		// Treat every identity-related namespace as reserved. A fixed list
+		// misses future ApexVoid and proxy identity headers supplied by browsers.
+		for header := range request.Header {
+			lower := strings.ToLower(header)
+			if strings.HasPrefix(lower, "x-apexvoid-") ||
+				strings.HasPrefix(lower, "x-forwarded-") ||
+				strings.HasPrefix(lower, "x-authenticated-") ||
+				lower == "x-user-id" || lower == "x-workspace-id" ||
+				lower == "x-role" || lower == "x-permissions" {
+				request.Header.Del(header)
+			}
 		}
 		request.Header.Set("X-ApexVoid-Gateway", "external-application")
 		request.Header.Set("X-ApexVoid-Identity-Assertion", assertion)
