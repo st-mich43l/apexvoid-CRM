@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   AlertTriangle, ArrowLeft, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight,
@@ -40,7 +40,7 @@ function GuideLink({ guide, active, compact = false }: { guide: DocGuide; active
   </Link>
 }
 
-function SearchField({ query, onChange, inputRef }: { query: string; onChange: (value: string) => void; inputRef: React.RefObject<HTMLInputElement | null> }) {
+function SearchField({ query, onChange, inputRef }: { query: string; onChange: (value: string) => void; inputRef: RefObject<HTMLInputElement | null> }) {
   return <label className="relative block">
     <span className="sr-only">Search documentation</span>
     <Search size={17} aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -262,9 +262,9 @@ export function DocumentationPage() {
         {results.length === 0 && <p className="px-3 py-6 text-center text-xs leading-5 text-muted-foreground">No guides match your search.</p>}
         <div className="mt-5 border-t border-border px-2 pt-4"><p className="text-[11px] leading-5 text-muted-foreground">Tip: Press <kbd className="rounded border border-border px-1.5 py-0.5 font-mono">/</kbd> to search the documentation.</p></div>
       </aside>
-      <main id="documentation-content" className="min-w-0">
+      <section id="documentation-content" className="min-w-0">
         {slug && !guide ? <div className="rounded-2xl border border-border bg-card px-8 py-12 text-center"><CircleHelp size={30} className="mx-auto text-muted-foreground" /><h1 className="mt-4 text-xl font-semibold">Guide not found</h1><p className="mt-2 text-sm text-muted-foreground">The documentation page you requested does not exist.</p><Link to="/docs" className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><ArrowLeft size={14} />Back to documentation</Link></div> : guide && !query.trim() ? <GuideArticle guide={guide} /> : <DocumentationHome results={results} query={query} />}
-      </main>
+      </section>
       {guide && !query.trim() ? <TableOfContents guide={guide} /> : <aside className="hidden 2xl:block"><div className="sticky top-6 rounded-xl border border-border bg-card p-4"><p className="text-xs font-semibold text-foreground">Start building</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Follow the setup and first-app guides to connect a new Docker service.</p><Link to="/docs/first-application" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">Developer guide <ArrowRight size={13} /></Link></div></aside>}
     </div>
   </div>
