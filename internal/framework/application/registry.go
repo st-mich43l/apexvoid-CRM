@@ -22,6 +22,24 @@ type Frontend struct {
 	NavigationID string
 }
 
+// DeploymentType identifies whether an application is compiled into ApexVoid
+// or represented by a trusted, remotely deployed service contract.
+type DeploymentType string
+
+const (
+	DeploymentInternal DeploymentType = "internal"
+	DeploymentExternal DeploymentType = "external"
+)
+
+// ExternalService is metadata for a service that ApexVoid integrates with. It
+// is deliberately a contract only: the registry never loads or executes code
+// from this data.
+type ExternalService struct {
+	ServiceIdentity string
+	Endpoint        string
+	HealthEndpoint  string
+}
+
 // Settings describes an optional, application-owned settings entry point.
 // Platform settings remain owned by the platform modules.
 type Settings struct {
@@ -69,6 +87,8 @@ type Descriptor struct {
 	Frontend             Frontend
 	Settings             *Settings
 	Access               Access
+	Deployment           DeploymentType
+	External             *ExternalService
 }
 
 type Registry struct{ definitions map[string]Descriptor }
@@ -91,7 +111,21 @@ func (r *Registry) Register(definition Descriptor) error {
 	if !regexp.MustCompile(`^v[1-9][0-9]*$`).MatchString(definition.APIContractVersion) {
 		return fmt.Errorf("application %q API contract version must use the form vN", definition.ID)
 	}
-	if len(definition.ModuleDependencies) == 0 {
+	if definition.Deployment == "" {
+		definition.Deployment = DeploymentInternal
+	}
+	if definition.Deployment != DeploymentInternal && definition.Deployment != DeploymentExternal {
+		return fmt.Errorf("application %q has invalid deployment type %q", definition.ID, definition.Deployment)
+	}
+	if definition.Deployment == DeploymentInternal && definition.External != nil {
+		return fmt.Errorf("internal application %q cannot declare an external service", definition.ID)
+	}
+	if definition.Deployment == DeploymentExternal {
+		if definition.External == nil || strings.TrimSpace(definition.External.ServiceIdentity) == "" || strings.TrimSpace(definition.External.Endpoint) == "" || strings.TrimSpace(definition.External.HealthEndpoint) == "" {
+			return fmt.Errorf("external application %q requires service identity, endpoint and health endpoint", definition.ID)
+		}
+	}
+	if definition.Deployment == DeploymentInternal && len(definition.ModuleDependencies) == 0 {
 		return fmt.Errorf("application %q must declare at least one module dependency", definition.ID)
 	}
 	if err := validateIdentifiers("module dependency", definition.ID, definition.ModuleDependencies); err != nil {
@@ -103,11 +137,14 @@ func (r *Registry) Register(definition Descriptor) error {
 	if err := validateIdentifiers("required capability", definition.ID, definition.RequiredCapabilities); err != nil {
 		return err
 	}
-	if !strings.HasPrefix(definition.Frontend.EntryRoute, "/") {
+	if definition.Frontend.EntryRoute != "" && !strings.HasPrefix(definition.Frontend.EntryRoute, "/") {
 		return fmt.Errorf("application %q frontend entry route must start with /", definition.ID)
 	}
-	if !identifierPattern.MatchString(definition.Frontend.NavigationID) {
+	if definition.Frontend.NavigationID != "" && !identifierPattern.MatchString(definition.Frontend.NavigationID) {
 		return fmt.Errorf("application %q frontend navigation id is invalid", definition.ID)
+	}
+	if definition.Deployment == DeploymentInternal && (definition.Frontend.EntryRoute == "" || definition.Frontend.NavigationID == "") {
+		return fmt.Errorf("internal application %q requires frontend route and navigation id", definition.ID)
 	}
 	if definition.Settings != nil && !strings.HasPrefix(definition.Settings.Route, "/") {
 		return fmt.Errorf("application %q settings route must start with /", definition.ID)
@@ -184,6 +221,10 @@ func clone(definition Descriptor) Descriptor {
 	if definition.Settings != nil {
 		settings := *definition.Settings
 		definition.Settings = &settings
+	}
+	if definition.External != nil {
+		external := *definition.External
+		definition.External = &external
 	}
 	return definition
 }

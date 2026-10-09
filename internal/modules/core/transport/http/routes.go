@@ -13,10 +13,11 @@ type Handler struct {
 	service       *application.Service
 	authenticator usersapi.Authenticator
 	workspace     organizationapi.WorkspaceResolver
+	authorizer    usersapi.Authorizer
 }
 
-func NewHandler(service *application.Service, authenticator usersapi.Authenticator, workspace organizationapi.WorkspaceResolver) *Handler {
-	return &Handler{service: service, authenticator: authenticator, workspace: workspace}
+func NewHandler(service *application.Service, authenticator usersapi.Authenticator, workspace organizationapi.WorkspaceResolver, authorizer usersapi.Authorizer) *Handler {
+	return &Handler{service: service, authenticator: authenticator, workspace: workspace, authorizer: authorizer}
 }
 
 func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
@@ -25,9 +26,22 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	}
 	applications := routes.With(usersapi.RequireAuthentication(h.authenticator), organizationapi.RequireWorkspace(h.workspace))
 	applications.Get("/framework/applications", h.applications)
-	routes.Get("/framework/modules", h.modules)
-	routes.Get("/framework/entities", h.entities)
-	routes.Get("/framework/entities/{entity}", h.entity)
-	routes.Get("/framework/permissions", h.permissions)
+	applications.Get("/apps/{application}/*", h.proxyExternalFrontend)
+	technical := routes.With(usersapi.RequireAuthentication(h.authenticator), usersapi.RequirePermission(h.authorizer, "core.framework.read"))
+	technical.Get("/framework/modules", h.modules)
+	technical.Get("/framework/entities", h.entities)
+	technical.Get("/framework/entities/{entity}", h.entity)
+	technical.Get("/framework/permissions", h.permissions)
+	managed := routes.With(usersapi.RequireAuthentication(h.authenticator), usersapi.RequirePermission(h.authorizer, "core.application.manage"))
+	managed.Get("/applications/external", h.listExternal)
+	managed.Post("/applications/external", h.registerExternal)
+	managed.Get("/applications/external/{application}", h.getExternal)
+	managed.Patch("/applications/external/{application}", h.updateExternal)
+	managed.Delete("/applications/external/{application}", h.unregisterExternal)
+	managed.Put("/applications/external/{application}/workspaces/{workspace}", h.setWorkspaceAvailability)
+	managed.Post("/applications/external/{application}/credentials/revoke", h.revokeCredential)
+	managed.Get("/applications/external/{application}/status", h.externalStatus)
+	routes.Post("/integrations/v1/session/introspect", h.introspectSession)
+	routes.Get("/integrations/v1/applications/{application}/availability", h.integrationAvailability)
 	return nil
 }

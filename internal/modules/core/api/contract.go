@@ -7,6 +7,7 @@ import (
 	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
+	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
 )
 
 // MetadataReader is the intentionally small public contract exposed by the
@@ -15,6 +16,13 @@ import (
 type MetadataReader interface {
 	Snapshot() metadata.Snapshot
 	Entity(name string) (entity.Definition, bool)
+	SnapshotPermission(name string) (permission.Definition, bool)
+}
+
+// SnapshotPermission is kept separate so the external integration surface can
+// make a single, scope-aware authorization decision without exposing roles.
+type PermissionMetadataReader interface {
+	SnapshotPermission(string) (permission.Definition, bool)
 }
 
 type FrameworkReader interface {

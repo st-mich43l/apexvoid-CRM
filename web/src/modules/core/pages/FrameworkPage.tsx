@@ -3,8 +3,9 @@ import { api } from '../../../core/api/client'
 import { Badge, Card, CardHeader, EmptyState, LoadingState, PageContainer, PageHeader } from '../../../components/ui'
 
 export function FrameworkPage() {
+  const activeWorkspaceId = window.localStorage.getItem('apexvoid.active_workspace') ?? ''
   const modules = useQuery({ queryKey: ['framework', 'modules'], queryFn: api.framework.modules })
-  const applications = useQuery({ queryKey: ['framework', 'applications'], queryFn: api.framework.applications })
+  const applications = useQuery({ queryKey: ['framework', 'applications', activeWorkspaceId], queryFn: api.framework.applications })
   const entities = useQuery({ queryKey: ['framework', 'entities'], queryFn: api.framework.entities })
   const permissions = useQuery({ queryKey: ['framework', 'permissions'], queryFn: api.framework.permissions })
   const loading = modules.isLoading || applications.isLoading || entities.isLoading || permissions.isLoading

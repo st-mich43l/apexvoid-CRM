@@ -39,3 +39,6 @@ func (r *Registry) Snapshot() Snapshot {
 }
 
 func (r *Registry) Entity(name string) (entity.Definition, bool) { return r.entities.Get(name) }
+func (r *Registry) SnapshotPermission(name string) (permission.Definition, bool) {
+	return r.permissions.Get(name)
+}

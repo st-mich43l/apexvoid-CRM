@@ -68,3 +68,14 @@ func TestRegistryReturnsImmutableSortedDescriptors(t *testing.T) {
 		t.Fatalf("application registry leaked mutable state: %+v", stored)
 	}
 }
+
+func TestRegistryAcceptsTrustedExternalContractWithoutCompiledModule(t *testing.T) {
+	definition := Descriptor{ID: "reports", DisplayName: "Reports", Description: "Trusted reporting service.", Version: "1.0.0", APIContractVersion: "v1", Deployment: DeploymentExternal, External: &ExternalService{ServiceIdentity: "reports-service", Endpoint: "http://reports:8090", HealthEndpoint: "http://reports:8090/health"}, Access: Access{Entry: PermissionPolicy{Match: PermissionMatchAll, Permissions: []string{"reports.report.read"}}}}
+	if err := NewRegistry().Register(definition); err != nil {
+		t.Fatalf("external contract should not require a compiled module: %v", err)
+	}
+	definition.External = nil
+	if err := NewRegistry().Register(definition); err == nil || !strings.Contains(err.Error(), "requires service") {
+		t.Fatalf("missing external service must be rejected, got %v", err)
+	}
+}

@@ -23,6 +23,8 @@ type applicationResponse struct {
 	Settings             *settingsResponse `json:"settings,omitempty"`
 	EntryAuthorized      bool              `json:"entry_authorized"`
 	SettingsAuthorized   bool              `json:"settings_authorized"`
+	Deployment           string            `json:"deployment"`
+	FrontendExternal     bool              `json:"frontend_external"`
 }
 
 type frontendResponse struct {
@@ -70,7 +72,7 @@ func toModuleResponse(item metadata.ModuleMetadata) moduleResponse {
 }
 func toApplicationResponse(item coreapi.DiscoveredApplication) applicationResponse {
 	definition := item.Descriptor
-	result := applicationResponse{ID: definition.ID, DisplayName: definition.DisplayName, Description: definition.Description, Version: definition.Version, APIContractVersion: definition.APIContractVersion, ModuleDependencies: append([]string{}, definition.ModuleDependencies...), RequiredPermissions: append([]string{}, definition.RequiredPermissions...), RequiredCapabilities: append([]string{}, definition.RequiredCapabilities...), Frontend: frontendResponse{EntryRoute: definition.Frontend.EntryRoute, NavigationID: definition.Frontend.NavigationID}, EntryAuthorized: item.EntryAuthorized, SettingsAuthorized: item.SettingsAuthorized}
+	result := applicationResponse{ID: definition.ID, DisplayName: definition.DisplayName, Description: definition.Description, Version: definition.Version, APIContractVersion: definition.APIContractVersion, ModuleDependencies: append([]string{}, definition.ModuleDependencies...), RequiredPermissions: append([]string{}, definition.RequiredPermissions...), RequiredCapabilities: append([]string{}, definition.RequiredCapabilities...), Frontend: frontendResponse{EntryRoute: definition.Frontend.EntryRoute, NavigationID: definition.Frontend.NavigationID}, EntryAuthorized: item.EntryAuthorized, SettingsAuthorized: item.SettingsAuthorized, Deployment: string(definition.Deployment), FrontendExternal: definition.Deployment == "external" && definition.Frontend.EntryRoute != ""}
 	if definition.Settings != nil {
 		result.Settings = &settingsResponse{Route: definition.Settings.Route}
 	}

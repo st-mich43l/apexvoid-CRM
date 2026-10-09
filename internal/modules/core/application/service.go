@@ -16,12 +16,17 @@ import (
 type Service struct {
 	reader     api.MetadataReader
 	authorizer api.ApplicationAuthorizer
+	external   *ExternalStore
 }
 
 var _ api.FrameworkReader = (*Service)(nil)
 
-func NewService(reader api.MetadataReader, authorizer api.ApplicationAuthorizer) *Service {
-	return &Service{reader: reader, authorizer: authorizer}
+func NewService(reader api.MetadataReader, authorizer api.ApplicationAuthorizer, external ...*ExternalStore) *Service {
+	service := &Service{reader: reader, authorizer: authorizer}
+	if len(external) > 0 {
+		service.external = external[0]
+	}
+	return service
 }
 
 func (s *Service) Applications(ctx context.Context, userID, workspaceID uuid.UUID) ([]api.DiscoveredApplication, error) {
@@ -48,7 +53,54 @@ func (s *Service) Applications(ctx context.Context, userID, workspaceID uuid.UUI
 		}
 		result = append(result, api.DiscoveredApplication{Descriptor: definition, EntryAuthorized: entryAuthorized, SettingsAuthorized: settingsAuthorized})
 	}
+	if s.external != nil {
+		external, err := s.external.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list external applications: %w", err)
+		}
+		for _, registered := range external {
+			enabled, enableErr := s.external.EnabledInWorkspace(ctx, registered.ID, workspaceID)
+			if enableErr != nil {
+				return nil, fmt.Errorf("resolve application %q availability: %w", registered.ID, enableErr)
+			}
+			if !enabled {
+				continue
+			}
+			definition := s.external.Descriptor(registered)
+			entryAuthorized, authorizeErr := s.authorize(ctx, userID, workspaceID, permissions, definition.Access.Entry)
+			if authorizeErr != nil {
+				return nil, fmt.Errorf("authorize external application %q entry: %w", definition.ID, authorizeErr)
+			}
+			settingsAuthorized := false
+			if definition.Access.Settings != nil {
+				settingsAuthorized, authorizeErr = s.authorize(ctx, userID, workspaceID, permissions, *definition.Access.Settings)
+				if authorizeErr != nil {
+					return nil, authorizeErr
+				}
+			}
+			result = append(result, api.DiscoveredApplication{Descriptor: definition, EntryAuthorized: entryAuthorized, SettingsAuthorized: settingsAuthorized})
+		}
+	}
 	return result, nil
+}
+
+func (s *Service) External() *ExternalStore { return s.external }
+
+// EvaluatePermission is the narrow authorization decision exposed to trusted
+// services. It deliberately returns only a boolean and resolves scope from the
+// central permission catalog rather than trusting a caller-provided scope.
+func (s *Service) EvaluatePermission(ctx context.Context, userID, workspaceID uuid.UUID, name string) (bool, error) {
+	definition, ok := s.reader.SnapshotPermission(name)
+	if !ok {
+		return false, fmt.Errorf("permission %q is not registered", name)
+	}
+	if definition.Scope == permission.ScopePlatform {
+		return s.authorizer.Can(ctx, userID, name)
+	}
+	if definition.Scope == permission.ScopeWorkspace {
+		return s.authorizer.CanInWorkspace(ctx, userID, workspaceID, name)
+	}
+	return false, fmt.Errorf("permission %q has unsupported scope", name)
 }
 
 func (s *Service) authorize(ctx context.Context, userID, workspaceID uuid.UUID, definitions map[string]permission.Definition, policy frameworkapplication.PermissionPolicy) (bool, error) {
