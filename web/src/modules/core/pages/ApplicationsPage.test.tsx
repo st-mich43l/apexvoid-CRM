@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../../core/api/client'
@@ -49,14 +49,37 @@ describe('ApplicationsPage', () => {
     expect(screen.queryByRole('link', { name: /open application/i })).not.toBeInTheDocument()
   })
 
-  it('gives platform administrators a structured external application registration flow', async () => {
+  it('opens an accessible registration popup and discovers app-owned version and API contract', async () => {
     vi.spyOn(api.framework, 'applications').mockResolvedValue([registered()])
     vi.spyOn(api.integrations, 'external').mockResolvedValue([])
+    const discover = vi.spyOn(api.integrations, 'discover').mockResolvedValue({
+      id: 'install-1', application_id: 'cafe', service_url: 'http://apexvoid-cafe:8090',
+      manifest: {
+        manifest_version: 'v1',
+        application: { id: 'cafe', display_name: 'ApexVoid Café', description: 'Café operations', version: '2.7.3', api_contract_version: 'v1' },
+        service: { identity: 'cafe-service', health_path: '/health', enrollment_path: '/.well-known/apexvoid/enroll', frontend_route: '/apps/cafe', api_route: '/api' },
+        database: { name: 'apexvoid_cafe', schema: 'cafe', role: 'apexvoid_cafe', migration_bundle_version: '2.7.3' },
+        permissions: [{ name: 'cafe.order.read', display_name: 'Read orders', description: '', scope: 'workspace' }],
+        access: { match: 'all', permissions: ['cafe.order.read'] }, migrations: [],
+      },
+      status: 'pending_approval', expires_at: '', last_step: 'discovered', selected_workspace_ids: [], created_at: '', updated_at: '',
+    })
     renderPage(true)
-    fireEvent.click(await screen.findByRole('button', { name: /register application/i }))
-    expect(screen.getByText(/register trusted external application/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Application ID')).toBeInTheDocument()
-    expect(screen.getByLabelText('Service endpoint')).toBeInTheDocument()
-    expect(screen.getByText('Application permissions')).toBeInTheDocument()
+    const launch = await screen.findByRole('button', { name: /register application/i })
+    fireEvent.click(launch)
+    expect(screen.getByRole('dialog', { name: /register an application/i })).toBeInTheDocument()
+    expect(screen.getByLabelText('Application service URL')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Application version')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Application service URL'), { target: { value: 'http://apexvoid-cafe:8090' } })
+    fireEvent.change(screen.getByLabelText('One-time enrollment code'), { target: { value: 'correct-32-character-secret-for-cafe-bootstrap' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Discover application' }))
+    await waitFor(() => expect(discover).toHaveBeenCalled())
+    expect(await screen.findByText('2.7.3')).toBeInTheDocument()
+    expect(screen.getByText('v1')).toBeInTheDocument()
+    expect(screen.getByText('Declared by the application manifest')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve & activate/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Close application dialog' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(launch).toHaveFocus()
   })
 })
