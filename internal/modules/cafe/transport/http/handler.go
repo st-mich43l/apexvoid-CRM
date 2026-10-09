@@ -31,13 +31,20 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.booth.read")).Get("/cafe/booths", h.booths)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.booth.manage")).Post("/cafe/booths", h.createBooth)
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.booking.read")).Get("/cafe/bookings", h.bookings)
-	current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.booking.create")).Post("/cafe/bookings", h.reserve)
+	current.With(
+		organizationapi.RequireWorkspacePermission(h.access, "cafe.booking.create"),
+		organizationapi.RequireWorkspacePermission(h.access, "cafe.booth.read"),
+		organizationapi.RequireWorkspacePermission(h.access, "erp.product.read"),
+	).Post("/cafe/bookings", h.reserve)
 	bookingManage := current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.booking.manage"))
 	bookingManage.Post("/cafe/bookings/{id}/check-in", h.changeBooking("check-in"))
 	bookingManage.Post("/cafe/bookings/{id}/complete", h.changeBooking("complete"))
 	bookingManage.Post("/cafe/bookings/{id}/cancel", h.changeBooking("cancel"))
 	current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.order.read")).Get("/cafe/orders", h.orders)
-	current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.order.create")).Post("/cafe/orders", h.createOrder)
+	current.With(
+		organizationapi.RequireWorkspacePermission(h.access, "cafe.order.create"),
+		organizationapi.RequireWorkspacePermission(h.access, "erp.product.read"),
+	).Post("/cafe/orders", h.createOrder)
 	orderManage := current.With(organizationapi.RequireWorkspacePermission(h.access, "cafe.order.manage"))
 	orderManage.Post("/cafe/orders/{id}/complete", h.changeOrder("complete"))
 	orderManage.Post("/cafe/orders/{id}/cancel", h.changeOrder("cancel"))
