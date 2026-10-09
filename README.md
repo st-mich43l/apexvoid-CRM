@@ -12,7 +12,9 @@ ApexVoid is a modular business application framework built as a Go/React modular
 
 Application startup creates one owned framework runtime, registers built-in modules, resolves dependencies, validates metadata, and only then starts HTTP serving.
 
-See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition. See [ERP architecture](docs/erp.md) for the initial product catalog and future ERP domain boundaries.
+See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition.
+
+The Enterprise web interface includes a searchable **Documentation** center at `/docs` after login, with hands-on guides for Docker setup, standalone application enrollment, manifests, PostgreSQL isolation, RBAC, routing and operations. See [in-app documentation maintenance](docs/documentation-center.md) for content ownership and testing. See [ERP architecture](docs/erp.md) for the initial product catalog and future ERP domain boundaries.
 
 ## Framework concepts
 
