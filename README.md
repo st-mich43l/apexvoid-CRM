@@ -1,6 +1,6 @@
-# ApexVoid CRM
+# ApexVoid Enterprise
 
-ApexVoid is a modular business application framework built as a Go/React modular monolith. The current runtime includes the platform foundation plus compiled-in Contacts and CRM applications; their feature scope is intentionally frozen while the framework contracts are stabilized.
+ApexVoid is a modular business application framework built as a Go/React modular monolith. The runtime includes the shared platform foundation and compiled-in Contacts, CRM, and ERP applications. ERP starts with a workspace-scoped Products & Services catalog, extending the same modular Go/React application without a new service.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ ApexVoid is a modular business application framework built as a Go/React modular
 
 Application startup creates one owned framework runtime, registers built-in modules, resolves dependencies, validates metadata, and only then starts HTTP serving.
 
-See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition.
+See [docs/architecture.md](docs/architecture.md) for layer responsibilities, transaction boundaries, migration ownership, and frontend module composition. See [ERP architecture](docs/erp.md) for the initial product catalog and future ERP domain boundaries.
 
 ## Framework concepts
 
@@ -108,4 +108,4 @@ web/src/framework/   frontend module, navigation, and metadata contracts
 web/src/modules/     compiled-in frontend modules
 ```
 
-Framework definitions are held in Go code. Organization, workspace, membership, workspace-role, Contacts, CRM, and customization state is persisted in PostgreSQL. Application and frontend contracts are compiled into the deployed release.
+Framework definitions are held in Go code. Organization, workspace, membership, workspace-role, Contacts, CRM, ERP, and customization state is persisted in PostgreSQL. Application and frontend contracts are compiled into the deployed release.
