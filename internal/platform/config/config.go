@@ -104,6 +104,7 @@ func applyEnv(c *Config) {
 	setString(&c.App.Name, "APP_NAME")
 	setString(&c.App.Environment, "APP_ENV")
 	setString(&c.Server.Address, "SERVER_ADDRESS")
+	setStringSlice(&c.Server.CORSOrigins, "SERVER_CORS_ORIGINS")
 	setString(&c.Database.URL, "DATABASE_URL")
 	setString(&c.Contacts.UploadDir, "CONTACTS_UPLOAD_DIR")
 	setInt64(&c.Contacts.MaxUploadBytes, "CONTACTS_MAX_UPLOAD_BYTES")
@@ -114,6 +115,7 @@ func applyEnv(c *Config) {
 	setInt(&c.Auth.PasswordMinLen, "AUTH_PASSWORD_MIN_LENGTH")
 	setInt(&c.Auth.PasswordMaxLen, "AUTH_PASSWORD_MAX_LENGTH")
 	setString(&c.Bootstrap.AdminEmail, "APEXVOID_BOOTSTRAP_ADMIN_EMAIL")
+	setString(&c.Bootstrap.AdminUsername, "APEXVOID_BOOTSTRAP_ADMIN_USERNAME")
 	setString(&c.Bootstrap.AdminPassword, "APEXVOID_BOOTSTRAP_ADMIN_PASSWORD")
 	setString(&c.Logging.Level, "LOG_LEVEL")
 	setDuration(&c.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
@@ -129,6 +131,21 @@ func setString(target *string, key string) {
 	if value, ok := os.LookupEnv(key); ok {
 		*target = value
 	}
+}
+
+func setStringSlice(target *[]string, key string) {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+	items := strings.Split(value, ",")
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	*target = result
 }
 func setDuration(target *time.Duration, key string) {
 	if value, ok := os.LookupEnv(key); ok {
@@ -197,6 +214,36 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Contacts.UploadDir) == "" || c.Contacts.MaxUploadBytes <= 0 {
 		return fmt.Errorf("invalid configuration: contacts attachment storage")
+	}
+	if err := c.validateProductionSecurity(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c Config) validateProductionSecurity() error {
+	if !strings.EqualFold(strings.TrimSpace(c.App.Environment), "production") {
+		return nil
+	}
+	if !c.Auth.CookieSecure {
+		return fmt.Errorf("invalid production configuration: AUTH_COOKIE_SECURE must be true")
+	}
+	if len(c.Server.CORSOrigins) == 0 {
+		return fmt.Errorf("invalid production configuration: SERVER_CORS_ORIGINS must declare trusted origins")
+	}
+	for _, origin := range c.Server.CORSOrigins {
+		if strings.TrimSpace(origin) == "" || origin == "*" {
+			return fmt.Errorf("invalid production configuration: wildcard or empty CORS origins are not allowed")
+		}
+	}
+	if strings.TrimSpace(c.Bootstrap.AdminEmail) == "" || strings.TrimSpace(c.Bootstrap.AdminUsername) == "" || strings.TrimSpace(c.Bootstrap.AdminPassword) == "" {
+		return fmt.Errorf("invalid production configuration: explicit bootstrap administrator credentials are required")
+	}
+	if c.Bootstrap.AdminEmail == "admin@localhost" || c.Bootstrap.AdminUsername == "admin" || c.Bootstrap.AdminPassword == "admin" {
+		return fmt.Errorf("invalid production configuration: default bootstrap administrator credentials are not allowed")
+	}
+	if len(c.Bootstrap.AdminPassword) < c.Auth.PasswordMinLen {
+		return fmt.Errorf("invalid production configuration: bootstrap administrator password does not meet password policy")
 	}
 	return nil
 }

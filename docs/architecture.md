@@ -32,6 +32,29 @@ The application composition root constructs platform services and compiled-in mo
 
 Module-to-module communication uses either a narrow public contract under `modules/<module>/api` for synchronous reads or the in-process typed event bus for reactions. A module must declare dependencies in its descriptor before using another module's public contract.
 
+## Application composition
+
+An application is a compiled product-facing composition of modules, distinct
+from a platform module. Platform modules provide authentication, users,
+organizations/workspaces, access control, customization, and framework
+services. Applications consume those services through explicit public
+contracts and preserve workspace context at every boundary.
+
+Application modules register `framework/application.Descriptor` during module
+initialization. A descriptor includes a stable ID, display metadata, module
+dependencies, required permissions/capabilities, a frontend entry route,
+navigation identity, and an optional application-owned settings route. Runtime
+validation confirms every referenced module, permission, and capability was
+registered. The core discovery endpoint exposes this metadata at
+`/api/v1/framework/applications`.
+
+React modules remain compiled into the web release. The frontend module
+registry verifies the matching entry route and navigation ID and the
+Applications page reports a backend/frontend mismatch. It never downloads or
+executes JavaScript from application metadata. Explicit registration in the Go
+and React composition roots is intentional; runtime Go plugin loading is not
+supported.
+
 ## Organization, workspace, and tenant context
 
 The `organization` module owns the Phase 4 ownership boundary:
@@ -55,6 +78,11 @@ PostgreSQL is the only external data dependency. Business repositories belong to
 Modules also own migration metadata through `module.MigrationProvider`. The registry assembles migrations in resolved module dependency order and then by version. Phase 2 has no persistent framework state, so no migration files are registered.
 
 Successful application events are published after the surrounding database transaction commits. The in-process bus is synchronous and not durable; an outbox is intentionally deferred until an integration requirement exists.
+
+Post-commit publishers log subscriber failures with event context. A subscriber
+failure cannot roll back an already committed transaction and does not imply
+durable retry; applications that need delivery guarantees must introduce a
+concrete integration requirement and corresponding durable design.
 
 ## Frontend modules
 

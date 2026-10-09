@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -659,6 +660,12 @@ func (s *Service) publish(ctx context.Context, name string, workspaceID, id uuid
 		return
 	}
 	database.AfterCommit(ctx, func(callback context.Context) {
-		_ = event.Publish(s.events, callback, name, domain.Event{WorkspaceID: workspaceID, ResourceID: id})
+		if err := event.Publish(s.events, callback, name, domain.Event{WorkspaceID: workspaceID, ResourceID: id}); err != nil {
+			logger := s.logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.Error("post-commit event publication failed", "event", name, "workspace_id", workspaceID, "resource_id", id, "error", err)
+		}
 	})
 }

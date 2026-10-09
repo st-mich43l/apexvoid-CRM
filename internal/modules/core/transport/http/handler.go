@@ -7,6 +7,15 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/httpserver"
 )
 
+func (h *Handler) applications(w http.ResponseWriter, r *http.Request) {
+	items := h.service.Applications(r.Context())
+	result := make([]applicationResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, toApplicationResponse(item))
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h *Handler) modules(w http.ResponseWriter, r *http.Request) {
 	items := h.service.Modules(r.Context())
 	result := make([]moduleResponse, 0, len(items))

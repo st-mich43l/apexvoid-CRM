@@ -2,14 +2,14 @@ import { Boxes, Building2, ChevronDown, ChevronRight, Command, LogOut, Menu, Moo
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import type { NavigationItem } from '../../framework/module/types'
+import type { FrontendApplication, NavigationItem } from '../../framework/module/types'
 import { api } from '../api/client'
 import { useAuth } from '../auth/context'
 import { useWorkspace } from '../workspace/context'
 import { useTheme } from '../theme/context'
 import { canAccessNavigation, groupNavigation } from './navigation'
 
-export function AppShell({ navigation }: { navigation: NavigationItem[] }) {
+export function AppShell({ navigation, applications }: { navigation: NavigationItem[]; applications: FrontendApplication[] }) {
   const { user, logout, platformCan } = useAuth()
   const { workspaces, activeWorkspace, selectWorkspace, can: workspaceCan } = useWorkspace()
   const { resolvedTheme, toggle } = useTheme()
@@ -62,7 +62,7 @@ export function AppShell({ navigation }: { navigation: NavigationItem[] }) {
         </div>
         <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground sm:gap-3"><button type="button" onClick={() => setQuickFindOpen(true)} aria-label="Open quick find" title="Quick find (⌘ K)" className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground sm:hidden"><Search size={16} /></button><button type="button" onClick={toggle} aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`} className="rounded-lg border border-border bg-background p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground">{resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button><span className="hidden sm:inline">{user?.display_name}</span><button onClick={() => void logout()} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><LogOut size={16} /></button><span className={`h-2 w-2 rounded-full ${healthy ? 'bg-success' : 'bg-warning'}`} title={healthy ? 'API connected' : 'Connecting to API'} /></div>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"><div className="w-full p-5 sm:p-6 lg:p-10"><Outlet /></div></div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"><div className="w-full p-5 sm:p-6 lg:p-10"><Outlet context={{ applications }} /></div></div>
     </main>
     {quickFindOpen && <QuickFind navigation={visible} onClose={() => setQuickFindOpen(false)} onNavigate={closeMobile} />}
   </div>

@@ -23,7 +23,7 @@ func TestFrameworkDiscoveryEndpoints(t *testing.T) {
 	if err := application.RegisterRoutes(router); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/api/v1/framework/modules", "/api/v1/framework/entities", "/api/v1/framework/permissions", "/api/v1/framework/entities/core.example"} {
+	for _, path := range []string{"/api/v1/framework/applications", "/api/v1/framework/modules", "/api/v1/framework/entities", "/api/v1/framework/permissions", "/api/v1/framework/entities/core.example"} {
 		recorder := httptest.NewRecorder()
 		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
 		if recorder.Code != http.StatusOK {

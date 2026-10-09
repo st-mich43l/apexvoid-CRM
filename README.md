@@ -1,12 +1,12 @@
 # ApexVoid CRM
 
-ApexVoid is a modular business application framework built as a Go/React modular monolith. CRM domain capabilities will be added as explicit compiled-in modules in later phases; Phase 1 contains framework infrastructure only.
+ApexVoid is a modular business application framework built as a Go/React modular monolith. The current runtime includes the platform foundation plus compiled-in Contacts and CRM applications; their feature scope is intentionally frozen while the framework contracts are stabilized.
 
 ## Architecture
 
 - Backend: Go, chi, `log/slog`, pgx, PostgreSQL
 - Frontend: React, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query
-- Runtime: explicit module registry, dependency resolution, metadata registries, synchronous typed event bus, extension points, module-owned HTTP transport, and user/RBAC modules
+- Runtime: explicit module and application registries, deterministic dependency resolution, metadata registries, synchronous typed event bus, extension points, module-owned HTTP transport, and user/RBAC modules
 - Infrastructure: PostgreSQL only; no cache or message broker is required
 - API: versioned REST under `/api/v1`
 
@@ -17,6 +17,7 @@ See [docs/architecture.md](docs/architecture.md) for layer responsibilities, tra
 ## Framework concepts
 
 - Modules declare identity, version, dependencies, and registration behavior.
+- Applications declare their compiled-in identity, backend dependencies, required contracts, frontend entry route, navigation identity, and optional settings route. Backend discovery metadata never executes code in the browser.
 - Entities and fields describe strongly typed business models without replacing relational tables.
 - Permissions and capabilities are explicit registries; users and RBAC assignments are owned by the platform modules.
 - Events use namespaced definitions and generic typed subscriber/publisher functions.
@@ -25,7 +26,7 @@ See [docs/architecture.md](docs/architecture.md) for layer responsibilities, tra
 
 The built-in `core` module registers only `core.example`, `core.example.read`, `core.example.created`, `core.auditable`, and `core.navigation` to exercise the framework. Its discovery handlers live under `internal/modules/core/transport/http`; no CRM entities are included.
 
-Phase 3 adds `users` and `access` modules. Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Phase 4 adds the `organization` module with organizations, workspaces, memberships, workspace context, and workspace-scoped RBAC. Permission definitions explicitly declare platform or workspace scope: the protected platform `administrator` role dynamically grants platform permissions, while the protected workspace administrator dynamically grants workspace permissions for its active membership. No tokens or password hashes are returned by the API.
+Users authenticate with short-lived opaque access tokens and rotating refresh tokens in HttpOnly cookies. Organizations, workspaces, memberships, workspace context, and workspace-scoped RBAC are platform-owned. Permission definitions explicitly declare platform or workspace scope: the protected platform `administrator` role dynamically grants platform permissions, while the protected workspace administrator dynamically grants workspace permissions for its active membership. No tokens or password hashes are returned by the API.
 
 ## Development
 
@@ -43,6 +44,7 @@ Endpoints:
 - Health: `GET /health`
 - Readiness: `GET /ready`
 - Modules: `GET /api/v1/framework/modules`
+- Applications: `GET /api/v1/framework/applications`
 - Entities: `GET /api/v1/framework/entities`
 - Entity detail: `GET /api/v1/framework/entities/{entity}`
 - Permissions: `GET /api/v1/framework/permissions`
@@ -66,11 +68,21 @@ make migrate-down
 make test-integration
 ```
 
-For a fresh development deployment, the first administrator is created as `admin` / `admin` when the database has no users. The credential is immediately forced through the password-change flow before administration APIs are available. The password is stored as an Argon2id hash, never as reversible plaintext or encryption.
+For a fresh development deployment, the default administrator is `admin` / `admin` when the database has no users. The credential is immediately forced through the password-change flow before administration APIs are available. Production rejects those defaults and requires explicit non-default bootstrap credentials, secure cookies, and trusted origins. The password is stored as an Argon2id hash, never as reversible plaintext or encryption.
 
 ## Frontend structure
 
-The Framework page in the web shell consumes the typed discovery APIs and displays installed modules, registered entities, and permissions. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. The core module owns login, protected routing, setup, workspace selection, and organization settings, while the administration module provides platform user and role management. A navigation registry provides deterministic ordering without a runtime plugin system.
+The Framework and Applications pages consume typed discovery APIs. Frontend modules are compiled in through `web/src/app/bootstrap/modules.ts`; each module may contribute routes and navigation. The core module owns login, protected routing, setup, workspace selection, and organization settings, while the administration module provides platform user and role management. A navigation registry provides deterministic ordering without a runtime plugin system. See [building applications](docs/building-applications.md) for the supported extension workflow.
+
+## Production operations
+
+Copy `.env.production.example` to `.env.production`, set every secret and public HTTPS origin, then run:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
+```
+
+The production Compose path builds static frontend assets served by Nginx and proxies API requests to the Go backend; it does not use Vite. See [operations](docs/operations.md) for upgrade, backup, restore, and diagnostics guidance.
 
 ## Testing
 
@@ -89,11 +101,11 @@ The test suite covers dependency ordering, missing dependencies, cycles, entity/
 cmd/server/          HTTP application entrypoint
 internal/app/        application bootstrap and discovery routes
 internal/framework/  module, entity, field, permission, event, extension, metadata, runtime
-internal/modules/    compiled-in modules: core, users, organization, and access
+internal/modules/    compiled-in platform and business modules
 internal/platform/   config, PostgreSQL, health, logging, HTTP
 web/src/core/        platform API client and application shell
 web/src/framework/   frontend module, navigation, and metadata contracts
 web/src/modules/     compiled-in frontend modules
 ```
 
-Framework definitions are held in Go code. Organization, workspace, membership, and workspace-role state is persisted in PostgreSQL; no CRM business entities have been introduced yet.
+Framework definitions are held in Go code. Organization, workspace, membership, workspace-role, Contacts, CRM, and customization state is persisted in PostgreSQL. Application and frontend contracts are compiled into the deployed release.

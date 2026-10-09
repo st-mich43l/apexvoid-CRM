@@ -62,7 +62,7 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 		postgres.Close()
 		return nil, fmt.Errorf("register customization module: %w", err)
 	}
-	if err := framework.Modules.Register(crm.New(crm.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service(), Contacts: contactsModule.Service(), Customization: customizationModule.Service(), Events: framework.Events})); err != nil {
+	if err := framework.Modules.Register(crm.New(crm.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service(), Contacts: contactsModule.Service(), Customization: customizationModule.Service(), Events: framework.Events, Logger: logger})); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register crm module: %w", err)
 	}

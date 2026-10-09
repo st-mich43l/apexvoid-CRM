@@ -4,10 +4,32 @@ import (
 	"encoding/json"
 	"net/http"
 
+	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/field"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
 )
+
+type applicationResponse struct {
+	ID                   string            `json:"id"`
+	DisplayName          string            `json:"display_name"`
+	Description          string            `json:"description"`
+	Version              string            `json:"version"`
+	ModuleDependencies   []string          `json:"module_dependencies"`
+	RequiredPermissions  []string          `json:"required_permissions"`
+	RequiredCapabilities []string          `json:"required_capabilities"`
+	Frontend             frontendResponse  `json:"frontend"`
+	Settings             *settingsResponse `json:"settings,omitempty"`
+}
+
+type frontendResponse struct {
+	EntryRoute   string `json:"entry_route"`
+	NavigationID string `json:"navigation_id"`
+}
+
+type settingsResponse struct {
+	Route string `json:"route"`
+}
 
 type moduleResponse struct {
 	Name         string   `json:"name"`
@@ -42,6 +64,13 @@ type entityResponse struct {
 
 func toModuleResponse(item metadata.ModuleMetadata) moduleResponse {
 	return moduleResponse{Name: item.Name, DisplayName: item.DisplayName, Version: item.Version, Dependencies: append([]string{}, item.Dependencies...)}
+}
+func toApplicationResponse(item frameworkapplication.Descriptor) applicationResponse {
+	result := applicationResponse{ID: item.ID, DisplayName: item.DisplayName, Description: item.Description, Version: item.Version, ModuleDependencies: append([]string{}, item.ModuleDependencies...), RequiredPermissions: append([]string{}, item.RequiredPermissions...), RequiredCapabilities: append([]string{}, item.RequiredCapabilities...), Frontend: frontendResponse{EntryRoute: item.Frontend.EntryRoute, NavigationID: item.Frontend.NavigationID}}
+	if item.Settings != nil {
+		result.Settings = &settingsResponse{Route: item.Settings.Route}
+	}
+	return result
 }
 func toPermissionResponse(item metadata.PermissionMetadata) permissionResponse {
 	return permissionResponse{Name: item.Name, Module: item.Module, DisplayName: item.DisplayName, Description: item.Description}

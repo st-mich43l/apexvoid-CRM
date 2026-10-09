@@ -1,0 +1,66 @@
+# Production-oriented composition. Terminate TLS at an ingress/load balancer
+# in front of the frontend service and set APEXVOID_PUBLIC_ORIGIN to its HTTPS
+# origin. This file deliberately has no development bind mounts or Vite server.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-apexvoid}
+      POSTGRES_USER: ${POSTGRES_USER:-apexvoid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      target: backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      SERVER_ADDRESS: :6868
+      SERVER_CORS_ORIGINS: ${APEXVOID_PUBLIC_ORIGIN:?set the public HTTPS origin in .env.production}
+      DATABASE_URL: postgres://${POSTGRES_USER:-apexvoid}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}@postgres:5432/${POSTGRES_DB:-apexvoid}?sslmode=disable
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_COOKIE_SAMESITE: lax
+      CONTACTS_UPLOAD_DIR: /var/lib/apexvoid/attachments
+      APEXVOID_BOOTSTRAP_ADMIN_EMAIL: ${APEXVOID_BOOTSTRAP_ADMIN_EMAIL:?set a bootstrap administrator email}
+      APEXVOID_BOOTSTRAP_ADMIN_USERNAME: ${APEXVOID_BOOTSTRAP_ADMIN_USERNAME:?set a bootstrap administrator username}
+      APEXVOID_BOOTSTRAP_ADMIN_PASSWORD: ${APEXVOID_BOOTSTRAP_ADMIN_PASSWORD:?set a strong bootstrap administrator password}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - contacts-data:/var/lib/apexvoid/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6868/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./web
+      target: production
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  contacts-data:

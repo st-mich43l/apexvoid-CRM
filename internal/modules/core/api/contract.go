@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
 )
@@ -16,6 +17,7 @@ type MetadataReader interface {
 }
 
 type FrameworkReader interface {
+	Applications(context.Context) []frameworkapplication.Descriptor
 	Modules(context.Context) []metadata.ModuleMetadata
 	Entities(context.Context) []entity.Definition
 	Permissions(context.Context) []metadata.PermissionMetadata

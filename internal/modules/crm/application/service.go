@@ -10,6 +10,7 @@ import (
 	customdomain "github.com/st-mich43l/apexvoid-CRM/internal/modules/customization/domain"
 	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -29,6 +30,7 @@ type Service struct {
 	workspace organizationapi.WorkspaceResolver
 	access    organizationapi.WorkspaceAccess
 	events    *event.Bus
+	logger    *slog.Logger
 }
 
 func New(r domain.Repository, tx *database.TxManager) *Service { return &Service{r: r, tx: tx} }
@@ -48,10 +50,11 @@ type Dependencies struct {
 	Workspace organizationapi.WorkspaceResolver
 	Access    organizationapi.WorkspaceAccess
 	Events    *event.Bus
+	Logger    *slog.Logger
 }
 
 func NewWithDependencies(d Dependencies) *Service {
-	return &Service{r: d.Repository, tx: d.Transactions, custom: d.CustomValues, contacts: d.Contacts, workspace: d.Workspace, access: d.Access, events: d.Events}
+	return &Service{r: d.Repository, tx: d.Transactions, custom: d.CustomValues, contacts: d.Contacts, workspace: d.Workspace, access: d.Access, events: d.Events, logger: d.Logger}
 }
 func (s *Service) Templates() []domain.Template { return domain.Templates() }
 func (s *Service) List(ctx context.Context, w uuid.UUID, a bool) ([]domain.Pipeline, error) {

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 
+	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	frameworkerrors "github.com/st-mich43l/apexvoid-CRM/internal/framework/errors"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
@@ -14,6 +15,10 @@ type Service struct{ reader api.MetadataReader }
 var _ api.FrameworkReader = (*Service)(nil)
 
 func NewService(reader api.MetadataReader) *Service { return &Service{reader: reader} }
+
+func (s *Service) Applications(_ context.Context) []frameworkapplication.Descriptor {
+	return s.reader.Snapshot().Applications
+}
 
 func (s *Service) Modules(_ context.Context) []metadata.ModuleMetadata {
 	return metadata.ModuleDescriptors(s.reader.Snapshot().Modules)

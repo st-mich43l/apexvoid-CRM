@@ -10,6 +10,7 @@ type Handler struct{ service *application.Service }
 func NewHandler(service *application.Service) *Handler { return &Handler{service: service} }
 
 func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
+	routes.Get("/framework/applications", h.applications)
 	routes.Get("/framework/modules", h.modules)
 	routes.Get("/framework/entities", h.entities)
 	routes.Get("/framework/entities/{entity}", h.entity)

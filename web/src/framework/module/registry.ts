@@ -1,4 +1,5 @@
-import type { AppModule, RouteDefinition } from './types'
+import type { ApplicationMetadata } from '../metadata/types'
+import type { AppModule, FrontendApplication, RouteDefinition } from './types'
 import { NavigationRegistry } from '../navigation/registry'
 
 export class ModuleRegistry {
@@ -31,4 +32,34 @@ export class ModuleRegistry {
 
   routes(): RouteDefinition[] { return this.resolve().flatMap((module) => module.routes ?? []) }
   navigation(): NavigationRegistry { return new NavigationRegistry(this.resolve().flatMap((module) => module.navigation ?? [])) }
+
+  applications(): FrontendApplication[] {
+    const applications = this.resolve().flatMap(module => module.application ? [module.application] : [])
+    const routes = this.routes()
+    const navigation = this.navigation().list()
+    const seen = new Set<string>()
+    for (const application of applications) {
+      if (seen.has(application.id)) throw new Error(`frontend application "${application.id}" is already registered`)
+      seen.add(application.id)
+      if (!routes.some(route => route.path === application.entryRoute)) throw new Error(`frontend application "${application.id}" entry route "${application.entryRoute}" is not registered`)
+      if (!navigation.some(item => item.id === application.navigationID)) throw new Error(`frontend application "${application.id}" navigation "${application.navigationID}" is not registered`)
+    }
+    return [...applications].sort((a, b) => a.id.localeCompare(b.id))
+  }
+
+  applicationContracts(registered: ApplicationMetadata[]): ApplicationContract[] {
+    const compiled = new Map(this.applications().map(application => [application.id, application]))
+    const backend = new Map(registered.map(application => [application.id, application]))
+    const ids = [...new Set([...compiled.keys(), ...backend.keys()])].sort()
+    return ids.map(id => {
+      const frontend = compiled.get(id)
+      const application = backend.get(id)
+      if (!application) return { id, frontend, status: 'missing-backend' as const, message: `This frontend includes ${id}, but the connected backend did not register it.` }
+      if (!frontend) return { id, application, status: 'missing-frontend' as const, message: `The backend registered ${id}, but this frontend build has no compiled entry for it.` }
+      if (application.frontend.entry_route !== frontend.entryRoute || application.frontend.navigation_id !== frontend.navigationID) return { id, application, frontend, status: 'mismatch' as const, message: `The compiled frontend contract does not match the backend registration for ${id}.` }
+      return { id, application, frontend, status: 'ready' as const, message: 'Compiled frontend and backend registration agree.' }
+    })
+  }
 }
+
+export type ApplicationContract = { id: string; application?: ApplicationMetadata; frontend?: FrontendApplication; status: 'ready' | 'missing-backend' | 'missing-frontend' | 'mismatch'; message: string }
