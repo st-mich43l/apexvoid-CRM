@@ -8,6 +8,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 8386,
-    proxy: { '/health': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/ready': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/api': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868' },
+    proxy: { '/health': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/ready': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/api': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868', '/apps': process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:6868' },
   },
 })
