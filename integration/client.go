@@ -71,7 +71,7 @@ func (e *Error) Error() string {
 
 func NewClient(config Config) (*Client, error) {
 	endpoint, err := url.Parse(strings.TrimRight(strings.TrimSpace(config.PlatformURL), "/"))
-	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
+	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" || (endpoint.Path != "" && endpoint.Path != "/") || endpoint.Opaque != "" {
 		return nil, errors.New("integration platform URL must be an absolute HTTP URL")
 	}
 	if endpoint.Scheme != "http" && endpoint.Scheme != "https" {
@@ -80,13 +80,21 @@ func NewClient(config Config) (*Client, error) {
 	if strings.TrimSpace(config.ApplicationID) == "" || strings.TrimSpace(config.ServiceCredential) == "" {
 		return nil, errors.New("integration application ID and service credential are required")
 	}
-	client := config.HTTPClient
-	if client == nil {
-		timeout := config.Timeout
-		if timeout <= 0 {
-			timeout = 5 * time.Second
-		}
-		client = &http.Client{Timeout: timeout}
+	// Always own the client configuration: caller-provided HTTP clients must not
+	// bypass timeouts or forward the service credential to a redirect target.
+	timeout := config.Timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	client := &http.Client{}
+	if config.HTTPClient != nil {
+		*client = *config.HTTPClient
+	}
+	if client.Timeout <= 0 || client.Timeout > timeout {
+		client.Timeout = timeout
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 	retries := config.RetryAttempts
 	if retries < 0 {
