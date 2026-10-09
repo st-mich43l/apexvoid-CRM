@@ -26,23 +26,70 @@ func NewRegistry() *Registry { return &Registry{definitions: make(map[string]Def
 func (r *Registry) Register(definition Definition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ValidateDefinition(definition); err != nil {
+		return err
+	}
+	definition = normalize(definition)
+	if _, exists := r.definitions[definition.Name]; exists {
+		return fmt.Errorf("permission %q is already registered", definition.Name)
+	}
+	r.definitions[definition.Name] = definition
+	return nil
+}
+
+func ValidateDefinition(definition Definition) error {
 	if !namePattern.MatchString(definition.Name) {
 		return fmt.Errorf("permission name %q must be lowercase and namespaced", definition.Name)
 	}
 	if strings.TrimSpace(definition.Module) == "" || strings.TrimSpace(definition.DisplayName) == "" {
 		return fmt.Errorf("permission %q requires module and display name", definition.Name)
 	}
+	if definition.Scope != "" && !definition.Scope.Valid() {
+		return fmt.Errorf("permission %q has invalid scope %q", definition.Name, definition.Scope)
+	}
+	return nil
+}
+func normalize(definition Definition) Definition {
 	if definition.Scope == "" {
 		definition.Scope = ScopePlatform
 	}
-	if !definition.Scope.Valid() {
-		return fmt.Errorf("permission %q has invalid scope %q", definition.Name, definition.Scope)
+	return definition
+}
+
+// RegisterBatch validates every definition before modifying the live catalog.
+func (r *Registry) RegisterBatch(definitions []Definition) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := make(map[string]struct{}, len(definitions))
+	for _, definition := range definitions {
+		if _, duplicate := seen[definition.Name]; duplicate {
+			return fmt.Errorf("permission %q is duplicated in batch", definition.Name)
+		}
+		seen[definition.Name] = struct{}{}
+		if err := ValidateDefinition(definition); err != nil {
+			return err
+		}
+		if _, exists := r.definitions[definition.Name]; exists {
+			return fmt.Errorf("permission %q is already registered", definition.Name)
+		}
 	}
-	if _, exists := r.definitions[definition.Name]; exists {
-		return fmt.Errorf("permission %q is already registered", definition.Name)
+	for _, definition := range definitions {
+		definition = normalize(definition)
+		r.definitions[definition.Name] = definition
 	}
-	r.definitions[definition.Name] = definition
 	return nil
+}
+
+// UnregisterBatch removes matching live definitions. Database grants are kept
+// as historical records but no longer become effective through this registry.
+func (r *Registry) UnregisterBatch(module string, names []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, name := range names {
+		if definition, ok := r.definitions[name]; ok && definition.Module == module {
+			delete(r.definitions, name)
+		}
+	}
 }
 func (r *Registry) List() []Definition {
 	r.mu.RLock()

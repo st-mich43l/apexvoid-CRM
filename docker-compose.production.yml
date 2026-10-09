@@ -34,6 +34,8 @@ services:
       DATABASE_SSLMODE: disable
       AUTH_COOKIE_SECURE: "true"
       AUTH_COOKIE_SAMESITE: lax
+      INTEGRATIONS_ASSERTION_SECRET: ${INTEGRATIONS_ASSERTION_SECRET:?set a 32+ character integration assertion secret}
+      INTEGRATIONS_ALLOWED_SERVICE_HOSTS: ${INTEGRATIONS_ALLOWED_SERVICE_HOSTS:-}
       CONTACTS_UPLOAD_DIR: /var/lib/apexvoid/attachments
       APEXVOID_BOOTSTRAP_ADMIN_EMAIL: ${APEXVOID_BOOTSTRAP_ADMIN_EMAIL:?set a bootstrap administrator email}
       APEXVOID_BOOTSTRAP_ADMIN_USERNAME: ${APEXVOID_BOOTSTRAP_ADMIN_USERNAME:?set a bootstrap administrator username}

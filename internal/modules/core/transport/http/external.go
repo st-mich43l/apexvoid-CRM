@@ -14,6 +14,7 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core/application"
 	organizationapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/organization/api"
+	usersapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/users/api"
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/httpserver"
 )
 
@@ -43,9 +44,8 @@ type workspaceAvailabilityRequest struct {
 	Enabled bool `json:"enabled"`
 }
 type introspectionRequest struct {
-	AccessToken string `json:"access_token"`
-	WorkspaceID string `json:"workspace_id"`
-	Permission  string `json:"permission"`
+	IdentityAssertion string `json:"identity_assertion"`
+	Permission        string `json:"permission"`
 }
 
 func (h *Handler) store(w http.ResponseWriter, r *http.Request) *application.ExternalStore {
@@ -76,7 +76,7 @@ func externalResponse(item application.ExternalApplication, health string) map[s
 	for _, p := range item.Permissions {
 		permissions = append(permissions, map[string]any{"name": p.Name, "display_name": p.DisplayName, "description": p.Description, "scope": p.Scope})
 	}
-	return map[string]any{"id": item.ID, "deployment": "external", "display_name": item.DisplayName, "description": item.Description, "version": item.Version, "api_contract_version": item.APIContractVersion, "service_identity": item.ServiceIdentity, "service_endpoint": item.ServiceEndpoint, "health_endpoint": item.HealthEndpoint, "frontend_route": item.FrontendRoute, "settings_route": item.SettingsRoute, "enabled": item.Enabled, "credential_revoked": item.CredentialRevoked, "access_match": item.Access.Match, "access_permissions": item.Access.Permissions, "permissions": permissions, "health": health}
+	return map[string]any{"id": item.ID, "deployment": "external", "display_name": item.DisplayName, "description": item.Description, "version": item.Version, "api_contract_version": item.APIContractVersion, "service_identity": item.ServiceIdentity, "service_endpoint": item.ServiceEndpoint, "health_endpoint": item.HealthEndpoint, "frontend_route": item.FrontendRoute, "settings_route": item.SettingsRoute, "enabled": item.Enabled, "credential_revoked": item.CredentialRevoked, "status": item.Status, "access_match": item.Access.Match, "access_permissions": item.Access.Permissions, "permissions": permissions, "health": health}
 }
 func externalError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
@@ -215,6 +215,18 @@ func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w, r)
+	if store == nil {
+		return
+	}
+	credential, err := store.RotateCredential(r.Context(), chi.URLParam(r, "application"))
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"service_credential": credential})
+}
 func (h *Handler) externalStatus(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
 	if store == nil {
@@ -245,20 +257,29 @@ func (h *Handler) introspectSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request introspectionRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&request); err != nil || strings.TrimSpace(request.AccessToken) == "" || strings.TrimSpace(request.WorkspaceID) == "" || strings.TrimSpace(request.Permission) == "" {
-		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Access token, workspace and permission are required")
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&request); err != nil || strings.TrimSpace(request.IdentityAssertion) == "" || strings.TrimSpace(request.Permission) == "" {
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Identity assertion and permission are required")
 		return
 	}
-	principal, err := h.authenticator.AuthenticateAccess(r.Context(), request.AccessToken)
+	if !h.service.OwnsExternalPermission(app, request.Permission) {
+		httpserver.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Application does not own the requested permission")
+		return
+	}
+	claims, err := h.issuer.Verify(request.IdentityAssertion, app.ID)
+	if err != nil {
+		httpserver.WriteError(w, r, http.StatusUnauthorized, "INVALID_ASSERTION", "A valid gateway identity assertion is required")
+		return
+	}
+	principal, err := h.authenticator.AuthenticateAccess(r.Context(), claims.AccessToken)
 	if err != nil || principal.MustChangePassword {
 		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Active session is required")
 		return
 	}
-	workspaceID, err := uuid.Parse(request.WorkspaceID)
-	if err != nil {
-		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid workspace identifier")
+	if principal.UserID != claims.UserID || principal.SessionID != claims.SessionID {
+		httpserver.WriteError(w, r, http.StatusUnauthorized, "INVALID_ASSERTION", "Assertion session is no longer valid")
 		return
 	}
+	workspaceID := claims.WorkspaceID
 	if _, err = h.workspace.ResolveWorkspaceContext(r.Context(), principal.UserID, workspaceID); err != nil {
 		httpserver.WriteError(w, r, http.StatusForbidden, "WORKSPACE_FORBIDDEN", "User does not have access to this workspace")
 		return
@@ -297,11 +318,17 @@ func (h *Handler) integrationAvailability(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"application_id": app.ID, "workspace_id": workspaceID, "enabled": enabled})
 }
 
-// proxyExternalFrontend keeps trusted external frontends under the ApexVoid
-// origin. Browser session cookies and bearer tokens are never forwarded to the
-// remote service; it must use the service-to-service API when it needs a
-// platform authorization decision.
 func (h *Handler) proxyExternalFrontend(w http.ResponseWriter, r *http.Request) {
+	h.proxyExternal(w, r, false)
+}
+func (h *Handler) proxyExternalAPI(w http.ResponseWriter, r *http.Request) {
+	h.proxyExternal(w, r, true)
+}
+
+// proxyExternal is a gateway for administrator-approved same-origin services.
+// It strips browser credentials and replaces them with a one-minute encrypted
+// assertion that can only be opened by Core during service introspection.
+func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool) {
 	store := h.store(w, r)
 	if store == nil {
 		return
@@ -312,7 +339,7 @@ func (h *Handler) proxyExternalFrontend(w http.ResponseWriter, r *http.Request) 
 		externalError(w, r, err)
 		return
 	}
-	if app.FrontendRoute == "" || !strings.HasPrefix(app.FrontendRoute, "/apps/"+applicationID) {
+	if !api && (app.FrontendRoute == "" || !strings.HasPrefix(app.FrontendRoute, "/apps/"+applicationID)) {
 		httpserver.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "External application has no gateway frontend")
 		return
 	}
@@ -324,6 +351,26 @@ func (h *Handler) proxyExternalFrontend(w http.ResponseWriter, r *http.Request) 
 	enabled, err := store.EnabledInWorkspace(r.Context(), applicationID, workspace.WorkspaceID)
 	if err != nil || !enabled {
 		httpserver.WriteError(w, r, http.StatusForbidden, "APPLICATION_DISABLED", "Application is not enabled for this workspace")
+		return
+	}
+	principal, principalOK := usersapi.PrincipalFromContext(r.Context())
+	accessToken, tokenOK := usersapi.AccessTokenFromContext(r.Context())
+	if !principalOK || !tokenOK {
+		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
+		return
+	}
+	allowed, err := h.service.AuthorizeExternalEntry(r.Context(), principal.UserID, workspace.WorkspaceID, app)
+	if err != nil {
+		httpserver.WriteApplicationError(w, r, err)
+		return
+	}
+	if !allowed {
+		httpserver.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "You do not have permission to open this application")
+		return
+	}
+	assertion, err := h.issuer.Issue(applicationID, principal.UserID, principal.SessionID, workspace.WorkspaceID, accessToken)
+	if err != nil {
+		httpserver.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Could not establish external application identity")
 		return
 	}
 	target, err := url.Parse(app.ServiceEndpoint)
@@ -338,7 +385,17 @@ func (h *Handler) proxyExternalFrontend(w http.ResponseWriter, r *http.Request) 
 		request.URL.Path = "/" + strings.TrimPrefix(chi.URLParam(r, "*"), "/")
 		request.Header.Del("Authorization")
 		request.Header.Del("Cookie")
+		for _, header := range []string{"X-User-ID", "X-Workspace-ID", "X-Role", "X-Permissions", "X-ApexVoid-Gateway", "X-ApexVoid-Identity-Assertion"} {
+			request.Header.Del(header)
+		}
 		request.Header.Set("X-ApexVoid-Gateway", "external-application")
+		request.Header.Set("X-ApexVoid-Identity-Assertion", assertion)
+	}
+	proxy.ModifyResponse = func(response *http.Response) error {
+		response.Header.Del("Set-Cookie")
+		response.Header.Set("X-Content-Type-Options", "nosniff")
+		response.Header.Set("Cache-Control", "no-store")
+		return nil
 	}
 	proxy.ErrorHandler = func(response http.ResponseWriter, _ *http.Request, _ error) {
 		httpserver.WriteError(response, r, http.StatusBadGateway, "SERVICE_UNAVAILABLE", "Application service is unavailable")

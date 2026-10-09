@@ -1,0 +1,60 @@
+name: apexvoid-external-integration
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: apexvoid
+      POSTGRES_USER: apexvoid
+      POSTGRES_PASSWORD: apexvoid
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apexvoid -d apexvoid"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      target: backend
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgres://apexvoid:apexvoid@postgres:5432/apexvoid?sslmode=disable
+      APEXVOID_BOOTSTRAP_ADMIN_EMAIL: admin@external.test
+      APEXVOID_BOOTSTRAP_ADMIN_USERNAME: admin
+      APEXVOID_BOOTSTRAP_ADMIN_PASSWORD: admin
+      INTEGRATIONS_ASSERTION_SECRET: external-integration-test-assertion-secret-0123456789
+      INTEGRATIONS_ALLOWED_SERVICE_HOSTS: fixture
+      LOG_LEVEL: ERROR
+    ports:
+      - "16868:6868"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6868/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  fixture:
+    build:
+      context: .
+      dockerfile: test/fixtures/external-module/Dockerfile
+    environment:
+      APEXVOID_URL: http://backend:6868
+      APEXVOID_APPLICATION_ID: reports
+      APEXVOID_SERVICE_CREDENTIAL: external-module-fixture-credential-0123456789abcdef
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./web
+      target: production
+    ports:
+      - "18386:80"
+    depends_on:
+      backend:
+        condition: service_healthy

@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/permission"
+	coreapi "github.com/st-mich43l/apexvoid-CRM/internal/modules/core/api"
 )
 
 var (
@@ -41,6 +45,7 @@ type ExternalApplication struct {
 	Permissions                                               []ExternalPermission
 	Enabled                                                   bool
 	CredentialRevoked                                         bool
+	Status                                                    string
 }
 
 type RegisterExternalInput struct {
@@ -49,18 +54,29 @@ type RegisterExternalInput struct {
 }
 
 type ExternalStore struct {
-	pool        *pgxpool.Pool
-	permissions *permission.Registry
-	client      *http.Client
+	pool         *pgxpool.Pool
+	permissions  *permission.Registry
+	metadata     coreapi.MetadataReader
+	allowedHosts map[string]struct{}
+	mu           sync.Mutex
+	client       *http.Client
 }
 
-func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry) *ExternalStore {
-	return &ExternalStore{pool: pool, permissions: permissions, client: &http.Client{Timeout: 3 * time.Second}}
+func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, allowedHosts []string) *ExternalStore {
+	hosts := make(map[string]struct{}, len(allowedHosts))
+	for _, host := range allowedHosts {
+		if normalized := strings.ToLower(strings.TrimSpace(host)); normalized != "" {
+			hosts[normalized] = struct{}{}
+		}
+	}
+	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, allowedHosts: hosts, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInput) (ExternalApplication, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	app := input.Application
-	if err := validateExternal(&app); err != nil {
+	if err := s.validateExternal(&app); err != nil {
 		return ExternalApplication{}, "", err
 	}
 	credential := input.Credential
@@ -79,7 +95,13 @@ func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInpu
 		return ExternalApplication{}, "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	_, err = tx.Exec(ctx, `INSERT INTO core_external_applications (id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_hash) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13)`, app.ID, app.DisplayName, app.Description, app.Version, app.APIContractVersion, app.ServiceIdentity, app.ServiceEndpoint, app.HealthEndpoint, app.FrontendRoute, app.SettingsRoute, app.Access.Match, mustJSON(app.Access.Permissions), hashCredential(credential))
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('core_external_application_catalog'))`); err != nil {
+		return ExternalApplication{}, "", err
+	}
+	if err = s.validateCatalog(ctx, tx, app); err != nil {
+		return ExternalApplication{}, "", err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO core_external_applications (id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_hash,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,'registering')`, app.ID, app.DisplayName, app.Description, app.Version, app.APIContractVersion, app.ServiceIdentity, app.ServiceEndpoint, app.HealthEndpoint, app.FrontendRoute, app.SettingsRoute, app.Access.Match, mustJSON(app.Access.Permissions), hashCredential(credential))
 	if err != nil {
 		if isUnique(err) {
 			return ExternalApplication{}, "", ErrExternalDuplicate
@@ -93,13 +115,20 @@ func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInpu
 		return ExternalApplication{}, "", err
 	}
 	if err := s.registerPermissions(app); err != nil {
-		return ExternalApplication{}, "", err
+		_, _ = s.pool.Exec(ctx, `DELETE FROM core_external_applications WHERE id=$1 AND status='registering'`, app.ID)
+		return ExternalApplication{}, "", fmt.Errorf("register live permission catalog: %w", err)
 	}
+	if _, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET status='active',updated_at=NOW() WHERE id=$1 AND status='registering'`, app.ID); err != nil {
+		s.unregisterPermissions(app)
+		_, _ = s.pool.Exec(ctx, `DELETE FROM core_external_applications WHERE id=$1 AND status='registering'`, app.ID)
+		return ExternalApplication{}, "", fmt.Errorf("activate external application: %w", err)
+	}
+	app.Status = "active"
 	return app, credential, nil
 }
 
 func (s *ExternalStore) Update(ctx context.Context, app ExternalApplication) (ExternalApplication, error) {
-	if err := validateExternal(&app); err != nil {
+	if err := s.validateExternal(&app); err != nil {
 		return ExternalApplication{}, err
 	}
 	current, err := s.Get(ctx, app.ID)
@@ -150,7 +179,7 @@ func (s *ExternalStore) writePermissions(ctx context.Context, tx pgx.Tx, app Ext
 }
 
 func (s *ExternalStore) List(ctx context.Context) ([]ExternalApplication, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL FROM core_external_applications ORDER BY id`)
+	rows, err := s.pool.Query(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status FROM core_external_applications WHERE status='active' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -172,16 +201,19 @@ func (s *ExternalStore) List(ctx context.Context) ([]ExternalApplication, error)
 }
 
 func (s *ExternalStore) Get(ctx context.Context, id string) (ExternalApplication, error) {
-	items, err := s.List(ctx)
+	row := s.pool.QueryRow(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status FROM core_external_applications WHERE id=$1 AND status='active'`, id)
+	app, err := scanExternal(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ExternalApplication{}, ErrExternalNotFound
+	}
 	if err != nil {
 		return ExternalApplication{}, err
 	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, nil
-		}
+	app.Permissions, err = s.permissionsFor(ctx, app.ID)
+	if err != nil {
+		return ExternalApplication{}, err
 	}
-	return ExternalApplication{}, ErrExternalNotFound
+	return app, nil
 }
 
 func (s *ExternalStore) SetWorkspaceEnabled(ctx context.Context, applicationID string, workspaceID uuid.UUID, enabled bool) error {
@@ -221,7 +253,7 @@ func (s *ExternalStore) EnabledInWorkspace(ctx context.Context, applicationID st
 	return enabled, err
 }
 func (s *ExternalStore) RevokeCredential(ctx context.Context, id string) error {
-	command, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET credential_revoked_at=NOW(),updated_at=NOW() WHERE id=$1`, id)
+	command, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET credential_revoked_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active'`, id)
 	if err != nil {
 		return err
 	}
@@ -230,14 +262,53 @@ func (s *ExternalStore) RevokeCredential(ctx context.Context, id string) error {
 	}
 	return nil
 }
+func (s *ExternalStore) RotateCredential(ctx context.Context, id string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	credential, err := newCredential()
+	if err != nil {
+		return "", err
+	}
+	command, err := s.pool.Exec(ctx, `UPDATE core_external_applications SET credential_hash=$2,credential_rotated_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='active' AND credential_revoked_at IS NULL`, id, hashCredential(credential))
+	if err != nil {
+		return "", err
+	}
+	if command.RowsAffected() == 0 {
+		return "", ErrExternalNotFound
+	}
+	return credential, nil
+}
 func (s *ExternalStore) Unregister(ctx context.Context, id string) error {
-	command, err := s.pool.Exec(ctx, `DELETE FROM core_external_applications WHERE id=$1`, id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	app, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('core_external_application_catalog'))`); err != nil {
+		return err
+	}
+	for _, item := range app.Permissions {
+		if _, err = tx.Exec(ctx, `INSERT INTO core_external_permission_tombstones(name,application_id) VALUES($1,$2) ON CONFLICT(name) DO NOTHING`, item.Name, app.ID); err != nil {
+			return err
+		}
+	}
+	command, err := tx.Exec(ctx, `UPDATE core_external_applications SET status='retired',enabled=FALSE,credential_revoked_at=COALESCE(credential_revoked_at,NOW()),updated_at=NOW() WHERE id=$1 AND status='active'`, id)
 	if err != nil {
 		return err
 	}
 	if command.RowsAffected() == 0 {
 		return ErrExternalNotFound
 	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.unregisterPermissions(app)
 	return nil
 }
 
@@ -270,6 +341,11 @@ func (s *ExternalStore) Health(ctx context.Context, app ExternalApplication) str
 	return "unhealthy"
 }
 func (s *ExternalStore) Hydrate(ctx context.Context) error {
+	// A process crash between staging and activation never exposes the module;
+	// discard that incomplete catalog before rebuilding the live registry.
+	if _, err := s.pool.Exec(ctx, `DELETE FROM core_external_applications WHERE status='registering'`); err != nil {
+		return fmt.Errorf("recover staged external applications: %w", err)
+	}
 	items, err := s.List(ctx)
 	if err != nil {
 		return err
@@ -298,21 +374,37 @@ func (s *ExternalStore) permissionsFor(ctx context.Context, id string) ([]Extern
 	return items, rows.Err()
 }
 func (s *ExternalStore) registerPermissions(app ExternalApplication) error {
+	definitions := make([]permission.Definition, 0, len(app.Permissions))
+	existing := 0
 	for _, item := range app.Permissions {
 		if current, ok := s.permissions.Get(item.Name); ok {
 			if current.Module != "external."+app.ID || current.Scope != item.Scope {
 				return fmt.Errorf("%w: permission %s is already owned by %s", ErrExternalDuplicate, item.Name, current.Module)
 			}
+			existing++
+			continue
+		}
+		definitions = append(definitions, permission.Definition{Name: item.Name, Module: "external." + app.ID, Scope: item.Scope, DisplayName: item.DisplayName, Description: item.Description})
+	}
+	if existing == len(app.Permissions) {
+		for _, item := range app.Permissions {
 			if err := s.permissions.UpdatePresentation(item.Name, item.DisplayName, item.Description); err != nil {
 				return err
 			}
-			continue
 		}
-		if err := s.permissions.Register(permission.Definition{Name: item.Name, Module: "external." + app.ID, Scope: item.Scope, DisplayName: item.DisplayName, Description: item.Description}); err != nil {
-			return err
-		}
+		return nil
 	}
-	return nil
+	if existing != 0 {
+		return fmt.Errorf("%w: partial live permission registration", ErrExternalDuplicate)
+	}
+	return s.permissions.RegisterBatch(definitions)
+}
+func (s *ExternalStore) unregisterPermissions(app ExternalApplication) {
+	names := make([]string, 0, len(app.Permissions))
+	for _, item := range app.Permissions {
+		names = append(names, item.Name)
+	}
+	s.permissions.UnregisterBatch("external."+app.ID, names)
 }
 func (s *ExternalStore) Descriptor(app ExternalApplication) frameworkapplication.Descriptor {
 	access := frameworkapplication.Access{Entry: app.Access}
@@ -328,13 +420,23 @@ func settings(route string) *frameworkapplication.Settings {
 	}
 	return &frameworkapplication.Settings{Route: route}
 }
-func validateExternal(app *ExternalApplication) error {
+
+var externalIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
+var apiContractPattern = regexp.MustCompile(`^v[1-9][0-9]*$`)
+
+func validateExternal(app *ExternalApplication) error { return validateExternalWithHosts(app, nil) }
+func (s *ExternalStore) validateExternal(app *ExternalApplication) error {
+	return validateExternalWithHosts(app, s.allowedHosts)
+}
+func validateExternalWithHosts(app *ExternalApplication, allowedHosts map[string]struct{}) error {
 	if app == nil || strings.TrimSpace(app.ID) == "" || strings.TrimSpace(app.DisplayName) == "" || strings.TrimSpace(app.Version) == "" || app.APIContractVersion == "" || app.ServiceIdentity == "" {
 		return ErrInvalidExternalModule
 	}
+	if !externalIdentifierPattern.MatchString(app.ID) || !externalIdentifierPattern.MatchString(app.ServiceIdentity) || !apiContractPattern.MatchString(app.APIContractVersion) {
+		return fmt.Errorf("%w: invalid application identity or API contract version", ErrInvalidExternalModule)
+	}
 	for _, value := range []string{app.ServiceEndpoint, app.HealthEndpoint} {
-		u, err := url.ParseRequestURI(value)
-		if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
+		if err := validateServiceURL(value, allowedHosts); err != nil {
 			return fmt.Errorf("%w: invalid service URL", ErrInvalidExternalModule)
 		}
 	}
@@ -355,6 +457,9 @@ func validateExternal(app *ExternalApplication) error {
 		if p.Name == "" || p.DisplayName == "" || !p.Scope.Valid() || seen[p.Name] || !strings.HasPrefix(p.Name, app.ID+".") {
 			return fmt.Errorf("%w: invalid application-owned permission", ErrInvalidExternalModule)
 		}
+		if err := permission.ValidateDefinition(permission.Definition{Name: p.Name, Module: "external." + app.ID, Scope: p.Scope, DisplayName: p.DisplayName, Description: p.Description}); err != nil {
+			return fmt.Errorf("%w: invalid application-owned permission", ErrInvalidExternalModule)
+		}
 		seen[p.Name] = true
 	}
 	for _, name := range app.Access.Permissions {
@@ -363,6 +468,58 @@ func validateExternal(app *ExternalApplication) error {
 		}
 	}
 	sort.Strings(app.Access.Permissions)
+	return nil
+}
+func validateServiceURL(raw string, allowedHosts map[string]struct{}) error {
+	u, err := url.ParseRequestURI(raw)
+	if err != nil || u.Scheme != "http" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return ErrInvalidExternalModule
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" || host == "localhost" || net.ParseIP(host) != nil {
+		return ErrInvalidExternalModule
+	}
+	port := u.Port()
+	if port == "" {
+		return ErrInvalidExternalModule
+	}
+	if _, err := net.LookupPort("tcp", port); err != nil {
+		return ErrInvalidExternalModule
+	}
+	if allowedHosts != nil {
+		if _, ok := allowedHosts[host]; !ok {
+			return ErrInvalidExternalModule
+		}
+	}
+	return nil
+}
+func (s *ExternalStore) validateCatalog(ctx context.Context, tx pgx.Tx, app ExternalApplication) error {
+	if s.metadata != nil {
+		for _, internal := range s.metadata.Snapshot().Applications {
+			if internal.ID == app.ID {
+				return fmt.Errorf("%w: application id collides with internal application", ErrExternalDuplicate)
+			}
+		}
+	}
+	for _, item := range app.Permissions {
+		if existing, ok := s.permissions.Get(item.Name); ok {
+			return fmt.Errorf("%w: permission %s collides with %s", ErrExternalDuplicate, item.Name, existing.Module)
+		}
+		var databaseOwner string
+		if err := tx.QueryRow(ctx, `SELECT application_id FROM core_external_application_permissions WHERE name=$1`, item.Name).Scan(&databaseOwner); err == nil {
+			return fmt.Errorf("%w: permission %s is already owned by %s", ErrExternalDuplicate, item.Name, databaseOwner)
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		var owner string
+		err := tx.QueryRow(ctx, `SELECT application_id FROM core_external_permission_tombstones WHERE name=$1`, item.Name).Scan(&owner)
+		if err == nil {
+			return fmt.Errorf("%w: permission %s is retired and cannot be restored", ErrExternalDuplicate, item.Name)
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+	}
 	return nil
 }
 func samePermissionCatalog(left, right []ExternalPermission) bool {
@@ -383,7 +540,7 @@ func samePermissionCatalog(left, right []ExternalPermission) bool {
 func scanExternal(row pgx.Row) (ExternalApplication, error) {
 	var app ExternalApplication
 	var raw []byte
-	err := row.Scan(&app.ID, &app.DisplayName, &app.Description, &app.Version, &app.APIContractVersion, &app.ServiceIdentity, &app.ServiceEndpoint, &app.HealthEndpoint, &app.FrontendRoute, &app.SettingsRoute, &app.Access.Match, &raw, &app.Enabled, &app.CredentialRevoked)
+	err := row.Scan(&app.ID, &app.DisplayName, &app.Description, &app.Version, &app.APIContractVersion, &app.ServiceIdentity, &app.ServiceEndpoint, &app.HealthEndpoint, &app.FrontendRoute, &app.SettingsRoute, &app.Access.Match, &raw, &app.Enabled, &app.CredentialRevoked, &app.Status)
 	if err != nil {
 		return app, err
 	}

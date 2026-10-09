@@ -34,6 +34,9 @@ func (a *App) RegisterRoutes(router chi.Router) error {
 	if err := a.Runtime.Modules.RegisterRoutes(chiRoutes{router: api}); err != nil {
 		return fmt.Errorf("register module routes: %w", err)
 	}
+	if err := a.Runtime.Modules.RegisterPublicRoutes(chiRoutes{router: router}); err != nil {
+		return fmt.Errorf("register public module routes: %w", err)
+	}
 	router.Mount("/api/v1", api)
 	return nil
 }

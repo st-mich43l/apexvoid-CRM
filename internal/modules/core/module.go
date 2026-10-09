@@ -18,12 +18,14 @@ import (
 )
 
 type Dependencies struct {
-	Metadata      *metadata.Registry
-	Authenticator usersapi.Authenticator
-	Workspace     organizationapi.WorkspaceResolver
-	Access        coreapi.ApplicationAuthorizer
-	Pool          *pgxpool.Pool
-	Permissions   *permission.Registry
+	Metadata            *metadata.Registry
+	Authenticator       usersapi.Authenticator
+	Workspace           organizationapi.WorkspaceResolver
+	Access              coreapi.ApplicationAuthorizer
+	Pool                *pgxpool.Pool
+	Permissions         *permission.Registry
+	AssertionSecret     string
+	AllowedServiceHosts []string
 }
 type Module struct {
 	service       *application.Service
@@ -31,14 +33,16 @@ type Module struct {
 	workspace     organizationapi.WorkspaceResolver
 	external      *application.ExternalStore
 	access        coreapi.ApplicationAuthorizer
+	issuer        *application.AssertionIssuer
 }
 
 func New(dependencies Dependencies) *Module {
 	var external *application.ExternalStore
 	if dependencies.Pool != nil && dependencies.Permissions != nil {
-		external = application.NewExternalStore(dependencies.Pool, dependencies.Permissions)
+		external = application.NewExternalStore(dependencies.Pool, dependencies.Permissions, dependencies.Metadata, dependencies.AllowedServiceHosts)
 	}
-	return &Module{service: application.NewService(dependencies.Metadata, dependencies.Access, external), authenticator: dependencies.Authenticator, workspace: dependencies.Workspace, external: external, access: dependencies.Access}
+	issuer, _ := application.NewAssertionIssuer(dependencies.AssertionSecret)
+	return &Module{service: application.NewService(dependencies.Metadata, dependencies.Access, external), authenticator: dependencies.Authenticator, workspace: dependencies.Workspace, external: external, access: dependencies.Access, issuer: issuer}
 }
 
 func (Module) Descriptor() module.Descriptor {
@@ -48,7 +52,11 @@ func (Module) Descriptor() module.Descriptor {
 func (m *Module) Register(ctx *module.Context) error { return coremetadata.Register(ctx) }
 
 func (m *Module) RegisterRoutes(routes module.RouteRegistry) error {
-	return corehttp.NewHandler(m.service, m.authenticator, m.workspace, m.access).RegisterRoutes(routes)
+	return corehttp.NewHandler(m.service, m.authenticator, m.workspace, m.access, m.issuer).RegisterRoutes(routes)
+}
+
+func (m *Module) RegisterPublicRoutes(routes module.RouteRegistry) error {
+	return corehttp.NewHandler(m.service, m.authenticator, m.workspace, m.access, m.issuer).RegisterPublicRoutes(routes)
 }
 
 func (Module) Migrations() []module.Migration { return coremigrations.All() }

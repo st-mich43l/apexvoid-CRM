@@ -44,5 +44,20 @@ CREATE TABLE IF NOT EXISTS core_external_application_workspaces (
 		DownSQL: `DROP TABLE IF EXISTS core_external_application_workspaces;
 DROP TABLE IF EXISTS core_external_application_permissions;
 DROP TABLE IF EXISTS core_external_applications;`,
+	}, {
+		Module: "core", Version: 2, Name: "harden_external_application_lifecycle",
+		UpSQL: `ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS credential_rotated_at TIMESTAMPTZ NULL;
+ALTER TABLE core_external_applications DROP CONSTRAINT IF EXISTS core_external_applications_status_check;
+ALTER TABLE core_external_applications ADD CONSTRAINT core_external_applications_status_check CHECK (status IN ('registering', 'active', 'retired'));
+CREATE TABLE IF NOT EXISTS core_external_permission_tombstones (
+  name TEXT PRIMARY KEY,
+  application_id TEXT NOT NULL,
+  retired_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);`,
+		DownSQL: `DROP TABLE IF EXISTS core_external_permission_tombstones;
+ALTER TABLE core_external_applications DROP CONSTRAINT IF EXISTS core_external_applications_status_check;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS credential_rotated_at;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS status;`,
 	}}
 }

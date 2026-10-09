@@ -86,6 +86,23 @@ func (s *Service) Applications(ctx context.Context, userID, workspaceID uuid.UUI
 
 func (s *Service) External() *ExternalStore { return s.external }
 
+func (s *Service) AuthorizeExternalEntry(ctx context.Context, userID, workspaceID uuid.UUID, app ExternalApplication) (bool, error) {
+	permissions := make(map[string]permission.Definition)
+	for _, definition := range s.reader.Snapshot().Permissions {
+		permissions[definition.Name] = definition
+	}
+	return s.authorize(ctx, userID, workspaceID, permissions, s.external.Descriptor(app).Access.Entry)
+}
+
+func (s *Service) OwnsExternalPermission(app ExternalApplication, name string) bool {
+	for _, item := range app.Permissions {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // EvaluatePermission is the narrow authorization decision exposed to trusted
 // services. It deliberately returns only a boolean and resolves scope from the
 // central permission catalog rather than trusting a caller-provided scope.

@@ -32,7 +32,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
 
-export type ExternalIntegration = { id: string; deployment: 'external'; display_name: string; description: string; version: string; api_contract_version: string; service_identity: string; service_endpoint: string; health_endpoint: string; frontend_route: string; settings_route: string; enabled: boolean; workspace_enabled?: boolean; credential_revoked: boolean; access_match: string; access_permissions: string[]; permissions: Array<{ name: string; display_name: string; description: string; scope: 'platform' | 'workspace' }>; health: 'healthy' | 'unhealthy' | 'unavailable' | 'invalid' | 'unknown' }
+export type ExternalIntegration = { id: string; deployment: 'external'; display_name: string; description: string; version: string; api_contract_version: string; service_identity: string; service_endpoint: string; health_endpoint: string; frontend_route: string; settings_route: string; enabled: boolean; workspace_enabled?: boolean; credential_revoked: boolean; status: 'active'; access_match: string; access_permissions: string[]; permissions: Array<{ name: string; display_name: string; description: string; scope: 'platform' | 'workspace' }>; health: 'healthy' | 'unhealthy' | 'unavailable' | 'invalid' | 'unknown' }
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
@@ -47,6 +47,7 @@ export const api = {
     external: (workspaceID?: string) => request<ExternalIntegration[]>(`/api/v1/applications/external${workspaceID ? `?workspace_id=${encodeURIComponent(workspaceID)}` : ''}`),
     setWorkspaceAvailability: (id: string, workspaceID: string, enabled: boolean) => request<{ enabled: boolean }>(`/api/v1/applications/external/${id}/workspaces/${workspaceID}`, { method: 'PUT', body: JSON.stringify({ enabled }) }),
     revokeCredential: (id: string) => request<void>(`/api/v1/applications/external/${id}/credentials/revoke`, { method: 'POST' }),
+    rotateCredential: (id: string) => request<{ service_credential: string }>(`/api/v1/applications/external/${id}/credentials/rotate`, { method: 'POST' }),
   },
   auth: {
     login: (email: string, password: string) => request<AuthResponse>('/api/v1/auth/login', json({ email, password })),
