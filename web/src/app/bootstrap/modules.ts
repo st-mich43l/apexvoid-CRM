@@ -4,5 +4,6 @@ import { adminModule } from '../../modules/admin'
 import { contactsModule } from '../../modules/contacts'
 import { crmModule } from '../../modules/crm'
 import { erpModule } from '../../modules/erp'
+import { cafeModule } from '../../modules/cafe'
 
-export const appModules = new ModuleRegistry([coreModule, adminModule, contactsModule, crmModule, erpModule])
+export const appModules = new ModuleRegistry([coreModule, adminModule, contactsModule, crmModule, erpModule, cafeModule])
