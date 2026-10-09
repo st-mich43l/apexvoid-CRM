@@ -91,9 +91,15 @@ database lives on the **existing** PostgreSQL server, separately owned.
 After starting, the standalone service should print its application ID, Docker
 DNS service URL, `/.well-known/apexvoid/manifest.json`, and a randomly generated
 **single-use, high-entropy enrollment code of at least 32 characters**. The
-operator opens Enterprise → Applications → Connect service, enters the service
-URL and code, reviews the discovered contract, explicitly approves all five
-installation operations, and selects the workspaces to enable.
+operator opens Enterprise → Applications → Register application, enters the
+service URL and code in a dedicated popup, reviews the discovered contract,
+explicitly approves all five installation operations, and selects the
+workspaces to enable. The popup reads application version and API contract
+directly from the signed manifest: administrators do not enter or select
+those values. Unsupported API contracts are rejected by discovery. Version and
+API contract are also read-only in the existing application metadata editor.
+Legacy manual-registration APIs remain available for compatibility, but must
+not override versions owned by a manifest-enrolled application.
 
 Never print permanent application service credentials or database passwords to
 Docker logs. The enrollment code is sensitive even if it expires quickly. The

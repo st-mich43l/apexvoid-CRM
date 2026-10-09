@@ -181,6 +181,9 @@ func (s *ExternalStore) Update(ctx context.Context, app ExternalApplication) (Ex
 	if err != nil {
 		return ExternalApplication{}, err
 	}
+	if current.InstallationID != nil && (app.Version != current.Version || app.APIContractVersion != current.APIContractVersion) {
+		return ExternalApplication{}, fmt.Errorf("%w: installed application version and API contract come from its verified manifest, not metadata edits", ErrInvalidExternalModule)
+	}
 	if !samePermissionCatalog(current.Permissions, app.Permissions) {
 		return ExternalApplication{}, fmt.Errorf("%w: application-owned permissions are immutable after registration", ErrInvalidExternalModule)
 	}
