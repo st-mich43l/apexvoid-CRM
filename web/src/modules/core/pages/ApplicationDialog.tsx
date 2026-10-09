@@ -15,6 +15,9 @@ export function ApplicationDialog({ title, description, children, onClose, busy 
   const descriptionId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const closeCallback = useRef(onClose)
+  const isBusy = useRef(busy)
+  useEffect(() => { closeCallback.current = onClose; isBusy.current = busy }, [onClose, busy])
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -24,13 +27,13 @@ export function ApplicationDialog({ title, description, children, onClose, busy 
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (!busy) { event.preventDefault(); onClose() }
+        if (!isBusy.current) { event.preventDefault(); closeCallback.current() }
         return
       }
       if (event.key !== 'Tab' || !panelRef.current) return
       const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
         'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-      )).filter(element => element.getClientRects().length > 0)
+      )).filter(element => !element.closest('[hidden]') && window.getComputedStyle(element).visibility !== 'hidden')
       if (!focusable.length) { event.preventDefault(); return }
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
@@ -48,7 +51,7 @@ export function ApplicationDialog({ title, description, children, onClose, busy 
       document.body.style.overflow = previousOverflow
       previouslyFocused?.focus()
     }
-  }, [busy, onClose])
+  }, [])
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/65 px-3 py-5 backdrop-blur-[6px] sm:px-6" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
