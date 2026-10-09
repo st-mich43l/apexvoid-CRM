@@ -4,7 +4,6 @@ package application
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -109,6 +107,4 @@ func TestIsolatedApplicationProvisioningAndMigrationRetries(t *testing.T) {
 	if err=store.applyMigrations(ctx,created,server.URL,manifest);err==nil{t.Fatal("modified migration artifact was accepted")}
 	manifest.Database.Name="apexvoid"
 	if _,err=store.provisionDatabase(ctx,installation,manifest);err==nil{t.Fatal("app attempted to claim Enterprise database")}
-	var noRows error=pgx.ErrNoRows
-	if !errors.Is(noRows,pgx.ErrNoRows){t.Fatal("postgres error handling broken")}
 }
