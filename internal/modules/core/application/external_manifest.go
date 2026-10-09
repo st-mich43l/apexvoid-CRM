@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -525,7 +526,7 @@ func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, inp
 			},
 			"api_contract_version": plan.Manifest.Application.APIContractVersion,
 		})
-		if err = postEnrollment(ctx, s.client, enrollmentEndpoint, input.EnrollmentCode, enrollmentPayload); err != nil {
+		if err = postEnrollment(ctx, s.client, enrollmentEndpoint, input.EnrollmentCode, credential, enrollmentPayload); err != nil {
 			return fail("enrolling_service", err)
 		}
 	}
@@ -589,8 +590,12 @@ func (s *ExternalStore) failInstallation(ctx context.Context, plan ExternalInsta
 	return ExternalInstallation{}, ExternalApplication{}, "", cause
 }
 
-func postEnrollment(ctx context.Context, client *http.Client, endpoint, code string, payload []byte) error {
+func postEnrollment(ctx context.Context, client *http.Client, endpoint, code, credential string, payload []byte) error {
 	encrypted, err := sealEnrollment(code, payload)
+	if err != nil {
+		return err
+	}
+	challenge, err := newCredential()
 	if err != nil {
 		return err
 	}
@@ -600,6 +605,7 @@ func postEnrollment(ctx context.Context, client *http.Client, endpoint, code str
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-ApexVoid-Enrollment-Challenge", challenge)
 	response, err := client.Do(request)
 	if err != nil {
 		return err
@@ -607,6 +613,16 @@ func postEnrollment(ctx context.Context, client *http.Client, endpoint, code str
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("external service enrollment returned status %d", response.StatusCode)
+	}
+	raw := strings.TrimPrefix(response.Header.Get("X-ApexVoid-Enrollment-Ack"), "sha256=")
+	actual, err := hex.DecodeString(raw)
+	if err != nil || len(actual) != sha256.Size {
+		return errors.New("service enrollment acknowledgement is missing")
+	}
+	mac := hmac.New(sha256.New, []byte(credential))
+	_, _ = mac.Write([]byte("apexvoid-enrollment-ack-v1\n" + challenge))
+	if !hmac.Equal(actual, mac.Sum(nil)) {
+		return errors.New("service failed encrypted credential possession verification")
 	}
 	return nil
 }
