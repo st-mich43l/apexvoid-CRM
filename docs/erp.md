@@ -4,7 +4,7 @@ ERP is a first-class **compiled-in application suite** in the same Go backend,
 React frontend, and PostgreSQL runtime as CRM. ERP is not another core service,
 repository, Docker service, or authority for authentication and RBAC.
 
-## Initial catalog (ERP phase 1)
+## Current catalog
 
 The `erp` module currently owns products and services:
 
@@ -49,6 +49,6 @@ contracts in the owning module's public `api` package.
 suite checks registration alongside CRM, authenticated CRUD, SKU collision,
 decimal precision, workspace access, optimistic locking, and archive/restore.
 
-This ERP milestone is intentionally the first usable vertical slice. Sales,
-purchasing, stock movements, invoicing, accounting and country-specific tax
-compliance are **not implemented yet**.
+This catalog is the first usable ERP capability. Sales, purchasing, stock
+movements, invoicing, accounting and country-specific tax compliance are not
+implemented yet.
