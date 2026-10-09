@@ -1,13 +1,26 @@
 import { Boxes, Building2, ChevronDown, ChevronRight, Command, LogOut, Menu, Moon, PanelLeftClose, Search, ShieldCheck, Sun, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { FrontendApplication, NavigationItem } from '../../framework/module/types'
 import { api } from '../api/client'
 import { useAuth } from '../auth/context'
 import { useWorkspace } from '../workspace/context'
 import { useTheme } from '../theme/context'
 import { canAccessNavigation, groupNavigation } from './navigation'
+
+const sectionsStorageKey = 'apexvoid.sidebar.closed-sections'
+const groupsStorageKey = 'apexvoid.sidebar.closed-groups'
+
+function readSidebarPreferences(key: string): Record<string, boolean> {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(key) ?? '{}')
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {}
+    return Object.fromEntries(Object.entries(stored).filter(([, value]) => typeof value === 'boolean'))
+  } catch {
+    return {}
+  }
+}
 
 export function AppShell({ navigation, applications }: { navigation: NavigationItem[]; applications: FrontendApplication[] }) {
   const { user, logout, platformCan } = useAuth()
@@ -17,11 +30,20 @@ export function AppShell({ navigation, applications }: { navigation: NavigationI
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [quickFindOpen, setQuickFindOpen] = useState(false)
+  const [closedSections, setClosedSections] = useState<Record<string, boolean>>(() => readSidebarPreferences(sectionsStorageKey))
+  const [closedGroups, setClosedGroups] = useState<Record<string, boolean>>(() => readSidebarPreferences(groupsStorageKey))
   const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: 1, refetchInterval: 30_000 })
   const healthy = health.data?.status === 'ok'
   const environment = health.data?.environment ? `${health.data.environment.charAt(0).toUpperCase()}${health.data.environment.slice(1)} environment` : 'Runtime environment'
   const visible = navigation.filter(item => canAccessNavigation(item, platformCan, workspaceCan))
   const sections = groupNavigation(visible)
+
+  useEffect(() => {
+    try { window.localStorage.setItem(sectionsStorageKey, JSON.stringify(closedSections)) } catch { /* storage may be disabled */ }
+  }, [closedSections])
+  useEffect(() => {
+    try { window.localStorage.setItem(groupsStorageKey, JSON.stringify(closedGroups)) } catch { /* storage may be disabled */ }
+  }, [closedGroups])
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 1280px)')
@@ -47,7 +69,13 @@ export function AppShell({ navigation, applications }: { navigation: NavigationI
   }, [])
 
   const closeMobile = () => setMobileOpen(false)
-  const sidebarProps = { sections, activePath: location.pathname, activeWorkspace, workspaces, selectWorkspace, healthy, environment, onQuickFind: () => setQuickFindOpen(true), onClose: closeMobile }
+  const sidebarProps = {
+    sections, activePath: location.pathname, activeWorkspace, workspaces, selectWorkspace, healthy, environment,
+    closedSections, closedGroups,
+    onToggleSection: (id: string) => setClosedSections(current => ({ ...current, [id]: !current[id] })),
+    onToggleGroup: (id: string) => setClosedGroups(current => ({ ...current, [id]: !current[id] })),
+    onQuickFind: () => setQuickFindOpen(true), onClose: closeMobile,
+  }
 
   return <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground">
     <Sidebar {...sidebarProps} collapsed={collapsed} mobile={false} onCollapse={() => setCollapsed(true)} onExpand={() => setCollapsed(false)} />
@@ -69,24 +97,123 @@ export function AppShell({ navigation, applications }: { navigation: NavigationI
   </div>
 }
 
-type SidebarProps = { sections: ReturnType<typeof groupNavigation>; activePath: string; activeWorkspace: ReturnType<typeof useWorkspace>['activeWorkspace']; workspaces: ReturnType<typeof useWorkspace>['workspaces']; selectWorkspace: (id: string) => void; healthy: boolean; environment: string; collapsed: boolean; mobile: boolean; onQuickFind: () => void; onCollapse: () => void; onExpand: () => void; onClose: () => void }
+type SidebarProps = {
+  sections: ReturnType<typeof groupNavigation>
+  activePath: string
+  activeWorkspace: ReturnType<typeof useWorkspace>['activeWorkspace']
+  workspaces: ReturnType<typeof useWorkspace>['workspaces']
+  selectWorkspace: (id: string) => void
+  healthy: boolean
+  environment: string
+  collapsed: boolean
+  mobile: boolean
+  closedSections: Record<string, boolean>
+  closedGroups: Record<string, boolean>
+  onToggleSection: (id: string) => void
+  onToggleGroup: (id: string) => void
+  onQuickFind: () => void
+  onCollapse: () => void
+  onExpand: () => void
+  onClose: () => void
+}
 
-function Sidebar({ sections, activePath, activeWorkspace, workspaces, selectWorkspace, healthy, environment, collapsed, mobile, onQuickFind, onCollapse, onExpand, onClose }: SidebarProps) {
+function Sidebar({ sections, activePath, activeWorkspace, workspaces, selectWorkspace, healthy, environment, collapsed, mobile, closedSections, closedGroups, onToggleSection, onToggleGroup, onQuickFind, onCollapse, onExpand, onClose }: SidebarProps) {
+  const sidebarID = useId()
   return <aside onClick={event => { if (!mobile && collapsed && !(event.target as HTMLElement).closest('button,select')) onExpand() }} onKeyDown={event => { if (!mobile && collapsed && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onExpand() } }} tabIndex={!mobile && collapsed ? 0 : undefined} aria-label={!mobile && collapsed ? 'Click to expand sidebar' : undefined} className={`${mobile ? 'fixed inset-y-0 left-0 z-40 flex w-[min(86vw,288px)] shadow-2xl md:hidden' : 'relative hidden md:flex'} h-dvh max-h-dvh shrink-0 flex-col overflow-hidden border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] transition-[width,padding,transform] duration-300 ${!mobile && (collapsed ? 'w-[84px] cursor-e-resize px-3' : 'w-72 px-4')}`}>
     <div className={`flex h-[76px] shrink-0 items-center ${collapsed ? 'justify-center' : 'justify-between px-2'}`}><div className="flex min-w-0 items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-400 via-primary to-indigo-600 text-white shadow-lg shadow-violet-950/20"><Boxes size={20} strokeWidth={2.4} /></div>{!collapsed && <div className="min-w-0"><p className="truncate text-[15px] font-semibold tracking-tight">ApexVoid</p><p className="truncate text-xs text-[hsl(var(--sidebar-muted))]">Business platform</p></div>}</div>{mobile ? <button type="button" onClick={onClose} aria-label="Close navigation" className="rounded-lg p-2 text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-white"><X size={18} /></button> : !collapsed && <button type="button" onClick={onCollapse} aria-label="Collapse sidebar" title="Collapse sidebar" className="rounded-lg p-2 text-[hsl(var(--sidebar-muted))] transition hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]"><PanelLeftClose size={16} /></button>}</div>
     {!collapsed && <div className="mb-4 rounded-2xl border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-card))] p-2 shadow-inner shadow-white/[0.03]"><label className="relative block"><span className="sr-only">Switch workspace</span><Building2 className="pointer-events-none absolute left-3 top-3 text-primary" size={16} /><select value={activeWorkspace?.id ?? ''} onChange={event => selectWorkspace(event.target.value)} className="w-full appearance-none rounded-xl bg-transparent py-2.5 pl-9 pr-9 text-sm font-medium text-[hsl(var(--sidebar-foreground))] outline-none"><option value="">{activeWorkspace?.name ?? 'Select workspace'}</option>{workspaces.filter(workspace => workspace.id !== activeWorkspace?.id).map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-3 text-[hsl(var(--sidebar-muted))]" size={16} /></label><div className="mt-1 flex items-center gap-2 px-3 text-[11px] text-[hsl(var(--sidebar-muted))]"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Workspace active</div></div>}
     {collapsed && <div className="mb-4 flex justify-center"><div title={activeWorkspace?.name ?? 'No workspace selected'} className="grid h-10 w-10 place-items-center rounded-xl border border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar-card))] text-primary"><Building2 size={17} /></div></div>}
     {!collapsed && <button type="button" onClick={onQuickFind} className="mb-4 flex w-full items-center justify-between rounded-xl border border-[hsl(var(--sidebar-border))] px-3 py-2 text-left text-xs text-[hsl(var(--sidebar-muted))] transition hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]"><span className="flex items-center gap-2"><Command size={14} />Quick find</span><kbd className="rounded-md bg-[hsl(var(--sidebar-card))] px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd></button>}
-    <nav aria-label="Primary navigation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">{sections.map(section => <div key={section.id} className="mb-5 last:mb-0"><div className={`mb-2 flex items-center gap-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--sidebar-muted))] ${collapsed ? 'justify-center px-0' : ''}`}><span className="h-1 w-1 rounded-full bg-primary/70" />{!collapsed && section.label}</div><div className="space-y-1">{section.items.filter(item => !item.parentId).map(item => <NavigationBranch key={item.id} item={item} childrenItems={section.items.filter(child => child.parentId === item.id)} collapsed={collapsed} activePath={activePath} onNavigate={onClose} />)}</div></div>)}</nav>
+    <nav aria-label="Primary navigation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+      {sections.map(section => {
+        const sectionID = `${sidebarID}-section-${section.id}`
+        const isClosed = Boolean(closedSections[section.id])
+        return <div key={section.id} className="mb-4 last:mb-0">
+          {collapsed ? <div aria-hidden="true" className="mb-2 flex items-center justify-center py-1"><span className="h-1 w-1 rounded-full bg-primary/70" /></div> :
+            <button
+              type="button"
+              aria-label={`${section.label} section`}
+              aria-expanded={!isClosed}
+              aria-controls={sectionID}
+              onClick={() => onToggleSection(section.id)}
+              className="group mb-1 flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-[hsl(var(--sidebar-muted))] transition-colors hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className="h-1 w-1 shrink-0 rounded-full bg-primary/70" />
+              <span className="min-w-0 flex-1 truncate">{section.label}</span>
+              <ChevronDown size={14} aria-hidden="true" className={`shrink-0 transition-transform duration-200 ${isClosed ? '-rotate-90' : ''}`} />
+            </button>}
+          <div id={sectionID} hidden={!collapsed && isClosed} className="space-y-1">
+            {section.items.filter(item => !item.parentId).map(item =>
+              <NavigationBranch
+                key={item.id}
+                item={item}
+                childrenItems={section.items.filter(child => child.parentId === item.id)}
+                collapsed={collapsed}
+                activePath={activePath}
+                groupClosed={Boolean(closedGroups[item.id])}
+                onToggleGroup={() => onToggleGroup(item.id)}
+                onExpand={() => {
+                  onExpand()
+                  if (closedSections[section.id]) onToggleSection(section.id)
+                }}
+                onNavigate={onClose}
+              />,
+            )}
+          </div>
+        </div>
+      })}
+    </nav>
     <div className={`mt-4 shrink-0 border-t border-[hsl(var(--sidebar-border))] pb-5 pt-4 ${collapsed ? 'flex justify-center' : 'px-2'}`}>{!collapsed ? <div className="flex items-center justify-between"><div className="flex min-w-0 items-center gap-2.5"><ShieldCheck size={15} className={healthy ? 'text-emerald-400' : 'text-amber-400'} /><div className="min-w-0"><p className="text-[11px] font-medium text-[hsl(var(--sidebar-foreground))]">{healthy ? 'Operational' : 'Checking status'}</p><p className="mt-0.5 text-[10px] text-[hsl(var(--sidebar-muted))]">{environment}</p></div></div><span title={healthy ? 'API healthy' : 'API unavailable'} className={`h-2 w-2 rounded-full ${healthy ? 'bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.12)]' : 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.12)]'}`} /></div> : <div title={healthy ? `Operational · ${environment}` : 'Checking status'} className={`h-2.5 w-2.5 rounded-full ${healthy ? 'bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.12)]' : 'bg-amber-400 shadow-[0_0_0_4px_rgba(251,191,36,0.12)]'}`} />}</div>
   </aside>
 }
 
-function NavigationBranch({ item, childrenItems, collapsed, activePath, onNavigate }: { item: NavigationItem; childrenItems: NavigationItem[]; collapsed: boolean; activePath: string; onNavigate: () => void }) {
+function NavigationBranch({ item, childrenItems, collapsed, activePath, groupClosed, onToggleGroup, onExpand, onNavigate }: {
+  item: NavigationItem
+  childrenItems: NavigationItem[]
+  collapsed: boolean
+  activePath: string
+  groupClosed: boolean
+  onToggleGroup: () => void
+  onExpand: () => void
+  onNavigate: () => void
+}) {
   const hasChildren = childrenItems.length > 0
+  const isClosed = groupClosed && !collapsed
   const groupActive = childrenItems.some(child => activePath === child.path || activePath.startsWith(`${child.path}/`))
+  const childrenID = useId()
   const Icon = item.icon
-  return <div>{item.isGroup ? <div title={collapsed ? item.label : undefined} className={`flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold ${groupActive ? 'text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-muted))]'} ${collapsed ? 'justify-center px-0' : ''}`}><Icon size={16} className={groupActive ? 'text-primary' : 'text-[hsl(var(--sidebar-muted))]'} />{!collapsed && <><span>{item.label}</span>{hasChildren && <ChevronRight size={14} className={`ml-auto transition-transform ${groupActive ? 'rotate-90 text-primary' : ''}`} />}</>}</div> : <NavLink onClick={onNavigate} end={item.path === '/'} title={collapsed ? item.label : undefined} to={item.path} className={({ isActive }) => `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${collapsed ? 'justify-center px-0' : ''} ${isActive ? 'bg-[hsl(var(--sidebar-active))] font-medium text-[hsl(var(--sidebar-active-foreground))] shadow-sm' : 'text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]'}`}><Icon size={17} className="shrink-0 transition group-hover:text-primary" />{!collapsed && <span>{item.label}</span>}</NavLink>}{hasChildren && <div className={`${collapsed ? 'mt-1 space-y-1' : 'ml-3 mt-1 space-y-1 border-l border-[hsl(var(--sidebar-border))] pl-3'}`}>{childrenItems.map(child => { const ChildIcon = child.icon; return <NavLink onClick={onNavigate} key={child.id} end title={collapsed ? child.label : undefined} to={child.path} className={({ isActive }) => `group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition ${collapsed ? 'justify-center px-0' : ''} ${isActive ? 'bg-[hsl(var(--sidebar-active))] font-medium text-[hsl(var(--sidebar-active-foreground))]' : 'text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]'}`}><ChildIcon size={15} className="shrink-0 group-hover:text-primary" />{!collapsed && <span>{child.label}</span>}</NavLink> })}</div>}</div>
+  return <div>
+    {item.isGroup ? <button
+      type="button"
+      title={collapsed ? item.label : undefined}
+      aria-label={`${item.label} menu`}
+      aria-expanded={hasChildren ? !isClosed : undefined}
+      aria-controls={hasChildren ? childrenID : undefined}
+      onClick={() => {
+        if (collapsed) {
+          onExpand()
+          if (groupClosed) onToggleGroup()
+        } else if (hasChildren) onToggleGroup()
+      }}
+      className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-[hsl(var(--sidebar-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${groupActive ? 'text-[hsl(var(--sidebar-foreground))]' : 'text-[hsl(var(--sidebar-muted))]'} ${collapsed ? 'justify-center px-0' : ''}`}
+    >
+      <Icon size={16} aria-hidden="true" className={`shrink-0 ${groupActive ? 'text-primary' : 'text-[hsl(var(--sidebar-muted))]'}`} />
+      {!collapsed && <><span className="min-w-0 flex-1 truncate">{item.label}</span>{hasChildren && <ChevronRight size={14} aria-hidden="true" className={`ml-auto shrink-0 transition-transform duration-200 ${!isClosed ? 'rotate-90 text-primary' : ''}`} />}</>}
+    </button> :
+      <NavLink onClick={onNavigate} end={item.path === '/'} title={collapsed ? item.label : undefined} to={item.path} className={({ isActive }) => `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${collapsed ? 'justify-center px-0' : ''} ${isActive ? 'bg-[hsl(var(--sidebar-active))] font-medium text-[hsl(var(--sidebar-active-foreground))] shadow-sm' : 'text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]'}`}>
+        <Icon size={17} className="shrink-0 transition group-hover:text-primary" />
+        {!collapsed && <span>{item.label}</span>}
+      </NavLink>}
+    {hasChildren && <div id={childrenID} hidden={isClosed} className={`${collapsed ? 'mt-1 space-y-1' : 'ml-3 mt-1 space-y-1 border-l border-[hsl(var(--sidebar-border))] pl-3'}`}>
+      {childrenItems.map(child => {
+        const ChildIcon = child.icon
+        return <NavLink onClick={onNavigate} key={child.id} end title={collapsed ? child.label : undefined} to={child.path} className={({ isActive }) => `group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition ${collapsed ? 'justify-center px-0' : ''} ${isActive ? 'bg-[hsl(var(--sidebar-active))] font-medium text-[hsl(var(--sidebar-active-foreground))]' : 'text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-hover))] hover:text-[hsl(var(--sidebar-foreground))]'}`}>
+          <ChildIcon size={15} className="shrink-0 group-hover:text-primary" />
+          {!collapsed && <span>{child.label}</span>}
+        </NavLink>
+      })}
+    </div>}
+  </div>
 }
 
 function QuickFind({ navigation, onClose, onNavigate }: { navigation: NavigationItem[]; onClose: () => void; onNavigate: () => void }) {
