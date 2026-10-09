@@ -117,6 +117,15 @@ describe('collapsible sidebar navigation', () => {
     expect(screen.getByRole('link', { name: 'Leads' })).toBeVisible()
   })
 
+  it('reopens a hidden Workspace section from a compact CRM icon', () => {
+    renderShell()
+    fireEvent.click(screen.getByRole('button', { name: 'Workspace section' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'CRM menu' }))
+    expect(screen.getByRole('button', { name: 'Workspace section' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Leads' })).toBeVisible()
+  })
+
   it('recovers from invalid saved preferences', () => {
     window.localStorage.setItem('apexvoid.sidebar.closed-sections', '{invalid')
     window.localStorage.setItem('apexvoid.sidebar.closed-groups', 'null')
