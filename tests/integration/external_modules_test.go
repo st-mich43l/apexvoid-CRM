@@ -62,6 +62,21 @@ func TestExternalModuleIntegrationLifecycle(t *testing.T) {
 	if persistedAfterFailures != 0 {
 		t.Fatalf("failed registration persisted %d external applications", persistedAfterFailures)
 	}
+	// Simulate an unavailable audit sink. Registration must not activate an
+	// application or strand an undisclosed service credential when audit fails.
+	if _, err := platform.Database.Exec(ctx, `ALTER TABLE core_external_application_audit RENAME TO core_external_application_audit_offline`); err != nil {
+		t.Fatal(err)
+	}
+	admin.must(http.MethodPost, "/api/v1/applications/external", "", registration, nil, http.StatusInternalServerError)
+	if err := platform.Database.QueryRow(ctx, `SELECT COUNT(*) FROM core_external_applications WHERE id='reports'`).Scan(&persistedAfterFailures); err != nil {
+		t.Fatal(err)
+	}
+	if persistedAfterFailures != 0 {
+		t.Fatal("audit failure left an external application registered")
+	}
+	if _, err := platform.Database.Exec(ctx, `ALTER TABLE core_external_application_audit_offline RENAME TO core_external_application_audit`); err != nil {
+		t.Fatal(err)
+	}
 	var registered struct {
 		ServiceCredential string `json:"service_credential"`
 	}
@@ -122,6 +137,20 @@ func TestExternalModuleIntegrationLifecycle(t *testing.T) {
 		t.Fatalf("disabled module introspection returned %d", disabled.StatusCode)
 	}
 	_ = disabled.Body.Close()
+	// Credential mutation and audit must be atomic. A failed audit must not
+	// invalidate the live credential without returning a replacement.
+	if _, err := platform.Database.Exec(ctx, `ALTER TABLE core_external_application_audit RENAME TO core_external_application_audit_offline`); err != nil {
+		t.Fatal(err)
+	}
+	admin.must(http.MethodPost, "/api/v1/applications/external/reports/credentials/rotate", "", nil, nil, http.StatusInternalServerError)
+	stillValid := serviceRequest(t, admin, server.URL, http.MethodGet, "/api/v1/integrations/v1/applications/reports/availability?workspace_id="+workspaceID, registered.ServiceCredential, nil)
+	if stillValid.StatusCode != http.StatusOK {
+		t.Fatalf("audit failure revoked the live service credential: %d", stillValid.StatusCode)
+	}
+	_ = stillValid.Body.Close()
+	if _, err := platform.Database.Exec(ctx, `ALTER TABLE core_external_application_audit_offline RENAME TO core_external_application_audit`); err != nil {
+		t.Fatal(err)
+	}
 	var rotated struct {
 		ServiceCredential string `json:"service_credential"`
 	}
