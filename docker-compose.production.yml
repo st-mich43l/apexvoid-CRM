@@ -9,14 +9,17 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-apexvoid}
       POSTGRES_USER: ${POSTGRES_USER:-apexvoid}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      DATABASE_PROVISIONER_PASSWORD: ${DATABASE_PROVISIONER_PASSWORD:-}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10
-
+    networks:
+      - apexvoid-data
   backend:
     build:
       context: .
@@ -32,10 +35,12 @@ services:
       DATABASE_USER: ${POSTGRES_USER:-apexvoid}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
       DATABASE_SSLMODE: disable
+      DATABASE_PROVISIONING_URL: ${DATABASE_PROVISIONING_URL:?set the dedicated PostgreSQL provisioning URL}
+      DATABASE_PROVISIONING_KEY: ${DATABASE_PROVISIONING_KEY:?set a stable 32+ character provisioning encryption key}
       AUTH_COOKIE_SECURE: "true"
       AUTH_COOKIE_SAMESITE: lax
       INTEGRATIONS_ASSERTION_SECRET: ${INTEGRATIONS_ASSERTION_SECRET:?set a 32+ character integration assertion secret}
-      INTEGRATIONS_ALLOWED_SERVICE_HOSTS: ${INTEGRATIONS_ALLOWED_SERVICE_HOSTS:-}
+      INTEGRATIONS_ALLOWED_SERVICE_HOSTS: ${INTEGRATIONS_ALLOWED_SERVICE_HOSTS:?set the trusted service hostnames, for example cafe}
       CONTACTS_UPLOAD_DIR: /var/lib/apexvoid/attachments
       APEXVOID_BOOTSTRAP_ADMIN_EMAIL: ${APEXVOID_BOOTSTRAP_ADMIN_EMAIL:?set a bootstrap administrator email}
       APEXVOID_BOOTSTRAP_ADMIN_USERNAME: ${APEXVOID_BOOTSTRAP_ADMIN_USERNAME:?set a bootstrap administrator username}
@@ -51,6 +56,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - apexvoid-apps
+      - apexvoid-data
 
   frontend:
     build:
@@ -62,6 +70,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - apexvoid-apps
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
       interval: 10s
@@ -71,3 +81,11 @@ services:
 volumes:
   postgres-data:
   contacts-data:
+
+networks:
+  apexvoid-apps:
+    name: ${APEXVOID_APPS_NETWORK:-apexvoid-apps}
+    external: true
+  apexvoid-data:
+    name: ${APEXVOID_DATA_NETWORK:-apexvoid-data}
+    external: true

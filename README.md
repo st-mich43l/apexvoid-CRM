@@ -34,8 +34,19 @@ Requirements: Go 1.25+, Node.js 22+, npm, Docker, and Docker Compose.
 
 ```bash
 cp .env.example .env
+docker network create apexvoid-apps 2>/dev/null || true
+docker network create apexvoid-data 2>/dev/null || true
 docker compose up -d
 ```
+
+To register an external application from the local Docker stack, set
+`DATABASE_PROVISIONER_PASSWORD`, `DATABASE_PROVISIONING_URL` using the Docker
+hostname `postgres`, `DATABASE_PROVISIONING_KEY`,
+`INTEGRATIONS_ASSERTION_SECRET`, and include the service hostname in
+`INTEGRATIONS_ALLOWED_SERVICE_HOSTS`. A fresh PostgreSQL volume runs the
+`docker/postgres/init/10-provisioner.sh` bootstrap and creates the restricted
+`apexvoid_provisioner` role. Existing volumes require that role to be created
+through the normal database-administrator procedure; init scripts do not rerun.
 
 Endpoints:
 
