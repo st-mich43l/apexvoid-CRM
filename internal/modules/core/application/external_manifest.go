@@ -556,10 +556,14 @@ func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, inp
 		}
 	}
 	if err == nil {
-		_, err = activation.Exec(ctx, `UPDATE core_external_applications SET enabled=TRUE,updated_at=NOW() WHERE id=$1 AND status='active' AND enabled=FALSE AND installation_id=$2`, registered.ID, id)
+		tag, updateErr := activation.Exec(ctx, `UPDATE core_external_applications SET enabled=TRUE,updated_at=NOW() WHERE id=$1 AND status='active' AND enabled=FALSE AND installation_id=$2`, registered.ID, id)
+		err = updateErr
+		if err == nil && tag.RowsAffected() != 1 { err = ErrInstallationState }
 	}
 	if err == nil {
-		_, err = activation.Exec(ctx, `UPDATE core_external_application_installations SET status='active',last_step='active',service_credential_encrypted=NULL,updated_at=NOW() WHERE id=$1 AND status='verifying'`, id)
+		tag, updateErr := activation.Exec(ctx, `UPDATE core_external_application_installations SET status='active',last_step='active',service_credential_encrypted=NULL,updated_at=NOW() WHERE id=$1 AND status='verifying'`, id)
+		err = updateErr
+		if err == nil && tag.RowsAffected() != 1 { err = ErrInstallationState }
 	}
 	if err != nil {
 		_ = activation.Rollback(ctx)
