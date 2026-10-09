@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -94,17 +95,18 @@ func externalError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteApplicationError(w, r, err)
 	}
 }
-func auditExternal(w http.ResponseWriter, r *http.Request, store *application.ExternalStore, applicationID, action string, workspaceID *uuid.UUID) bool {
+func auditExternal(w http.ResponseWriter, r *http.Request, applicationID, action string, workspaceID *uuid.UUID) (context.Context, bool) {
 	principal, ok := usersapi.PrincipalFromContext(r.Context())
 	if !ok {
 		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
-		return false
+		return nil, false
 	}
-	if err := store.RecordAudit(r.Context(), application.ExternalAuditEvent{ApplicationID: applicationID, ActorUserID: principal.UserID, WorkspaceID: workspaceID, Action: action, RequestID: httpserver.RequestIDFromContext(r.Context())}); err != nil {
-		httpserver.WriteApplicationError(w, r, err)
-		return false
+	event := application.ExternalAuditEvent{
+		ApplicationID: applicationID, ActorUserID: principal.UserID,
+		WorkspaceID: workspaceID, Action: action,
+		RequestID: httpserver.RequestIDFromContext(r.Context()),
 	}
-	return true
+	return application.WithExternalAudit(r.Context(), event), true
 }
 func (h *Handler) registerExternal(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -115,15 +117,16 @@ func (h *Handler) registerExternal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, credential, err := store.Register(r.Context(), application.RegisterExternalInput{Application: toExternal(request), Credential: request.Credential})
+	auditContext, ok := auditExternal(w, r, request.ID, "external_application.registered", nil)
+	if !ok {
+		return
+	}
+	item, credential, err := store.Register(auditContext, application.RegisterExternalInput{Application: toExternal(request), Credential: request.Credential})
 	if err != nil {
 		externalError(w, r, err)
 		return
 	}
-	if !auditExternal(w, r, store, item.ID, "external_application.registered", nil) {
-		return
-	}
-	response := externalResponse(item, "unknown")
+	 response := externalResponse(item, "unknown")
 	response["service_credential"] = credential
 	writeJSON(w, http.StatusCreated, response)
 }
@@ -184,15 +187,16 @@ func (h *Handler) updateExternal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request.ID = chi.URLParam(r, "application")
-	item, err := store.Update(r.Context(), toExternal(request))
+	auditContext, ok := auditExternal(w, r, request.ID, "external_application.updated", nil)
+	if !ok {
+		return
+	}
+	item, err := store.Update(auditContext, toExternal(request))
 	if err != nil {
 		externalError(w, r, err)
 		return
 	}
-	if !auditExternal(w, r, store, item.ID, "external_application.updated", nil) {
-		return
-	}
-	writeJSON(w, http.StatusOK, externalResponse(item, "unknown"))
+	 writeJSON(w, http.StatusOK, externalResponse(item, "unknown"))
 }
 func (h *Handler) unregisterExternal(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -200,14 +204,15 @@ func (h *Handler) unregisterExternal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applicationID := chi.URLParam(r, "application")
-	if err := store.Unregister(r.Context(), applicationID); err != nil {
+	auditContext, ok := auditExternal(w, r, applicationID, "external_application.retired", nil)
+	if !ok {
+		return
+	}
+	if err := store.Unregister(auditContext, applicationID); err != nil {
 		externalError(w, r, err)
 		return
 	}
-	if !auditExternal(w, r, store, applicationID, "external_application.retired", nil) {
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	 w.WriteHeader(http.StatusNoContent)
 }
 func (h *Handler) setWorkspaceAvailability(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -224,14 +229,15 @@ func (h *Handler) setWorkspaceAvailability(w http.ResponseWriter, r *http.Reques
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid workspace identifier")
 		return
 	}
-	if err = store.SetWorkspaceEnabled(r.Context(), chi.URLParam(r, "application"), workspaceID, request.Enabled); err != nil {
+	auditContext, ok := auditExternal(w, r, chi.URLParam(r, "application"), "external_application.workspace_availability_changed", &workspaceID)
+	if !ok {
+		return
+	}
+	if err = store.SetWorkspaceEnabled(auditContext, chi.URLParam(r, "application"), workspaceID, request.Enabled); err != nil {
 		externalError(w, r, err)
 		return
 	}
-	if !auditExternal(w, r, store, chi.URLParam(r, "application"), "external_application.workspace_availability_changed", &workspaceID) {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": request.Enabled})
+	 writeJSON(w, http.StatusOK, map[string]any{"enabled": request.Enabled})
 }
 func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -239,14 +245,15 @@ func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applicationID := chi.URLParam(r, "application")
-	if err := store.RevokeCredential(r.Context(), applicationID); err != nil {
+	auditContext, ok := auditExternal(w, r, applicationID, "external_application.credential_revoked", nil)
+	if !ok {
+		return
+	}
+	if err := store.RevokeCredential(auditContext, applicationID); err != nil {
 		externalError(w, r, err)
 		return
 	}
-	if !auditExternal(w, r, store, applicationID, "external_application.credential_revoked", nil) {
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	 w.WriteHeader(http.StatusNoContent)
 }
 func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -254,15 +261,16 @@ func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applicationID := chi.URLParam(r, "application")
-	credential, err := store.RotateCredential(r.Context(), applicationID)
+	auditContext, ok := auditExternal(w, r, applicationID, "external_application.credential_rotated", nil)
+	if !ok {
+		return
+	}
+	credential, err := store.RotateCredential(auditContext, applicationID)
 	if err != nil {
 		externalError(w, r, err)
 		return
 	}
-	if !auditExternal(w, r, store, applicationID, "external_application.credential_rotated", nil) {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"service_credential": credential})
+	 writeJSON(w, http.StatusOK, map[string]string{"service_credential": credential})
 }
 func (h *Handler) externalStatus(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
