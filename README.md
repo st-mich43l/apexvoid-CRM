@@ -17,7 +17,7 @@ See [docs/architecture.md](docs/architecture.md) for layer responsibilities, tra
 ## Framework concepts
 
 - Modules declare identity, version, dependencies, and registration behavior.
-- Applications declare their compiled-in identity, backend dependencies, required contracts, frontend entry route, navigation identity, and optional settings route. Backend discovery metadata never executes code in the browser.
+- Applications declare their compiled-in identity, backend dependencies, static contracts, explicit all-of/any-of entry and settings authorization, frontend entry route, navigation identity, and API contract version. Backend discovery is authenticated and workspace-aware; its metadata never executes code in the browser.
 - Entities and fields describe strongly typed business models without replacing relational tables.
 - Permissions and capabilities are explicit registries; users and RBAC assignments are owned by the platform modules.
 - Events use namespaced definitions and generic typed subscriber/publisher functions.
@@ -82,7 +82,7 @@ Copy `.env.production.example` to `.env.production`, set every secret and public
 docker compose --env-file .env.production -f docker-compose.production.yml up -d --build
 ```
 
-The production Compose path builds static frontend assets served by Nginx and proxies API requests to the Go backend; it does not use Vite. See [operations](docs/operations.md) for upgrade, backup, restore, and diagnostics guidance.
+The production Compose path builds static frontend assets served by Nginx and proxies API requests to the Go backend; it does not use Vite. Its frontend listener is loopback-bound by default for a trusted HTTPS ingress, database URI components are safely escaped by the backend, and attachment storage runs under the non-root runtime user. See [operations](docs/operations.md) for upgrade, backup, restore, attachment-volume repair, and diagnostics guidance.
 
 ## Testing
 
