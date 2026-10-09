@@ -110,6 +110,10 @@ func (s *ExternalStore) provisionDatabase(ctx context.Context, installationID uu
 	} else if roleSuper || roleCreateDB || roleCreateRole || !roleLogin {
 		return provisionedDatabase{}, errors.New("existing app role has elevated or invalid PostgreSQL privileges")
 	}
+	var provisioner string
+	if err = admin.QueryRow(ctx, `SELECT current_user`).Scan(&provisioner); err != nil {
+		return provisionedDatabase{}, err
+	}
 	var roleMemberships bool
 	err = admin.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=$1))`, role).Scan(&roleMemberships)
 	if err != nil {
@@ -117,6 +121,27 @@ func (s *ExternalStore) provisionDatabase(ctx context.Context, installationID uu
 	}
 	if roleMemberships {
 		return provisionedDatabase{}, errors.New("application database role must not be a member of other roles")
+	}
+	var provisionerHasRole bool
+	err = admin.QueryRow(ctx, `SELECT EXISTS(
+		SELECT 1
+		FROM pg_auth_members membership
+		JOIN pg_roles member ON member.oid = membership.member
+		JOIN pg_roles granted ON granted.oid = membership.roleid
+		WHERE member.rolname=$1 AND granted.rolname=$2
+	)`, provisioner, role).Scan(&provisionerHasRole)
+	if err != nil {
+		return provisionedDatabase{}, err
+	}
+	if !provisionerHasRole {
+		if _, err = admin.Exec(ctx, `GRANT `+quoteIdentifier(role)+` TO `+quoteIdentifier(provisioner)); err != nil {
+			return provisionedDatabase{}, fmt.Errorf("grant provisioner access to app role: %w", err)
+		}
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _ = admin.Exec(cleanupCtx, `REVOKE `+quoteIdentifier(role)+` FROM `+quoteIdentifier(provisioner))
+		}()
 	}
 
 	var dbOwner string
