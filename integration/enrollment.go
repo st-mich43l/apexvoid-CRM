@@ -30,6 +30,18 @@ func SignManifest(setupCode string, manifest []byte) (string, error) {
 	return "sha256=" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// SignEnrollmentAcknowledgement proves that the service decrypted the one-time
+// enrollment payload and possesses its permanent service credential. The
+// service should persist the credential BEFORE returning this acknowledgement.
+func SignEnrollmentAcknowledgement(serviceCredential, challenge string) (string, error) {
+	if len(serviceCredential) < 32 || len(challenge) < 32 {
+		return "", errors.New("enrollment acknowledgement requires a service secret and server challenge")
+	}
+	mac := hmac.New(sha256.New, []byte(serviceCredential))
+	_, _ = mac.Write([]byte("apexvoid-enrollment-ack-v1\n" + challenge))
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
 type EnrollmentDatabase struct {
 	Name                   string `json:"name"`
 	Schema                 string `json:"schema"`
