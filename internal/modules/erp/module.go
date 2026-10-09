@@ -68,6 +68,7 @@ func (Module) Register(ctx *module.Context) error {
 		Access:              frameworkapplication.Access{Entry: frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"erp.product.read"}}},
 	})
 }
+func (m *Module) Service() *application.Service { return m.service }
 func (Module) Migrations() []module.Migration { return migrations.All() }
 func (m *Module) RegisterRoutes(r module.RouteRegistry) error {
 	return erphttp.New(m.service, m.auth, m.workspace, m.access).RegisterRoutes(r)
