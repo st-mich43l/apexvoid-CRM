@@ -16,7 +16,7 @@ jobs:
         with:
           go-version: '1.25'
       - run: |
-          gofmt -w internal/modules/core/application/external_enrollment_crypto.go internal/modules/core/application/external_provisioning_secret.go internal/modules/core/application/external_provisioning.go internal/modules/core/application/external_manifest.go internal/modules/core/application/external.go internal/modules/core/migrations/migrations.go internal/modules/core/module.go internal/app/bootstrap.go internal/platform/config/config.go
+          gofmt -w internal/modules/core/application/external_enrollment_crypto.go internal/modules/core/application/external_enrollment_crypto_test.go internal/modules/core/application/external_provisioning_secret.go internal/modules/core/application/external_provisioning.go internal/modules/core/application/external_manifest.go internal/modules/core/application/external.go internal/modules/core/migrations/migrations.go internal/modules/core/module.go internal/app/bootstrap.go internal/platform/config/config.go
           if ! git diff --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
