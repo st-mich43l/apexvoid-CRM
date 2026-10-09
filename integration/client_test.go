@@ -75,3 +75,55 @@ func TestClientRetriesOnlyTransientFailures(t *testing.T) {
 		t.Fatalf("unexpected retry result %#v %v attempts=%d", availability, err, attempts.Load())
 	}
 }
+
+func TestClientRefusesRedirectsBeforeSendingCredentialToAnotherService(t *testing.T) {
+	var redirected atomic.Bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected.Store(true)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	platform := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(ServiceCredentialHeader) != "private-service-credential" {
+			t.Error("missing service credential on first request")
+		}
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer platform.Close()
+
+	customClient := &http.Client{}
+	client, err := NewClient(Config{
+		PlatformURL: platform.URL, ApplicationID: "reports",
+		ServiceCredential: "private-service-credential", HTTPClient: customClient,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Availability(context.Background(), "workspace")
+	apiErr, ok := err.(*Error)
+	if !ok || apiErr.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("redirect should fail without being followed: %v", err)
+	}
+	if redirected.Load() {
+		t.Fatal("service credential was exposed by following an upstream redirect")
+	}
+	if customClient.CheckRedirect != nil {
+		t.Fatal("the caller's HTTP client was mutated")
+	}
+}
+
+func TestClientRejectsUnsafePlatformURLs(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://user:password@localhost:8080",
+		"http://localhost:8080/other-service",
+		"http://localhost:8080?redirect=untrusted",
+		"http://localhost:8080/#fragment",
+		"file:///tmp/platform",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			if _, err := NewClient(Config{PlatformURL: endpoint, ApplicationID: "reports", ServiceCredential: "secret"}); err == nil {
+				t.Fatal("unsafe platform URL must be rejected")
+			}
+		})
+	}
+}
