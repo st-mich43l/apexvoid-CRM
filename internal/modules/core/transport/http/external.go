@@ -50,6 +50,19 @@ type introspectionRequest struct {
 	IdentityAssertion string `json:"identity_assertion"`
 	Permission        string `json:"permission"`
 }
+type externalDiscoveryRequest struct {
+	ServiceURL     string `json:"service_url"`
+	EnrollmentCode string `json:"enrollment_code"`
+}
+type externalApprovalRequest struct {
+	EnrollmentCode      string      `json:"enrollment_code"`
+	ApproveRegistration bool        `json:"approve_registration"`
+	ApprovePermissions  bool        `json:"approve_permissions"`
+	ApproveDatabase     bool        `json:"approve_database"`
+	ApproveSchema       bool        `json:"approve_schema"`
+	ApproveMigrations   bool        `json:"approve_migrations"`
+	WorkspaceIDs        []uuid.UUID `json:"workspace_ids"`
+}
 
 func (h *Handler) store(w http.ResponseWriter, r *http.Request) *application.ExternalStore {
 	store := h.service.External()
@@ -79,7 +92,7 @@ func externalResponse(item application.ExternalApplication, health string) map[s
 	for _, p := range item.Permissions {
 		permissions = append(permissions, map[string]any{"name": p.Name, "display_name": p.DisplayName, "description": p.Description, "scope": p.Scope})
 	}
-	return map[string]any{"id": item.ID, "deployment": "external", "display_name": item.DisplayName, "description": item.Description, "version": item.Version, "api_contract_version": item.APIContractVersion, "service_identity": item.ServiceIdentity, "service_endpoint": item.ServiceEndpoint, "health_endpoint": item.HealthEndpoint, "frontend_route": item.FrontendRoute, "settings_route": item.SettingsRoute, "enabled": item.Enabled, "credential_revoked": item.CredentialRevoked, "status": item.Status, "access_match": item.Access.Match, "access_permissions": item.Access.Permissions, "permissions": permissions, "health": health}
+	return map[string]any{"id": item.ID, "deployment": "external", "display_name": item.DisplayName, "description": item.Description, "version": item.Version, "api_contract_version": item.APIContractVersion, "service_identity": item.ServiceIdentity, "service_endpoint": item.ServiceEndpoint, "health_endpoint": item.HealthEndpoint, "frontend_route": item.FrontendRoute, "settings_route": item.SettingsRoute, "enabled": item.Enabled, "workspace_default_enabled": item.WorkspaceDefaultEnabled, "credential_revoked": item.CredentialRevoked, "status": item.Status, "access_match": item.Access.Match, "access_permissions": item.Access.Permissions, "permissions": permissions, "health": health, "database_name": item.DatabaseName, "database_schema": item.DatabaseSchema, "database_role": item.DatabaseRole, "migration_bundle_version": item.MigrationBundleVersion}
 }
 func externalError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
@@ -91,9 +104,133 @@ func externalError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 	case errors.Is(err, application.ErrUnsupportedContract):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "UNSUPPORTED_CONTRACT", err.Error())
+	case errors.Is(err, application.ErrInvalidCredential):
+		httpserver.WriteError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIAL", "The enrollment code is invalid")
+	case errors.Is(err, application.ErrInvalidManifest), errors.Is(err, application.ErrInstallationState), errors.Is(err, application.ErrInstallationExpired), errors.Is(err, application.ErrMigrationPolicy):
+		httpserver.WriteError(w, r, http.StatusBadRequest, "INSTALLATION_ERROR", err.Error())
+	case errors.Is(err, application.ErrInstallationNotFound):
+		httpserver.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "External installation was not found")
 	default:
 		httpserver.WriteApplicationError(w, r, err)
 	}
+}
+
+func decodeStrict(w http.ResponseWriter, r *http.Request, destination any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request payload")
+		return false
+	}
+	return true
+}
+
+func installationResponse(item application.ExternalInstallation) map[string]any {
+	return map[string]any{"id": item.ID, "application_id": item.ApplicationID, "service_url": item.ServiceURL, "manifest": item.Manifest, "status": item.Status, "expires_at": item.ExpiresAt, "last_step": item.LastStep, "error_message": item.ErrorMessage, "selected_workspace_ids": item.SelectedWorkspaceIDs, "created_at": item.CreatedAt, "updated_at": item.UpdatedAt}
+}
+
+func (h *Handler) discoverExternal(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w, r)
+	if store == nil {
+		return
+	}
+	var request externalDiscoveryRequest
+	if !decodeStrict(w, r, &request) {
+		return
+	}
+	principal, ok := usersapi.PrincipalFromContext(r.Context())
+	if !ok {
+		httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
+		return
+	}
+	plan, err := store.Discover(r.Context(), application.DiscoverExternalInput{ServiceURL: request.ServiceURL, EnrollmentCode: request.EnrollmentCode, CreatedBy: principal.UserID})
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, installationResponse(plan))
+}
+
+func (h *Handler) listExternalInstallations(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w, r)
+	if store == nil {
+		return
+	}
+	items, err := store.ListInstallations(r.Context())
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	result := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		result = append(result, installationResponse(item))
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) getExternalInstallation(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w, r)
+	if store == nil {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "installation"))
+	if err != nil {
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid installation identifier")
+		return
+	}
+	item, err := store.GetInstallation(r.Context(), id)
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, installationResponse(item))
+}
+
+func (h *Handler) approveExternalInstallation(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w, r)
+	if store == nil {
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "installation"))
+	if err != nil {
+		httpserver.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid installation identifier")
+		return
+	}
+	var request externalApprovalRequest
+	if !decodeStrict(w, r, &request) {
+		return
+	}
+	plan, err := store.GetInstallation(r.Context(), id)
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	auditContext, ok := auditExternal(w, r, plan.ApplicationID, "external_application.installation_approved", nil)
+	if !ok {
+		return
+	}
+	installed, app, credential, err := store.ApproveAndInstall(auditContext, id, application.ApproveExternalInput{EnrollmentCode: request.EnrollmentCode, ApproveRegistration: request.ApproveRegistration, ApprovePermissions: request.ApprovePermissions, ApproveDatabase: request.ApproveDatabase, ApproveSchema: request.ApproveSchema, ApproveMigrations: request.ApproveMigrations, WorkspaceIDs: request.WorkspaceIDs})
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	response := installationResponse(installed)
+	response["application"] = externalResponse(app, store.Health(r.Context(), app))
+	response["service_credential"] = credential
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) checkExternalUpdate(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w, r)
+	if store == nil {
+		return
+	}
+	report, err := store.CheckForUpdate(r.Context(), chi.URLParam(r, "application"))
+	if err != nil {
+		externalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 func auditExternal(w http.ResponseWriter, r *http.Request, applicationID, action string, workspaceID *uuid.UUID) (context.Context, bool) {
 	principal, ok := usersapi.PrincipalFromContext(r.Context())

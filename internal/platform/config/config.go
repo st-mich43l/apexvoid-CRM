@@ -82,6 +82,8 @@ type ContactsConfig struct {
 type IntegrationsConfig struct {
 	AssertionSecret     string   `yaml:"assertion_secret"`
 	AllowedServiceHosts []string `yaml:"allowed_service_hosts"`
+	ProvisioningURL     string   `yaml:"provisioning_url"`
+	ProvisioningKey     string   `yaml:"provisioning_key"`
 }
 
 func Load(path string) (Config, error) {
@@ -136,6 +138,8 @@ func applyEnv(c *Config) {
 	setInt64(&c.Contacts.MaxUploadBytes, "CONTACTS_MAX_UPLOAD_BYTES")
 	setString(&c.Integrations.AssertionSecret, "INTEGRATIONS_ASSERTION_SECRET")
 	setStringSlice(&c.Integrations.AllowedServiceHosts, "INTEGRATIONS_ALLOWED_SERVICE_HOSTS")
+	setString(&c.Integrations.ProvisioningURL, "DATABASE_PROVISIONING_URL")
+	setString(&c.Integrations.ProvisioningKey, "DATABASE_PROVISIONING_KEY")
 	setDuration(&c.Auth.AccessTokenTTL, "AUTH_ACCESS_TOKEN_TTL")
 	setDuration(&c.Auth.RefreshTokenTTL, "AUTH_REFRESH_TOKEN_TTL")
 	setBool(&c.Auth.CookieSecure, "AUTH_COOKIE_SECURE")
@@ -270,6 +274,15 @@ func (c Config) Validate() error {
 	if len(c.Integrations.AllowedServiceHosts) > 0 {
 		if len(strings.TrimSpace(c.Integrations.AssertionSecret)) < 32 {
 			return fmt.Errorf("invalid configuration: integrations.assertion_secret must be at least 32 characters when external service hosts are enabled")
+		}
+	}
+	if strings.TrimSpace(c.Integrations.ProvisioningURL) != "" {
+		if len(c.Integrations.ProvisioningKey) < 32 {
+			return fmt.Errorf("invalid configuration: database provisioning requires a stable encryption key of at least 32 characters")
+		}
+		parsed, err := url.Parse(c.Integrations.ProvisioningURL)
+		if err != nil || parsed.Scheme != "postgres" || parsed.Host == "" || parsed.User == nil {
+			return fmt.Errorf("invalid configuration: integrations.provisioning_url must be a PostgreSQL URL with explicit credentials")
 		}
 	}
 	if err := c.validateProductionSecurity(); err != nil {

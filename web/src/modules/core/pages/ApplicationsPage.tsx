@@ -13,6 +13,7 @@ import { useWorkspace } from '../../../core/workspace/context'
 import { userWorkspaceQueryKey } from '../../../core/workspace/query'
 import type { ExternalIntegration, ExternalIntegrationInput } from '../../../core/api/client'
 import { ExternalIntegrationEditor } from './ExternalIntegrationEditor'
+import { ExternalEnrollmentWizard } from './ExternalEnrollmentWizard'
 
 type ShellContext = { applications: FrontendApplication[] }
 
@@ -42,6 +43,7 @@ function IntegrationManagement({ integrations, loading, workspaceID }: { integra
   const [rotatedCredential, setRotatedCredential] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [editor, setEditor] = useState<'register' | ExternalIntegration | null>(null)
+  const [enrollment, setEnrollment] = useState(false)
   const refresh = () => client.invalidateQueries({ predicate: query => query.queryKey.includes('applications') || query.queryKey.includes('external-integrations') })
   const availability = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.integrations.setWorkspaceAvailability(id, workspaceID, enabled), onSuccess: refresh })
   const revoke = useMutation({ mutationFn: api.integrations.revokeCredential, onSuccess: refresh })
@@ -69,7 +71,8 @@ function IntegrationManagement({ integrations, loading, workspaceID }: { integra
     }
     if (editor && await execute(() => update.mutateAsync({ id: editor.id, input }))) setEditor(null)
   }
-  return <section className="mt-7"><PageHeader eyebrow="Administrator" title="External integration management" description="Availability is scoped to the selected workspace. Service credentials are never displayed after registration." actions={<Button onClick={() => { setActionError(null); setEditor('register') }}>Register application</Button>} />
+  return <section className="mt-7"><PageHeader eyebrow="Administrator" title="External integration management" description="Discover a service from its manifest, review its requested access and database plan, then activate it only in selected workspaces." actions={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => { setActionError(null); setEnrollment(true); setEditor(null) }}>Connect service</Button><Button onClick={() => { setActionError(null); setEditor('register'); setEnrollment(false) }}>Register application</Button></div>} />
+    {enrollment && <ExternalEnrollmentWizard onCancel={() => setEnrollment(false)} onComplete={() => { setEnrollment(false); refresh() }} />}
     {editor && <ExternalIntegrationEditor initial={editor === 'register' ? undefined : editor} pending={register.isPending || update.isPending} error={actionError ?? undefined} onCancel={() => setEditor(null)} onSubmit={saveEditor} />}
     {actionError && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{actionError}</p>}
     {rotatedCredential && <Card className="mb-4 border-warning/30 bg-warning/5 p-4"><p className="font-medium">Copy the replacement credential now</p><p className="mt-1 text-sm text-muted-foreground">It is shown only for this lifecycle action. Store it in the service secret before closing this message.</p><code className="mt-3 block select-all overflow-x-auto rounded-md bg-muted p-3 text-xs">{rotatedCredential}</code><div className="mt-3 flex gap-2"><Button variant="outline" onClick={() => void navigator.clipboard?.writeText(rotatedCredential)}>Copy credential</Button><Button variant="outline" onClick={() => setRotatedCredential(null)}>I stored this credential</Button></div></Card>}
