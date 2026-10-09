@@ -66,6 +66,7 @@ describe('ApplicationsPage', () => {
     })
     renderPage(true)
     const launch = await screen.findByRole('button', { name: /register application/i })
+    launch.focus()
     fireEvent.click(launch)
     expect(screen.getByRole('dialog', { name: /register an application/i })).toBeInTheDocument()
     expect(screen.getByLabelText('Application service URL')).toBeInTheDocument()
