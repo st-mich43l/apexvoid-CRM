@@ -171,6 +171,10 @@ func validateManifest(manifest ExternalManifest) error {
 			return fmt.Errorf("%w: invalid database identifier", ErrInvalidManifest)
 		}
 	}
+	canonicalDB, canonicalSchema, canonicalRole := canonicalApplicationDatabase(manifest.Application.ID)
+	if len(canonicalDB) > 63 || manifest.Database.Name != canonicalDB || manifest.Database.Schema != canonicalSchema || manifest.Database.Role != canonicalRole {
+		return fmt.Errorf("%w: application database, schema and role must use canonical ownership names", ErrInvalidManifest)
+	}
 	if !semanticVersionPattern.MatchString(manifest.Database.MigrationBundleVersion) {
 		return fmt.Errorf("%w: invalid migration bundle version", ErrInvalidManifest)
 	}
@@ -432,14 +436,14 @@ func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, inp
 		_, _ = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='failed',last_step=$2,error_message=$3,updated_at=NOW() WHERE id=$1`, id, step, safeInstallationError(cause))
 		return ExternalInstallation{}, ExternalApplication{}, "", cause
 	}
-	database, err := s.provisionDatabase(ctx, plan.Manifest)
+	database, err := s.provisionDatabase(ctx, id, plan.Manifest)
 	if err != nil {
 		return fail("provisioning_database", err)
 	}
 	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='migrating',last_step='migrating',updated_at=NOW() WHERE id=$1`, id); err != nil {
 		return fail("migrating", err)
 	}
-	if err = s.applyMigrations(ctx, database, plan.ServiceURL, plan.Manifest, input.EnrollmentCode); err != nil {
+	if err = s.applyMigrations(ctx, database, plan.ServiceURL, plan.Manifest); err != nil {
 		return fail("migrating", err)
 	}
 	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='verifying',last_step='enrolling_service',updated_at=NOW() WHERE id=$1`, id); err != nil {
