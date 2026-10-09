@@ -62,4 +62,7 @@ func TestMigrationPolicyRejectsPrivilegedSQL(t *testing.T) {
 	if migrationForbiddenPattern.MatchString("CREATE TABLE reports (id uuid primary key)") {
 		t.Fatal("policy rejected an ordinary table")
 	}
+	if migrationForbiddenPattern.MatchString("DROP TRIGGER IF EXISTS reports_updated ON reports") {
+		t.Fatal("policy rejected application-owned trigger DDL")
+	}
 }
