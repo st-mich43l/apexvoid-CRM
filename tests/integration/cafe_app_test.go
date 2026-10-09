@@ -108,7 +108,7 @@ func TestCafePhotoBoothFirstApplication(t *testing.T) {
 	}
 	admin.must(http.MethodPost, "/api/v1/cafe/booths", ws, map[string]string{"name": "Booth A"}, &booth, http.StatusCreated)
 	admin.must(http.MethodPost, "/api/v1/cafe/booths", ws, map[string]string{"name": "Booth A"}, nil, http.StatusConflict)
-	start := time.Now().UTC().Truncate(time.Minute).Add(24 * time.Hour)
+	start := time.Now().UTC().Truncate(time.Minute).Add(5 * time.Minute)
 	end := start.Add(20 * time.Minute)
 	request := map[string]any{"booth_id": booth.ID, "package_product_id": photo, "guest_name": "Guest Group", "starts_at": start, "ends_at": end}
 	var booking struct {
