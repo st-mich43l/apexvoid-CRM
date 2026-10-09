@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/runtime"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/access"
+	"github.com/st-mich43l/apexvoid-CRM/internal/modules/cafe"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/contacts"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/core"
 	"github.com/st-mich43l/apexvoid-CRM/internal/modules/crm"
@@ -68,9 +69,14 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 		postgres.Close()
 		return nil, fmt.Errorf("register crm module: %w", err)
 	}
-	if err := framework.Modules.Register(erp.New(erp.Dependencies{Pool: postgres, Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service()})); err != nil {
+	erpModule := erp.New(erp.Dependencies{Pool: postgres, Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service()})
+	if err := framework.Modules.Register(erpModule); err != nil {
 		postgres.Close()
 		return nil, fmt.Errorf("register ERP module: %w", err)
+	}
+	if err := framework.Modules.Register(cafe.New(cafe.Dependencies{Pool: postgres, Transactions: database.NewTxManager(postgres), Products: erpModule.Service(), Authenticator: usersModule.Service(), Workspace: organizationModule.Service(), Access: accessModule.Service()})); err != nil {
+		postgres.Close()
+		return nil, fmt.Errorf("register cafe module: %w", err)
 	}
 	if err := framework.Initialize(ctx); err != nil {
 		postgres.Close()
