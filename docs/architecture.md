@@ -18,7 +18,8 @@ Transport owns request/response DTOs and HTTP mapping. Application services coor
 
 Module-owned tables use `snake_case` and a module prefix such as `contacts_contacts` or `crm_leads`. Domain timestamps use UTC `time.Time` values and PostgreSQL `TIMESTAMPTZ`; `created_at` and `updated_at` are added when a persisted domain requires them.
 
-The Phase 2 `core` module is a framework/system module, so it has application and transport layers but no domain or persistence layer. Its discovery flow is:
+The `core` module is a framework/system module, so it has application and
+transport layers but no domain or persistence layer. Its discovery flow is:
 
 ```text
 HTTP handler -> core application service -> framework metadata registry -> DTO response
@@ -66,7 +67,8 @@ supported.
 
 ## Organization, workspace, and tenant context
 
-The `organization` module owns the Phase 4 ownership boundary:
+The `organization` module owns the organization and workspace ownership
+boundary:
 
 ```text
 User -> workspace_memberships -> workspace_workspaces -> organization_organizations
@@ -84,7 +86,10 @@ Initial setup is authoritative on the backend: `GET /api/v1/setup/status` report
 
 PostgreSQL is the only external data dependency. Business repositories belong to their owning module under `infrastructure/postgres`; the platform database package owns the pool and transaction boundary helper. Application use cases call `TxManager.WithTransaction`; repositories retrieve the active transaction explicitly from the context and never start nested transactions.
 
-Modules also own migration metadata through `module.MigrationProvider`. The registry assembles migrations in resolved module dependency order and then by version. Phase 2 has no persistent framework state, so no migration files are registered.
+Modules also own migration metadata through `module.MigrationProvider`. The
+registry assembles migrations in resolved module dependency order and then by
+version. The `core` module has no persistent framework state, so no migration
+files are registered.
 
 Successful application events are published after the surrounding database transaction commits. The in-process bus is synchronous and not durable; an outbox is intentionally deferred until an integration requirement exists.
 
