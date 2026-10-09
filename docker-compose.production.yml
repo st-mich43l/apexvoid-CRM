@@ -26,7 +26,12 @@ services:
       APP_ENV: production
       SERVER_ADDRESS: :6868
       SERVER_CORS_ORIGINS: ${APEXVOID_PUBLIC_ORIGIN:?set the public HTTPS origin in .env.production}
-      DATABASE_URL: postgres://${POSTGRES_USER:-apexvoid}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}@postgres:5432/${POSTGRES_DB:-apexvoid}?sslmode=disable
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-apexvoid}
+      DATABASE_USER: ${POSTGRES_USER:-apexvoid}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
+      DATABASE_SSLMODE: disable
       AUTH_COOKIE_SECURE: "true"
       AUTH_COOKIE_SAMESITE: lax
       CONTACTS_UPLOAD_DIR: /var/lib/apexvoid/attachments
@@ -51,7 +56,7 @@ services:
       target: production
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy

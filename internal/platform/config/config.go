@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -38,6 +40,12 @@ type ServerConfig struct {
 
 type DatabaseConfig struct {
 	URL             string        `yaml:"url"`
+	Host            string        `yaml:"-"`
+	Port            string        `yaml:"-"`
+	Name            string        `yaml:"-"`
+	User            string        `yaml:"-"`
+	Password        string        `yaml:"-"`
+	SSLMode         string        `yaml:"-"`
 	MaxConns        int32         `yaml:"max_conns"`
 	MinConns        int32         `yaml:"min_conns"`
 	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime"`
@@ -106,6 +114,15 @@ func applyEnv(c *Config) {
 	setString(&c.Server.Address, "SERVER_ADDRESS")
 	setStringSlice(&c.Server.CORSOrigins, "SERVER_CORS_ORIGINS")
 	setString(&c.Database.URL, "DATABASE_URL")
+	setString(&c.Database.Host, "DATABASE_HOST")
+	setString(&c.Database.Port, "DATABASE_PORT")
+	setString(&c.Database.Name, "DATABASE_NAME")
+	setString(&c.Database.User, "DATABASE_USER")
+	setString(&c.Database.Password, "DATABASE_PASSWORD")
+	setString(&c.Database.SSLMode, "DATABASE_SSLMODE")
+	if c.Database.Host != "" {
+		c.Database.URL = postgresURL(c.Database)
+	}
 	setString(&c.Contacts.UploadDir, "CONTACTS_UPLOAD_DIR")
 	setInt64(&c.Contacts.MaxUploadBytes, "CONTACTS_MAX_UPLOAD_BYTES")
 	setDuration(&c.Auth.AccessTokenTTL, "AUTH_ACCESS_TOKEN_TTL")
@@ -125,6 +142,30 @@ func applyEnv(c *Config) {
 	setDuration(&c.Server.ShutdownTimeout, "SERVER_SHUTDOWN_TIMEOUT")
 	setInt32(&c.Database.MaxConns, "DATABASE_MAX_CONNS")
 	setInt32(&c.Database.MinConns, "DATABASE_MIN_CONNS")
+}
+
+// postgresURL builds a connection string from discrete runtime values. Using
+// url.UserPassword prevents URI-reserved password characters from changing the
+// connection semantics, while keeping the secret out of Compose interpolation.
+func postgresURL(database DatabaseConfig) string {
+	port := database.Port
+	if port == "" {
+		port = "5432"
+	}
+	sslMode := database.SSLMode
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	connection := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(database.User, database.Password),
+		Host:   net.JoinHostPort(database.Host, port),
+		Path:   database.Name,
+	}
+	query := connection.Query()
+	query.Set("sslmode", sslMode)
+	connection.RawQuery = query.Encode()
+	return connection.String()
 }
 
 func setString(target *string, key string) {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,31 @@ func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.App.Name != "from-env" || cfg.Database.URL != "postgres://env" {
 		t.Fatalf("environment overrides not applied: %+v", cfg)
+	}
+}
+
+func TestLoadBuildsDatabaseURLFromDiscreteValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "application.yaml")
+	if err := os.WriteFile(path, []byte("database:\n  url: postgres://ignored\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DATABASE_HOST", "postgres")
+	t.Setenv("DATABASE_PORT", "5432")
+	t.Setenv("DATABASE_NAME", "apexvoid")
+	t.Setenv("DATABASE_USER", "apexvoid")
+	t.Setenv("DATABASE_PASSWORD", "pa:ss/word?#@ value")
+	t.Setenv("DATABASE_SSLMODE", "disable")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(cfg.Database.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	password, present := parsed.User.Password()
+	if parsed.Host != "postgres:5432" || parsed.Path != "/apexvoid" || !present || password != "pa:ss/word?#@ value" || parsed.Query().Get("sslmode") != "disable" {
+		t.Fatalf("unexpected generated database URL components: host=%q path=%q password-present=%t sslmode=%q", parsed.Host, parsed.Path, present, parsed.Query().Get("sslmode"))
 	}
 }
 
