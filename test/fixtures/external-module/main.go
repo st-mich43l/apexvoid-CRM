@@ -24,24 +24,6 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	mux.HandleFunc("/probe-headers", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get(integration.IdentityAssertionHeader) == "" ||
-			r.Header.Get("X-ApexVoid-Gateway") != "external-application" {
-			http.Error(w, "gateway assertion missing", http.StatusForbidden)
-			return
-		}
-		for _, forbidden := range []string{
-			"X-ApexVoid-Service-Credential", "X-ApexVoid-Workspace",
-			"X-ApexVoid-Arbitrary-Identity", "X-Forwarded-User",
-			"X-Authenticated-User", "X-User-ID",
-		} {
-			if r.Header.Get(forbidden) != "" {
-				http.Error(w, "untrusted identity header forwarded", http.StatusForbidden)
-				return
-			}
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
 	mux.HandleFunc("/records", func(w http.ResponseWriter, r *http.Request) {
 		assertion, err := integration.IdentityAssertionFromRequest(r)
 		if err != nil {
