@@ -126,7 +126,7 @@ func (h *Handler) registerExternal(w http.ResponseWriter, r *http.Request) {
 		externalError(w, r, err)
 		return
 	}
-	 response := externalResponse(item, "unknown")
+	response := externalResponse(item, "unknown")
 	response["service_credential"] = credential
 	writeJSON(w, http.StatusCreated, response)
 }
@@ -196,7 +196,7 @@ func (h *Handler) updateExternal(w http.ResponseWriter, r *http.Request) {
 		externalError(w, r, err)
 		return
 	}
-	 writeJSON(w, http.StatusOK, externalResponse(item, "unknown"))
+	writeJSON(w, http.StatusOK, externalResponse(item, "unknown"))
 }
 func (h *Handler) unregisterExternal(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -212,7 +212,7 @@ func (h *Handler) unregisterExternal(w http.ResponseWriter, r *http.Request) {
 		externalError(w, r, err)
 		return
 	}
-	 w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 func (h *Handler) setWorkspaceAvailability(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -237,7 +237,7 @@ func (h *Handler) setWorkspaceAvailability(w http.ResponseWriter, r *http.Reques
 		externalError(w, r, err)
 		return
 	}
-	 writeJSON(w, http.StatusOK, map[string]any{"enabled": request.Enabled})
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": request.Enabled})
 }
 func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -253,7 +253,7 @@ func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
 		externalError(w, r, err)
 		return
 	}
-	 w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)
 }
 func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
@@ -270,7 +270,7 @@ func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
 		externalError(w, r, err)
 		return
 	}
-	 writeJSON(w, http.StatusOK, map[string]string{"service_credential": credential})
+	writeJSON(w, http.StatusOK, map[string]string{"service_credential": credential})
 }
 func (h *Handler) externalStatus(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
