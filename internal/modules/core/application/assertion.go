@@ -17,14 +17,13 @@ import (
 var ErrInvalidAssertion = errors.New("invalid external identity assertion")
 
 // IdentityAssertion is encrypted and authenticated with AES-GCM. It is an
-// opaque envelope to the external service: the contained session access token
-// is never exposed to browser JavaScript or forwarded as an HTTP credential.
+// opaque envelope to the external service. It intentionally contains no
+// browser credential; Core revalidates the referenced session at introspection.
 type IdentityAssertion struct {
 	ApplicationID string    `json:"aud"`
 	UserID        uuid.UUID `json:"sub"`
 	SessionID     uuid.UUID `json:"sid"`
 	WorkspaceID   uuid.UUID `json:"wid"`
-	AccessToken   string    `json:"token"`
 	IssuedAt      time.Time `json:"iat"`
 	ExpiresAt     time.Time `json:"exp"`
 	ID            uuid.UUID `json:"jti"`
@@ -59,12 +58,12 @@ func NewAssertionIssuer(secret string) (*AssertionIssuer, error) {
 	return &AssertionIssuer{aead: aead, now: func() time.Time { return time.Now().UTC() }}, nil
 }
 
-func (i *AssertionIssuer) Issue(applicationID string, userID, sessionID, workspaceID uuid.UUID, accessToken string) (string, error) {
-	if i == nil || applicationID == "" || userID == uuid.Nil || sessionID == uuid.Nil || workspaceID == uuid.Nil || accessToken == "" {
+func (i *AssertionIssuer) Issue(applicationID string, userID, sessionID, workspaceID uuid.UUID) (string, error) {
+	if i == nil || applicationID == "" || userID == uuid.Nil || sessionID == uuid.Nil || workspaceID == uuid.Nil {
 		return "", ErrInvalidAssertion
 	}
 	now := i.now()
-	claims := IdentityAssertion{ApplicationID: applicationID, UserID: userID, SessionID: sessionID, WorkspaceID: workspaceID, AccessToken: accessToken, IssuedAt: now, ExpiresAt: now.Add(time.Minute), ID: uuid.New()}
+	claims := IdentityAssertion{ApplicationID: applicationID, UserID: userID, SessionID: sessionID, WorkspaceID: workspaceID, IssuedAt: now, ExpiresAt: now.Add(time.Minute), ID: uuid.New()}
 	payload, err := json.Marshal(claims)
 	if err != nil {
 		return "", err
@@ -90,7 +89,7 @@ func (i *AssertionIssuer) Verify(raw, applicationID string) (IdentityAssertion, 
 		return IdentityAssertion{}, ErrInvalidAssertion
 	}
 	var claims IdentityAssertion
-	if err := json.Unmarshal(payload, &claims); err != nil || claims.ApplicationID != applicationID || claims.UserID == uuid.Nil || claims.SessionID == uuid.Nil || claims.WorkspaceID == uuid.Nil || claims.AccessToken == "" || claims.ID == uuid.Nil {
+	if err := json.Unmarshal(payload, &claims); err != nil || claims.ApplicationID != applicationID || claims.UserID == uuid.Nil || claims.SessionID == uuid.Nil || claims.WorkspaceID == uuid.Nil || claims.ID == uuid.Nil {
 		return IdentityAssertion{}, ErrInvalidAssertion
 	}
 	now := i.now()

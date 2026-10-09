@@ -1,6 +1,7 @@
 package application
 
 import (
+	"errors"
 	"testing"
 
 	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
@@ -24,6 +25,14 @@ func TestExternalContractRequiresOwnedPermissionsAndGatewayRoute(t *testing.T) {
 	app.FrontendRoute = "/reports"
 	if err := validateExternal(&app); err == nil {
 		t.Fatal("external frontend must use the gateway route")
+	}
+}
+
+func TestExternalContractRejectsUnsupportedVersion(t *testing.T) {
+	app := externalFixture()
+	app.APIContractVersion = "v2"
+	if err := validateExternal(&app); err == nil || !errors.Is(err, ErrUnsupportedContract) {
+		t.Fatalf("expected deterministic unsupported-contract error, got %v", err)
 	}
 }
 

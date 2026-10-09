@@ -29,8 +29,11 @@ var (
 	ErrExternalNotFound      = errors.New("external application not found")
 	ErrExternalDuplicate     = errors.New("external application is already registered")
 	ErrInvalidExternalModule = errors.New("invalid external application contract")
+	ErrUnsupportedContract   = errors.New("unsupported external application API contract")
 	ErrInvalidCredential     = errors.New("external service authentication failed")
 )
+
+const SupportedExternalContractVersion = "v1"
 
 type ExternalPermission struct {
 	Name, DisplayName, Description string
@@ -51,6 +54,16 @@ type ExternalApplication struct {
 type RegisterExternalInput struct {
 	Application ExternalApplication
 	Credential  string
+}
+
+// ExternalAuditEvent records an administrative state transition without any
+// credential, token, assertion, or endpoint secret material.
+type ExternalAuditEvent struct {
+	ApplicationID string
+	ActorUserID   uuid.UUID
+	WorkspaceID   *uuid.UUID
+	Action        string
+	RequestID     string
 }
 
 type ExternalStore struct {
@@ -278,6 +291,14 @@ func (s *ExternalStore) RotateCredential(ctx context.Context, id string) (string
 	}
 	return credential, nil
 }
+
+func (s *ExternalStore) RecordAudit(ctx context.Context, event ExternalAuditEvent) error {
+	if event.ApplicationID == "" || event.ActorUserID == uuid.Nil || event.Action == "" {
+		return fmt.Errorf("invalid external application audit event")
+	}
+	_, err := s.pool.Exec(ctx, `INSERT INTO core_external_application_audit(id,application_id,actor_user_id,workspace_id,action,request_id) VALUES($1,$2,$3,$4,$5,$6)`, uuid.New(), event.ApplicationID, event.ActorUserID, event.WorkspaceID, event.Action, event.RequestID)
+	return err
+}
 func (s *ExternalStore) Unregister(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -434,6 +455,9 @@ func validateExternalWithHosts(app *ExternalApplication, allowedHosts map[string
 	}
 	if !externalIdentifierPattern.MatchString(app.ID) || !externalIdentifierPattern.MatchString(app.ServiceIdentity) || !apiContractPattern.MatchString(app.APIContractVersion) {
 		return fmt.Errorf("%w: invalid application identity or API contract version", ErrInvalidExternalModule)
+	}
+	if app.APIContractVersion != SupportedExternalContractVersion {
+		return fmt.Errorf("%w: %s is supported", ErrUnsupportedContract, SupportedExternalContractVersion)
 	}
 	for _, value := range []string{app.ServiceEndpoint, app.HealthEndpoint} {
 		if err := validateServiceURL(value, allowedHosts); err != nil {

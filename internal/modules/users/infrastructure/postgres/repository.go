@@ -128,6 +128,10 @@ func (r *Repository) FindByAccessHash(ctx context.Context, hash []byte) (*domain
 	return r.findSession(ctx, `s.access_token_hash = $1`, hash)
 }
 
+func (r *Repository) FindSessionByID(ctx context.Context, id uuid.UUID) (*domain.Session, *domain.User, error) {
+	return r.findSession(ctx, `s.id = $1`, id)
+}
+
 func (r *Repository) FindByRefreshHash(ctx context.Context, hash []byte) (*domain.Session, *domain.User, error) {
 	return r.findSession(ctx, `s.refresh_token_hash = $1`, hash)
 }

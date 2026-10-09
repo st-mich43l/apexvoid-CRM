@@ -21,6 +21,9 @@ type frameworkAuthStub struct{}
 func (frameworkAuthStub) AuthenticateAccess(context.Context, string) (usersapi.Principal, error) {
 	return usersapi.Principal{}, errors.New("not used")
 }
+func (frameworkAuthStub) AuthenticateSession(context.Context, uuid.UUID, uuid.UUID) (usersapi.Principal, error) {
+	return usersapi.Principal{}, errors.New("not used")
+}
 
 func TestHealthReportsSafeRuntimeEnvironment(t *testing.T) {
 	application := &App{Environment: "production"}

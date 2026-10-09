@@ -33,6 +33,7 @@ type Session struct {
 
 type SessionRepository interface {
 	CreateSession(ctx context.Context, session Session) error
+	FindSessionByID(ctx context.Context, id uuid.UUID) (*Session, *User, error)
 	FindByAccessHash(ctx context.Context, hash []byte) (*Session, *User, error)
 	FindByRefreshHash(ctx context.Context, hash []byte) (*Session, *User, error)
 	RotateSession(ctx context.Context, id uuid.UUID, accessHash, refreshHash []byte, accessExpiresAt, refreshExpiresAt, lastUsedAt time.Time) error

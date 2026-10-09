@@ -238,6 +238,16 @@ func (s *Service) AuthenticateAccess(ctx context.Context, token string) (api.Pri
 	return api.Principal{UserID: user.ID, SessionID: session.ID, MustChangePassword: user.MustChangePassword}, nil
 }
 
+// AuthenticateSession validates a gateway assertion without requiring the
+// opaque browser access token to leave the platform boundary.
+func (s *Service) AuthenticateSession(ctx context.Context, userID, sessionID uuid.UUID) (api.Principal, error) {
+	session, user, err := s.sessions.FindSessionByID(ctx, sessionID)
+	if err != nil || session == nil || user == nil || session.UserID != userID || session.RevokedAt != nil || time.Now().UTC().After(session.AccessExpiresAt) || !user.IsUsable() {
+		return api.Principal{}, domain.ErrSessionInvalid
+	}
+	return api.Principal{UserID: user.ID, SessionID: session.ID, MustChangePassword: user.MustChangePassword}, nil
+}
+
 func (s *Service) Refresh(ctx context.Context, token, userAgent string) (string, string, api.Principal, error) {
 	session, user, err := s.sessions.FindByRefreshHash(ctx, hashToken(token))
 	if err != nil || session == nil || user == nil || session.RevokedAt != nil || time.Now().UTC().After(session.RefreshExpiresAt) || !user.IsUsable() {

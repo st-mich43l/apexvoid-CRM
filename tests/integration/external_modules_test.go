@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
@@ -80,7 +79,6 @@ func TestExternalModuleIntegrationLifecycle(t *testing.T) {
 	if !externalModuleDiscovered(discovered, "reports") {
 		t.Fatal("enabled external module was not discovered for its authorized workspace")
 	}
-	accessToken := accessCookie(t, admin, server.URL)
 	userID, _ := uuid.Parse(identity.User.ID)
 	workspaceUUID, _ := uuid.Parse(workspaceID)
 	var sessionID uuid.UUID
@@ -91,7 +89,7 @@ func TestExternalModuleIntegrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertion, err := issuer.Issue("reports", userID, sessionID, workspaceUUID, accessToken)
+	assertion, err := issuer.Issue("reports", userID, sessionID, workspaceUUID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,21 +162,6 @@ func externalModuleDiscovered(items []struct {
 		}
 	}
 	return false
-}
-
-func accessCookie(t *testing.T, client *apiClient, rawURL string) string {
-	t.Helper()
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, cookie := range client.client.Jar.Cookies(parsed) {
-		if cookie.Name == "apexvoid_access_token" {
-			return cookie.Value
-		}
-	}
-	t.Fatal("access cookie was not present")
-	return ""
 }
 
 func serviceRequest(t *testing.T, client *apiClient, baseURL, method, path, credential string, body any) *http.Response {
