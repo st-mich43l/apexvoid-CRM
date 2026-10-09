@@ -80,35 +80,145 @@ settings belong to the application route declared in its manifest; platform,
 organization, workspace, and user settings remain owned by their respective
 platform services.
 
-## External application enrollment
+## External application enrollment (v1 — secure bootstrap)
 
-External services can be registered without copying their metadata into an Enterprise deployment. The service must expose a versioned manifest at:
+An independent Docker application is NOT compiled into Enterprise. Its Go backend
+and React/Vite frontend remain in the standalone repository and its business
+database lives on the **existing** PostgreSQL server, separately owned.
 
-```text
-GET /.well-known/apexvoid/manifest.json
-X-ApexVoid-Enrollment-Code: <one-time-code>
-```
+### Docker startup and the administrator form
 
-The service URL must be an approved host and redirects are rejected. Enterprise parses the manifest with unknown fields disabled and validates the application ID, API contract, application-owned permissions, gateway paths, database identifiers, migration ordering, and SHA-256 pins before showing the approval screen. The one-time enrollment code is the operator-controlled trust bootstrap; deployments that require signed manifests should enforce that at the service boundary before exposing the manifest.
+After starting, the standalone service should print its application ID, Docker
+DNS service URL, `/.well-known/apexvoid/manifest.json`, and a randomly generated
+**single-use, high-entropy enrollment code of at least 32 characters**. The
+operator opens Enterprise → Applications → Connect service, enters the service
+URL and code, reviews the discovered contract, explicitly approves all five
+installation operations, and selects the workspaces to enable.
 
-Example manifest:
+Never print permanent application service credentials or database passwords to
+Docker logs. The enrollment code is sensitive even if it expires quickly. The
+service must persist a consumed-code marker and reject re-use. A previously
+completed identical enrollment may return a safe idempotent success without
+re-writing secrets.
+
+### Authenticated discovery over internal HTTP
+
+Enterprise calls `GET /.well-known/apexvoid/manifest.json` **without sending
+the enrollment code as a header**. The service MUST HMAC-SHA256 the exact
+manifest response bytes using the secret enrollment code:
+
+- Domain prefix: `apexvoid-manifest-v1\n` (literal newline at end).
+- HMAC key: UTF-8 bytes of the enrollment code.
+- Response header: `X-ApexVoid-Manifest-Signature: sha256=<64 hex characters>`.
+- The response must be the *exact* bytes signed; no middleware reformatting.
+- Use the public Go helper `integration.SignManifest(code, manifestJSON)`.
+
+Enterprise checks the signature with constant-time comparison, enforces the
+configured Docker DNS hostname allowlist, disables redirects, enforces small
+response limits and validates the strict `v1` manifest contract. A SHA-256
+migration checksum is anchored by this authenticated manifest. Migration GETs
+are same-origin and do not expose the pairing code.
+
+The manifest JSON shape remains the versioned one below:
 
 ```json
 {
   "manifest_version": "v1",
-  "application": { "id": "reports", "display_name": "Reports", "description": "Trusted reports", "version": "1.0.0", "api_contract_version": "v1" },
-  "service": { "identity": "reports-service", "health_path": "/health", "enrollment_path": "/.well-known/apexvoid/enroll", "frontend_route": "/apps/reports", "api_route": "/api" },
-  "database": { "name": "apexvoid_reports", "schema": "reports", "role": "apexvoid_reports", "migration_bundle_version": "1.0.0" },
-  "permissions": [{ "name": "reports.report.read", "display_name": "Read reports", "description": "View reports", "scope": "workspace" }],
-  "access": { "match": "all", "permissions": ["reports.report.read"] },
-  "migrations": [{ "version": 1, "path": "/.well-known/apexvoid/migrations/001-init.sql", "sha256": "<64 lowercase hexadecimal characters>" }]
+  "application": {
+    "id": "cafe", "display_name": "ApexVoid Café",
+    "description": "Coffee counter and photo booth booking",
+    "version": "0.1.0", "api_contract_version": "v1"
+  },
+  "service": {
+    "identity": "cafe-service", "health_path": "/health",
+    "enrollment_path": "/.well-known/apexvoid/enroll",
+    "frontend_route": "/apps/cafe", "api_route": "/api"
+  },
+  "database": {
+    "name": "apexvoid_cafe", "schema": "cafe",
+    "role": "apexvoid_cafe", "migration_bundle_version": "0.1.0"
+  },
+  "permissions": [{
+    "name": "cafe.order.read", "display_name": "View orders",
+    "description": "View café orders", "scope": "workspace"
+  }],
+  "access": {"match": "all", "permissions": ["cafe.order.read"]},
+  "migrations": [{
+    "version": 1,
+    "path": "/.well-known/apexvoid/migrations/001-init.sql",
+    "sha256": "<exact SHA256 of published SQL bytes>"
+  }]
 }
 ```
 
-The administrator must explicitly approve registration, permissions, database, schema, and migrations, and select at least one workspace. Approval creates an isolated database, role, schema, and migration ledger using `DATABASE_PROVISIONING_URL`; the runtime `DATABASE_URL` is not used as an implicit PostgreSQL administrator. The migration worker fetches only the manifest-declared same-origin paths, enforces a size limit, verifies each checksum, rejects privileged/destructive SQL, and records applied checksums in `<schema>._apexvoid_migration_history`.
+### Protected credential enrollment
 
-After migrations, Enterprise posts a short-lived enrollment exchange to `service.enrollment_path`. The payload contains the application identity, generated service credential, dedicated database name/schema/role/password, migration bundle, and API contract version. The raw enrollment code and credentials are never written to the Enterprise database or logs; the service is responsible for storing its credentials securely. A failed attempt leaves the database and ledger intact and records a bounded error so a retry cannot silently destroy state.
+Enterprise creates the dedicated database and role with an explicitly
+configured `DATABASE_PROVISIONING_URL` administrator identity. It encrypts
+the role password at rest with a stable, independent
+`DATABASE_PROVISIONING_KEY` (at least 32 random characters). Back up this
+key: changing it invalidates resumption of unfinished installations. Neither
+the application role nor the Enterprise runtime role should be the database
+provisioner.
 
-Successful external applications are surfaced through the normal framework discovery endpoint and are added to the sidebar on the next bounded refresh or workspace change. Their availability is workspace-specific: a newly enrolled application is not globally visible to every workspace. The existing manual registration and credential rotation endpoints remain available for compatibility, but guided enrollment is the preferred path.
+App IDs determine immutable database ownership names: `cafe` maps to database
+`apexvoid_cafe`, schema `cafe`, and role `apexvoid_cafe`. For IDs with `-`
+or `.`, those separators are canonicalized to `_`; database/role collisions
+are rejected. A pre-existing unclaimed database/role is **never** adopted.
+The restricted login owns only its schema, not the entire database, and has
+no superuser, role creation or database creation privileges. Migration SQL is
+executed with that restricted login; statement timeouts and transaction locks
+apply. No Python, shell or Docker socket execution is required.
 
-For local development, set `INTEGRATIONS_ALLOWED_SERVICE_HOSTS` to the service DNS names and provide `DATABASE_PROVISIONING_URL` only when testing approval. Do not mount the Docker socket, add a second PostgreSQL container, or grant an external service access to the Enterprise database.
+After approved migrations, Enterprise `POST`s an AES-256-GCM JSON envelope to
+the service's `enrollment_path`. The one-time code is never sent over HTTP:
+
+```json
+{
+  "version": "v1",
+  "nonce": "<base64url-no-padding 12-byte random nonce>",
+  "ciphertext": "<base64url-no-padding AEAD encrypted credential JSON>"
+}
+```
+
+Encryption key: SHA-256 of UTF-8 `apexvoid-enrollment-v1:` concatenated
+with the enrollment code. AEAD associated data:
+`apexvoid-enrollment-v1` (UTF-8). Plaintext JSON contains
+`application_id`, `service_credential`, `api_contract_version`, and
+`database: {name, schema, role, password, migration_bundle_version}`.
+Use public `integration.OpenEnrollment(code, payload)` to authenticate/decrypt,
+validate expected identity, persist secrets securely, and mark the code
+consumed before acknowledging completion.
+
+This protects permanent bootstrap secrets on an administrator-controlled
+internal HTTP network, but TLS is additionally required for deployments
+across untrusted networks. Protect the enrollment code at its source;
+low-entropy operator-supplied secrets are unacceptable.
+
+### Idempotence, review and lifecycle
+
+Each installation has an explicit persisted ownership identity. Another
+application cannot adopt its database, role or migration history. Failed
+attempts reuse encrypted role credentials without silently rotating the
+password. PostgreSQL migrations are run in transactions under application
+advisory locks; the application and Enterprise each track migration checksums.
+SQL regex screening is **only defense in depth**: the actual boundary is the
+database/role isolation, authenticated reviewed manifest, restricted database
+grants and administrator approval. Do not treat checksums as a publisher trust
+mechanism.
+
+The app remains disabled in the gateway until enrollment, service health
+verification, workspace grants and final activation succeed. Final activation
+uses a transaction. Failed attempts remain tracked and can be retried.
+
+The main Applications page refreshes discovery on a bounded 30-second polling
+interval; no Enterprise image rebuild is needed to show newly registered
+external apps. The existing manual registration and external service APIs
+continue for compatibility. Updates are currently **detected**, not silently
+installed or migrated; a separate reviewed update workflow is required.
+
+For application deployment, provision a trusted shared Docker network and add
+the service DNS hostname to `INTEGRATIONS_ALLOWED_SERVICE_HOSTS`. Configure
+`DATABASE_PROVISIONING_URL` and `DATABASE_PROVISIONING_KEY` in Enterprise
+secrets. The standalone service must store its enrollment state in a persistent
+mount/secret store; process-local memory is insufficient across restarts.
