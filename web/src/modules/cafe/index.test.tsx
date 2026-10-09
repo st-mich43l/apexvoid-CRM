@@ -13,7 +13,7 @@ const latte: ERPProduct = {
   status: 'active', version: 1, created_at: '', updated_at: '',
 }
 const photo: ERPProduct = { ...latte, id: 'service-1', sku: 'PHOTO-20M', name: 'Photo Session 20m', kind: 'service', unit_price: '80000.0000' }
-function setup(id: 'cafe-counter' | 'cafe-booths', can = (_permission: string) => true) {
+function setup(id: 'cafe-counter' | 'cafe-booths', can: (permission: string) => boolean = () => true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const element = cafeModule.routes?.find(route => route.id === id)?.element
   if (!element) throw new Error('missing cafe route')
