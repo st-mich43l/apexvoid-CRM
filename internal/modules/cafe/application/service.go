@@ -140,7 +140,7 @@ func (s *Service) TransitionBooking(ctx context.Context, w, id uuid.UUID, action
 	default:
 		return domain.Booking{}, domain.ErrInvalid
 	}
-	tag, err := s.q(ctx).Exec(ctx, `UPDATE cafe_bookings SET status=$3,updated_at=NOW() WHERE workspace_id=$1 AND id=$2 AND status=$4`, w, id, to, from)
+	tag, err := s.q(ctx).Exec(ctx, `UPDATE cafe_bookings SET status=$3,updated_at=NOW() WHERE workspace_id=$1 AND id=$2 AND status=$4 AND ($5::boolean = FALSE OR (starts_at <= NOW() + INTERVAL '10 minutes' AND ends_at > NOW()))`, w, id, to, from, action == "check-in")
 	if err != nil {
 		return domain.Booking{}, mapped(err)
 	}
