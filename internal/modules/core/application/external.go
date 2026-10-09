@@ -61,6 +61,7 @@ type RegisterExternalInput struct {
 	Application         ExternalApplication
 	Credential          string
 	WorkspaceDefaultSet bool
+	DeferActivation bool
 }
 
 // ExternalAuditEvent records an administrative state transition without any
@@ -126,7 +127,7 @@ func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInpu
 	if err = s.validateCatalog(ctx, tx, app); err != nil {
 		return ExternalApplication{}, "", err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO core_external_applications (id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_hash,status,workspace_default_enabled,installation_id,database_name,database_schema,database_role,migration_bundle_version,installed_manifest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,'registering',$14,$15,$16,$17,$18,$19,$20)`, app.ID, app.DisplayName, app.Description, app.Version, app.APIContractVersion, app.ServiceIdentity, app.ServiceEndpoint, app.HealthEndpoint, app.FrontendRoute, app.SettingsRoute, app.Access.Match, mustJSON(app.Access.Permissions), hashCredential(credential), app.WorkspaceDefaultEnabled, app.InstallationID, nullableText(app.DatabaseName), nullableText(app.DatabaseSchema), nullableText(app.DatabaseRole), nullableText(app.MigrationBundleVersion), nullableJSON(app.InstalledManifest))
+	_, err = tx.Exec(ctx, `INSERT INTO core_external_applications (id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_hash,status,workspace_default_enabled,installation_id,database_name,database_schema,database_role,migration_bundle_version,installed_manifest) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$21,$13,'registering',$14,$15,$16,$17,$18,$19,$20)`, app.ID, app.DisplayName, app.Description, app.Version, app.APIContractVersion, app.ServiceIdentity, app.ServiceEndpoint, app.HealthEndpoint, app.FrontendRoute, app.SettingsRoute, app.Access.Match, mustJSON(app.Access.Permissions), hashCredential(credential), app.WorkspaceDefaultEnabled, app.InstallationID, nullableText(app.DatabaseName), nullableText(app.DatabaseSchema), nullableText(app.DatabaseRole), nullableText(app.MigrationBundleVersion), nullableJSON(app.InstalledManifest), !input.DeferActivation)
 	if err != nil {
 		if isUnique(err) {
 			return ExternalApplication{}, "", ErrExternalDuplicate
@@ -168,6 +169,7 @@ func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInpu
 		return ExternalApplication{}, "", fmt.Errorf("activate external application: %w", err)
 	}
 	app.Status = "active"
+	app.Enabled = !input.DeferActivation
 	return app, credential, nil
 }
 
