@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 )
 
 const ManifestSignatureHeader = "X-ApexVoid-Manifest-Signature"
@@ -56,8 +57,9 @@ func OpenEnrollment(setupCode string, data []byte) (EnrollmentCredentials,error)
 	decoder.DisallowUnknownFields()
 	if err:=decoder.Decode(&envelope);err!=nil||envelope.Version!="v1"{return EnrollmentCredentials{},errors.New("invalid enrollment envelope")}
 	var trailing any
-	if decoder.Decode(&trailing)!=nil { // EOF expected; reject extra JSON values below.
-	} else {return EnrollmentCredentials{},errors.New("unexpected additional enrollment payload")}
+	if err:=decoder.Decode(&trailing);err!=io.EOF {
+		return EnrollmentCredentials{},errors.New("unexpected additional enrollment payload")
+	}
 	nonce,err:=base64.RawURLEncoding.DecodeString(envelope.Nonce)
 	if err!=nil{return EnrollmentCredentials{},err}
 	ciphertext,err:=base64.RawURLEncoding.DecodeString(envelope.Ciphertext)
