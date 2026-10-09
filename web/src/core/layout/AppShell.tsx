@@ -152,7 +152,10 @@ function Sidebar({ sections, activePath, activeWorkspace, workspaces, selectWork
                 activePath={activePath}
                 groupClosed={Boolean(closedGroups[item.id])}
                 onToggleGroup={() => onToggleGroup(item.id)}
-                onExpand={onExpand}
+                onExpand={() => {
+                  onExpand()
+                  if (closedSections[section.id]) onToggleSection(section.id)
+                }}
                 onNavigate={onClose}
               />,
             )}
