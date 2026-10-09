@@ -2,15 +2,60 @@
 
 ## Development
 
-Copy `.env.example` to `.env` and run `docker compose up -d`. Development uses
-the Vite service and deliberately retains local bootstrap defaults. Do not use
-that Compose file for a public deployment.
+Create the shared networks once, copy `.env.example` to `.env`, and run
+`docker compose up -d`. The backend is attached to both networks: `apexvoid-apps`
+for service-to-service traffic and `apexvoid-data` for PostgreSQL. A Café
+Compose project must join both networks, use the service alias `cafe`, and
+must not publish its database or backend to the public host.
+
+```bash
+docker network create apexvoid-apps 2>/dev/null || true
+docker network create apexvoid-data 2>/dev/null || true
+cp .env.example .env
+docker compose up -d
+```
+
+The backend receives the integration variables explicitly; Docker does not
+implicitly pass values from `.env` into a container. In particular,
+`DATABASE_PROVISIONING_URL` must use the Docker hostname `postgres`, not
+`localhost`, and `INTEGRATIONS_ALLOWED_SERVICE_HOSTS` should include `cafe`.
+The development PostgreSQL init hook creates `apexvoid_provisioner` only for a
+fresh volume when `DATABASE_PROVISIONER_PASSWORD` is set. Existing volumes
+require the DBA to create the separately managed role and grant it only the
+provisioning privileges required by the documented workflow.
+
+A separate Café Compose project joins the same externally managed networks:
+
+```yaml
+services:
+  cafe:
+    networks:
+      apexvoid-apps:
+        aliases: [cafe]
+      apexvoid-data:
+
+networks:
+  apexvoid-apps:
+    external: true
+    name: apexvoid-apps
+  apexvoid-data:
+    external: true
+    name: apexvoid-data
+```
+
+Only the Café backend needs both networks. Its browser-facing frontend may be
+published separately, but the Enterprise backend must resolve the backend as
+`cafe` on `apexvoid-apps`.
 
 ## Production startup
 
-1. Copy `.env.production.example` to `.env.production` and replace every
-   placeholder with a unique secret. Set `APEXVOID_PUBLIC_ORIGIN` to the HTTPS
-   origin exposed by your TLS ingress.
+1. Create the shared networks, copy `.env.production.example` to
+   `.env.production`, and replace every placeholder with a unique secret. Set
+   `APEXVOID_PUBLIC_ORIGIN` to the HTTPS origin exposed by your TLS ingress.
+   Configure `INTEGRATIONS_ALLOWED_SERVICE_HOSTS=cafe`, keep
+   `DATABASE_PROVISIONING_URL` on the Docker `postgres` hostname, and use a
+   separately managed `apexvoid_provisioner` role. Do not reuse the runtime
+   `POSTGRES_USER` for application traffic.
 2. Run `docker compose --env-file .env.production -f docker-compose.production.yml up -d --build`.
 3. Confirm `GET /ready` through the frontend reverse proxy and sign in with the
    explicit bootstrap administrator. The server fails before startup if secure
@@ -30,6 +75,14 @@ The backend receives database host, port, name, user, and password as separate
 environment values. It constructs an escaped PostgreSQL URI internally, so a
 password containing URI-reserved characters remains valid. Never print the
 resulting URI or place it in a shell command.
+
+The production Compose file fails early when the assertion secret, trusted
+service-host allowlist, provisioning URL, or provisioning encryption key is
+missing. `DATABASE_PROVISIONING_KEY` must remain stable across restarts because
+it decrypts provisioned application credentials. The PostgreSQL init hook only
+creates the provisioner role on a new data volume; for an existing deployment,
+create or rotate that role through the normal DBA process and update the URL in
+the deployment secret store.
 
 ### Attachment storage
 
