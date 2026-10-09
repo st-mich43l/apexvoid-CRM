@@ -1,4 +1,4 @@
-import { Boxes, ExternalLink, Settings2, TriangleAlert } from 'lucide-react'
+import { BookOpen, Boxes, ExternalLink, Settings2, TriangleAlert } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useOutletContext } from 'react-router-dom'
 import { useState } from 'react'
@@ -28,7 +28,7 @@ export function ApplicationsPage() {
   const contracts = registered.data ? contractReport(compiled, registered.data.filter(item => item.deployment !== 'external')) : []
   const external = registered.data?.filter(item => item.deployment === 'external') ?? []
 
-  return <PageContainer variant="workspace"><PageHeader eyebrow="Platform" title="Applications" description="Internal modules and trusted external services registered with ApexVoid. The platform controls availability and access; it never installs arbitrary software." />
+  return <PageContainer variant="workspace"><PageHeader eyebrow="Platform" title="Applications" description="Internal modules and trusted external services registered with ApexVoid. The platform controls availability and access; it never installs arbitrary software." actions={<Link to="/docs/first-application" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-card px-3.5 text-sm font-medium text-foreground transition hover:border-primary/40 hover:bg-muted"><BookOpen size={16} className="text-primary" />Application setup guide</Link>} />
     {registered.isLoading && <Card><LoadingState label="Loading registered applications…" /></Card>}
     {registered.isError && <ErrorState message="Unable to load application discovery metadata." onRetry={() => void registered.refetch()} />}
     {!registered.isLoading && !registered.isError && contracts.length + external.length === 0 && <Card><EmptyState title="No applications registered" description="This runtime currently exposes platform services only." /></Card>}
