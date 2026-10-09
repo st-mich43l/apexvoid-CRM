@@ -395,6 +395,20 @@ func (s *ExternalStore) CheckForUpdate(ctx context.Context, id string) (External
 }
 
 func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, input ApproveExternalInput) (ExternalInstallation, ExternalApplication, string, error) {
+	// Serialize installation attempts across all Enterprise backend instances.
+	// This lock is bound to an acquired connection rather than a transaction.
+	connection, err := s.pool.Acquire(ctx)
+	if err != nil { return ExternalInstallation{}, ExternalApplication{}, "", err }
+	defer connection.Release()
+	lockKey := "apexvoid-external-install:" + id.String()
+	if _, err = connection.Exec(ctx, "SELECT pg_advisory_lock(hashtext($1))", lockKey); err != nil {
+		return ExternalInstallation{}, ExternalApplication{}, "", err
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = connection.Exec(releaseCtx, "SELECT pg_advisory_unlock(hashtext($1))", lockKey)
+	}()
 	plan, err := s.GetInstallation(ctx, id)
 	if err != nil {
 		return ExternalInstallation{}, ExternalApplication{}, "", err
@@ -429,9 +443,9 @@ func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, inp
 	if !constantEqual(enrollmentHash, hashCredential(input.EnrollmentCode)) {
 		return ExternalInstallation{}, ExternalApplication{}, "", ErrInvalidCredential
 	}
-	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='provisioning',last_step='provisioning_database',error_message='',selected_workspace_ids=$2,updated_at=NOW() WHERE id=$1`, id, mustJSON(input.WorkspaceIDs)); err != nil {
-		return ExternalInstallation{}, ExternalApplication{}, "", err
-	}
+	command, err := s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='provisioning',last_step='provisioning_database',error_message='',selected_workspace_ids=$2,updated_at=NOW() WHERE id=$1 AND status IN ('pending_approval','failed')`, id, mustJSON(input.WorkspaceIDs))
+	if err != nil { return ExternalInstallation{}, ExternalApplication{}, "", err }
+	if command.RowsAffected() != 1 { return ExternalInstallation{}, ExternalApplication{}, "", ErrInstallationState }
 	fail := func(step string, cause error) (ExternalInstallation, ExternalApplication, string, error) {
 		_, _ = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='failed',last_step=$2,error_message=$3,updated_at=NOW() WHERE id=$1`, id, step, safeInstallationError(cause))
 		return ExternalInstallation{}, ExternalApplication{}, "", cause
@@ -449,36 +463,92 @@ func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, inp
 	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='verifying',last_step='enrolling_service',updated_at=NOW() WHERE id=$1`, id); err != nil {
 		return fail("enrolling_service", err)
 	}
-	credential, err := newCredential()
-	if err != nil {
+	// Keep the service credential encrypted until activation, allowing retries
+	// to re-use the same credential instead of orphaning a provisioned service.
+	var protectedCredential []byte
+	if err = s.pool.QueryRow(ctx, `SELECT service_credential_encrypted FROM core_external_application_installations WHERE id=$1`, id).Scan(&protectedCredential); err != nil {
 		return fail("enrolling_service", err)
 	}
-	enrollmentEndpoint, err := manifestEndpoint(plan.ServiceURL, plan.Manifest.Service.EnrollmentPath)
-	if err != nil {
-		return fail("enrolling_service", err)
-	}
-	enrollmentPayload, _ := json.Marshal(map[string]any{"application_id": plan.ApplicationID, "service_credential": credential, "database": map[string]string{"name": database.Name, "schema": database.Schema, "role": database.Role, "password": database.Password, "migration_bundle_version": plan.Manifest.Database.MigrationBundleVersion}, "api_contract_version": plan.Manifest.Application.APIContractVersion})
-	if err = postEnrollment(ctx, s.client, enrollmentEndpoint, input.EnrollmentCode, enrollmentPayload); err != nil {
-		return fail("enrolling_service", err)
-	}
-	permissions := append([]ExternalPermission(nil), plan.Manifest.Permissions...)
-	app := ExternalApplication{ID: plan.Manifest.Application.ID, DisplayName: plan.Manifest.Application.DisplayName, Description: plan.Manifest.Application.Description, Version: plan.Manifest.Application.Version, APIContractVersion: plan.Manifest.Application.APIContractVersion, ServiceIdentity: plan.Manifest.Service.Identity, ServiceEndpoint: plan.ServiceURL, HealthEndpoint: mustManifestEndpoint(plan.ServiceURL, plan.Manifest.Service.HealthPath), FrontendRoute: plan.Manifest.Service.FrontendRoute, SettingsRoute: plan.Manifest.Service.SettingsRoute, Access: plan.Manifest.Access, Permissions: permissions, WorkspaceDefaultEnabled: false, InstallationID: &plan.ID, DatabaseName: database.Name, DatabaseSchema: database.Schema, DatabaseRole: database.Role, MigrationBundleVersion: plan.Manifest.Database.MigrationBundleVersion, InstalledManifest: mustJSON(plan.Manifest)}
-	registered, _, err := s.Register(ctx, RegisterExternalInput{Application: app, Credential: credential, WorkspaceDefaultSet: true})
-	if err != nil {
-		return fail("registering_catalog", err)
-	}
-	for _, workspaceID := range input.WorkspaceIDs {
-		if _, err = s.pool.Exec(ctx, `INSERT INTO core_external_application_workspaces(application_id,workspace_id,enabled) VALUES($1,$2,TRUE) ON CONFLICT(application_id,workspace_id) DO UPDATE SET enabled=TRUE,updated_at=NOW()`, registered.ID, workspaceID); err != nil {
-			return fail("assigning_workspaces", err)
+	var credential string
+	if len(protectedCredential) != 0 {
+		credential, err = recoverProvisioningPassword(s.provisioningKey, protectedCredential)
+	} else {
+		credential, err = newCredential()
+		if err == nil { protectedCredential, err = protectProvisioningPassword(s.provisioningKey, credential) }
+		if err == nil {
+			_, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET service_credential_encrypted=$2 WHERE id=$1`, id, protectedCredential)
 		}
 	}
-	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='active',last_step='active',updated_at=NOW() WHERE id=$1`, id); err != nil {
+	if err != nil { return fail("enrolling_service", err) }
+	enrollmentEndpoint, err := manifestEndpoint(plan.ServiceURL, plan.Manifest.Service.EnrollmentPath)
+	if err != nil { return fail("enrolling_service", err) }
+	permissions := append([]ExternalPermission(nil), plan.Manifest.Permissions...)
+	app := ExternalApplication{
+		ID: plan.Manifest.Application.ID, DisplayName: plan.Manifest.Application.DisplayName,
+		Description: plan.Manifest.Application.Description, Version: plan.Manifest.Application.Version,
+		APIContractVersion: plan.Manifest.Application.APIContractVersion,
+		ServiceIdentity: plan.Manifest.Service.Identity, ServiceEndpoint: plan.ServiceURL,
+		HealthEndpoint: mustManifestEndpoint(plan.ServiceURL, plan.Manifest.Service.HealthPath),
+		FrontendRoute: plan.Manifest.Service.FrontendRoute, SettingsRoute: plan.Manifest.Service.SettingsRoute,
+		Access: plan.Manifest.Access, Permissions: permissions, WorkspaceDefaultEnabled: false,
+		InstallationID: &plan.ID, DatabaseName: database.Name, DatabaseSchema: database.Schema,
+		DatabaseRole: database.Role, MigrationBundleVersion: plan.Manifest.Database.MigrationBundleVersion,
+		InstalledManifest: mustJSON(plan.Manifest),
+	}
+	registered, registeredErr := s.Get(ctx, app.ID)
+	if registeredErr != nil && !errors.Is(registeredErr, ErrExternalNotFound) { return fail("registering_catalog", registeredErr) }
+	if registeredErr == nil {
+		if registered.InstallationID == nil || *registered.InstallationID != id || registered.Enabled {
+			return fail("registering_catalog", errors.New("application already active or owned by a different installation"))
+		}
+	} else {
+		enrollmentPayload, _ := json.Marshal(map[string]any{
+			"application_id": plan.ApplicationID, "service_credential": credential,
+			"database": map[string]string{
+				"name": database.Name, "schema": database.Schema, "role": database.Role,
+				"password": database.Password,
+				"migration_bundle_version": plan.Manifest.Database.MigrationBundleVersion,
+			},
+			"api_contract_version": plan.Manifest.Application.APIContractVersion,
+		})
+		if err = postEnrollment(ctx, s.client, enrollmentEndpoint, input.EnrollmentCode, enrollmentPayload); err != nil {
+			return fail("enrolling_service", err)
+		}
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_installations SET status='verifying',last_step='verifying_service',updated_at=NOW() WHERE id=$1`, id); err != nil {
+		return fail("verifying_service", err)
+	}
+	if health := s.Health(ctx, app); health != "healthy" {
+		return fail("verifying_service", fmt.Errorf("application health verification failed (%s)", health))
+	}
+	if registeredErr != nil {
+		registered, _, err = s.Register(ctx, RegisterExternalInput{
+			Application: app, Credential: credential, WorkspaceDefaultSet: true, DeferActivation: true,
+		})
+		if err != nil { return fail("registering_catalog", err) }
+	}
+	// The service remains gateway-disabled until ALL workspace grants and the
+	// installation lifecycle are committed in one Enterprise DB transaction.
+	activation, err := s.pool.Begin(ctx)
+	if err != nil { return fail("assigning_workspaces", err) }
+	for _, workspaceID := range input.WorkspaceIDs {
+		_, err = activation.Exec(ctx, `INSERT INTO core_external_application_workspaces(application_id,workspace_id,enabled) VALUES($1,$2,TRUE) ON CONFLICT(application_id,workspace_id) DO UPDATE SET enabled=TRUE,updated_at=NOW()`, registered.ID, workspaceID)
+		if err != nil { break }
+	}
+	if err == nil {
+		_, err = activation.Exec(ctx, `UPDATE core_external_applications SET enabled=TRUE,updated_at=NOW() WHERE id=$1 AND status='active' AND enabled=FALSE AND installation_id=$2`, registered.ID, id)
+	}
+	if err == nil {
+		_, err = activation.Exec(ctx, `UPDATE core_external_application_installations SET status='active',last_step='active',service_credential_encrypted=NULL,updated_at=NOW() WHERE id=$1 AND status='verifying'`, id)
+	}
+	if err != nil {
+		_ = activation.Rollback(ctx)
 		return fail("activating", err)
 	}
+	if err = activation.Commit(ctx); err != nil { return fail("activating", err) }
+	registered.Enabled = true
 	plan, err = s.GetInstallation(ctx, id)
-	if err != nil {
-		return ExternalInstallation{}, ExternalApplication{}, "", err
-	}
+	if err != nil { return ExternalInstallation{}, ExternalApplication{}, "", err }
 	return plan, registered, credential, nil
 }
 
