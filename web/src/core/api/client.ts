@@ -125,6 +125,17 @@ export const api = {
     download: async (id: string, attachmentID: string) => { const workspaceID = window.localStorage.getItem('apexvoid.active_workspace'); const headers = new Headers(); if (workspaceID) headers.set('X-ApexVoid-Workspace', workspaceID); const response = await fetch(`${baseURL}/api/v1/contacts/${id}/attachments/${attachmentID}`, { headers, credentials: 'include' }); if (!response.ok) throw new Error(`Download failed with status ${response.status}`); return response.blob() },
     removeAttachment: (id: string, attachmentID: string) => request<void>(`/api/v1/contacts/${id}/attachments/${attachmentID}`, { method: 'DELETE' }),
   },
+  erp: {
+    products: (params: { search?: string; page?: number; limit?: number; include_archived?: boolean } = {}) => {
+      const query = new URLSearchParams()
+      Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') query.set(key, String(value)) })
+      return request<ERPProductList>(`/api/v1/erp/products?${query}`)
+    },
+    product: (id: string) => request<ERPProduct>(`/api/v1/erp/products/${id}`),
+    createProduct: (body: ERPProductInput) => request<ERPProduct>('/api/v1/erp/products', json(body)),
+    updateProduct: (id: string, body: ERPProductInput & { version: number }) => request<ERPProduct>(`/api/v1/erp/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    setArchived: (id: string, version: number, archived: boolean) => request<ERPProduct>(`/api/v1/erp/products/${id}/${archived ? 'archive' : 'restore'}`, json({ version })),
+  },
   crm: {
     pipelines: () => request<Pipeline[]>('/api/v1/crm/pipelines'),
     allPipelines: () => request<Pipeline[]>('/api/v1/crm/pipelines?include_archived=true'),
@@ -217,3 +228,7 @@ export type RuntimeField = { id: string; workspace_id: string; entity: string; k
 export type FormSection = { id: string; workspace_id: string; entity: string; name: string; description: string; display_order: number; created_at: string; updated_at: string }
 export type SavedView = { id: string; workspace_id: string; entity: string; owner_user_id: string; name: string; shared: boolean; filters: { field: string; operator: string; value?: unknown }[]; columns: string[]; sort_field: string; sort_direction: string; created_at: string; updated_at: string }
 export type SavedViewInput = Omit<SavedView, 'id' | 'workspace_id' | 'owner_user_id' | 'created_at' | 'updated_at'>
+
+export type ERPProductInput = { sku: string; name: string; description: string; kind: 'good' | 'service'; unit: 'unit' | 'hour' | 'kg'; unit_price: string; currency: string }
+export type ERPProduct = ERPProductInput & { id: string; workspace_id: string; status: 'active' | 'archived'; version: number; created_at: string; updated_at: string }
+export type ERPProductList = { items: ERPProduct[]; total: number; page: number; limit: number }
