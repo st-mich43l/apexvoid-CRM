@@ -14,6 +14,7 @@ import { userWorkspaceQueryKey } from '../../../core/workspace/query'
 import type { ExternalIntegration, ExternalIntegrationInput } from '../../../core/api/client'
 import { ExternalIntegrationEditor } from './ExternalIntegrationEditor'
 import { ExternalEnrollmentWizard } from './ExternalEnrollmentWizard'
+import { ApplicationDialog } from './ApplicationDialog'
 
 type ShellContext = { applications: FrontendApplication[] }
 
@@ -42,13 +43,12 @@ function IntegrationManagement({ integrations, loading, workspaceID }: { integra
   const [confirmation, setConfirmation] = useState<null | { title: string; description: string; label: string; destructive?: boolean; confirm: () => Promise<void> }>(null)
   const [rotatedCredential, setRotatedCredential] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [editor, setEditor] = useState<'register' | ExternalIntegration | null>(null)
+  const [editor, setEditor] = useState<ExternalIntegration | null>(null)
   const [enrollment, setEnrollment] = useState(false)
   const refresh = () => client.invalidateQueries({ predicate: query => query.queryKey.includes('applications') || query.queryKey.includes('external-integrations') })
   const availability = useMutation({ mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.integrations.setWorkspaceAvailability(id, workspaceID, enabled), onSuccess: refresh })
   const revoke = useMutation({ mutationFn: api.integrations.revokeCredential, onSuccess: refresh })
   const rotate = useMutation({ mutationFn: api.integrations.rotateCredential, onSuccess: refresh })
-  const register = useMutation({ mutationFn: api.integrations.register, onSuccess: refresh })
   const update = useMutation({ mutationFn: ({ id, input }: { id: string; input: ExternalIntegrationInput }) => api.integrations.update(id, input), onSuccess: refresh })
   const retire = useMutation({ mutationFn: api.integrations.retire, onSuccess: refresh })
   const execute = async (action: () => Promise<unknown>) => {
@@ -64,16 +64,11 @@ function IntegrationManagement({ integrations, loading, workspaceID }: { integra
   const requestRevoke = (item: ExternalIntegration) => setConfirmation({ title: `Revoke ${item.display_name} credential?`, description: 'This permanently disables service-to-platform authentication. The credential cannot be restored; register a replacement service if needed.', label: 'Revoke credential', destructive: true, confirm: async () => { if (await execute(() => revoke.mutateAsync(item.id))) setConfirmation(null) } })
   const requestRetire = (item: ExternalIntegration) => setConfirmation({ title: `Retire ${item.display_name}?`, description: 'The application will be disabled, its credential revoked, and its owned permissions retired permanently. Existing grants will not be rebound to another application.', label: 'Retire application', destructive: true, confirm: async () => { if (await execute(() => retire.mutateAsync(item.id))) setConfirmation(null) } })
   const saveEditor = async (input: ExternalIntegrationInput) => {
-    if (editor === 'register') {
-      let result: { service_credential: string } | undefined
-      if (await execute(async () => { result = await register.mutateAsync(input) })) { setRotatedCredential(result?.service_credential ?? null); setEditor(null) }
-      return
-    }
     if (editor && await execute(() => update.mutateAsync({ id: editor.id, input }))) setEditor(null)
   }
-  return <section className="mt-7"><PageHeader eyebrow="Administrator" title="External integration management" description="Discover a service from its manifest, review its requested access and database plan, then activate it only in selected workspaces." actions={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => { setActionError(null); setEnrollment(true); setEditor(null) }}>Connect service</Button><Button onClick={() => { setActionError(null); setEditor('register'); setEnrollment(false) }}>Register application</Button></div>} />
-    {enrollment && <ExternalEnrollmentWizard onCancel={() => setEnrollment(false)} onComplete={() => { setEnrollment(false); refresh() }} />}
-    {editor && <ExternalIntegrationEditor initial={editor === 'register' ? undefined : editor} pending={register.isPending || update.isPending} error={actionError ?? undefined} onCancel={() => setEditor(null)} onSubmit={saveEditor} />}
+  return <section className="mt-7"><PageHeader eyebrow="Administrator" title="External integration management" description="Discover a service from its manifest, review its requested access and database plan, then activate it only in selected workspaces." actions={<Button onClick={() => { setActionError(null); setEnrollment(true); setEditor(null) }}>Register application</Button>} />
+    {enrollment && <ApplicationDialog title="Register an application" description="Connect a trusted Docker application and discover its identity, version, API contract and permissions automatically." onClose={() => setEnrollment(false)}><ExternalEnrollmentWizard onComplete={() => { setEnrollment(false); refresh() }} /></ApplicationDialog>}
+    {editor && <ApplicationDialog title={`Edit ${editor.display_name}`} description="Update connection details. Application version and API contract are owned by the external service." onClose={() => { if (!update.isPending) setEditor(null) }} busy={update.isPending}><ExternalIntegrationEditor key={editor.id} initial={editor} pending={update.isPending} error={actionError ?? undefined} onCancel={() => setEditor(null)} onSubmit={saveEditor} /></ApplicationDialog>}
     {actionError && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{actionError}</p>}
     {rotatedCredential && <Card className="mb-4 border-warning/30 bg-warning/5 p-4"><p className="font-medium">Copy the replacement credential now</p><p className="mt-1 text-sm text-muted-foreground">It is shown only for this lifecycle action. Store it in the service secret before closing this message.</p><code className="mt-3 block select-all overflow-x-auto rounded-md bg-muted p-3 text-xs">{rotatedCredential}</code><div className="mt-3 flex gap-2"><Button variant="outline" onClick={() => void navigator.clipboard?.writeText(rotatedCredential)}>Copy credential</Button><Button variant="outline" onClick={() => setRotatedCredential(null)}>I stored this credential</Button></div></Card>}
     {loading ? <Card><LoadingState label="Loading external integrations…" /></Card> : integrations.length === 0 ? <Card><EmptyState title="No external services registered" description="Trusted services can be registered through the platform integration API." /></Card> : <div className="grid gap-4 lg:grid-cols-2">{integrations.map(item => { const enabled = item.workspace_enabled ?? item.enabled; return <Card key={item.id} className="p-5"><div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold">{item.display_name}</h2><p className="mt-1 text-xs text-muted-foreground">{item.service_identity} · {item.version}</p></div><Badge tone={item.health === 'healthy' ? 'success' : 'warning'}>{item.health}</Badge></div><div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground"><span className="rounded-md bg-muted px-2 py-1">{item.permissions.length} permissions</span><span className="rounded-md bg-muted px-2 py-1">API {item.api_contract_version}</span><span className="rounded-md bg-muted px-2 py-1">{enabled ? 'Enabled here' : 'Disabled here'}</span>{item.credential_revoked && <span className="rounded-md bg-destructive/10 px-2 py-1 text-destructive">Credential revoked</span>}</div><p className="mt-3 text-xs text-muted-foreground">{item.service_endpoint}</p><div className="mt-5 flex flex-wrap gap-2"><Button variant="outline" disabled={!workspaceID || availability.isPending} onClick={() => requestAvailability(item, !enabled)}>{enabled ? 'Disable in workspace' : 'Enable in workspace'}</Button><Button variant="outline" onClick={() => setEditor(item)}>Edit metadata</Button><Button variant="outline" disabled={item.credential_revoked || rotate.isPending} onClick={() => requestRotate(item)}>Rotate credential</Button><Button variant="outline" disabled={item.credential_revoked || revoke.isPending} onClick={() => requestRevoke(item)}>Revoke credential</Button><Button variant="destructive" disabled={retire.isPending} onClick={() => requestRetire(item)}>Retire</Button></div></Card> })}</div>}
