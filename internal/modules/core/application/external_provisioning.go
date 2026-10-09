@@ -90,8 +90,20 @@ func (s *ExternalStore) provisionDatabase(ctx context.Context, installationID uu
 			return provisionedDatabase{}, fmt.Errorf("reserve exclusive database ownership: %w", err)
 		}
 	} else {
-		if storedInstallation != installationID || storedDB != name || storedSchema != schema || storedRole != role {
-			return provisionedDatabase{}, errors.New("application resource ownership belongs to another installation")
+		if storedDB != name || storedSchema != schema || storedRole != role {
+			return provisionedDatabase{}, errors.New("application resource ownership does not match the application manifest")
+		}
+		if storedInstallation != installationID {
+			var previousStatus string
+			if err = s.pool.QueryRow(ctx, `SELECT status FROM core_external_application_installations WHERE id=$1`, storedInstallation).Scan(&previousStatus); err != nil {
+				return provisionedDatabase{}, err
+			}
+			if previousStatus != "failed" {
+				return provisionedDatabase{}, errors.New("application resource ownership belongs to another active installation")
+			}
+			if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_resources SET installation_id=$2 WHERE application_id=$1 AND installation_id=$3`, manifest.Application.ID, installationID, storedInstallation); err != nil {
+				return provisionedDatabase{}, fmt.Errorf("transfer failed application resource ownership: %w", err)
+			}
 		}
 		password, err = recoverProvisioningPassword(s.provisioningKey, encrypted)
 		if err != nil {
@@ -191,7 +203,10 @@ func (s *ExternalStore) provisionDatabase(ctx context.Context, installationID uu
 	if _, err = dbAdmin.Exec(ctx, `REVOKE CREATE ON SCHEMA public FROM PUBLIC`); err != nil {
 		return provisionedDatabase{}, err
 	}
-	if _, err = dbAdmin.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS `+quoteIdentifier(schema)+` AUTHORIZATION `+quoteIdentifier(role)); err != nil {
+	if _, err = dbAdmin.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS `+quoteIdentifier(schema)); err != nil {
+		return provisionedDatabase{}, err
+	}
+	if _, err = dbAdmin.Exec(ctx, `ALTER SCHEMA `+quoteIdentifier(schema)+` OWNER TO `+quoteIdentifier(role)); err != nil {
 		return provisionedDatabase{}, err
 	}
 	var schemaOwner string
