@@ -14,13 +14,13 @@ export function ApplicationDialog({ title, description, children, onClose, busy 
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
+  const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const closeCallback = useRef(onClose)
   const isBusy = useRef(busy)
   useEffect(() => { closeCallback.current = onClose; isBusy.current = busy }, [onClose, busy])
 
   useEffect(() => {
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     closeRef.current?.focus()
@@ -49,7 +49,7 @@ export function ApplicationDialog({ title, description, children, onClose, busy 
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = previousOverflow
-      previouslyFocused?.focus()
+      openerRef.current?.focus()
     }
   }, [])
 
