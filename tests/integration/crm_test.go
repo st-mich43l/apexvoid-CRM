@@ -39,8 +39,11 @@ func TestCRMMigrationRollbackAndReapply(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := database.NewMigrationRunner(application.Database, all)
-	// Down applies to the newest globally registered migration first. With
-	// ERP registered after CRM, undo ERP's catalog before older CRM revisions.
+	// Down follows global migration order: café depends on ERP, so undo it
+	// before ERP, then roll back the two latest CRM migrations.
+	if err := runner.Down(ctx); err != nil {
+		t.Fatalf("rollback cafe app: %v", err)
+	}
 	if err := runner.Down(ctx); err != nil {
 		t.Fatalf("rollback ERP catalog: %v", err)
 	}
