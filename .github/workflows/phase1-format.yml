@@ -1,0 +1,25 @@
+name: Phase 1 Format (temporary)
+on:
+  push:
+    branches:
+      - feat/p1-external-application-lifecycle
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Format Phase 1 Go changes
+        run: |
+          gofmt -w integration/update.go internal/modules/core/application/external_upgrade.go
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add integration/update.go internal/modules/core/application/external_upgrade.go
+            git commit -m "style(go): format Phase 1 lifecycle code"
+            git push origin HEAD:feat/p1-external-application-lifecycle
+          fi
