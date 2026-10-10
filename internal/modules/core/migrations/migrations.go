@@ -135,5 +135,22 @@ CREATE TABLE core_external_application_migrations (
 		DownSQL: `DROP TABLE IF EXISTS core_external_application_migrations;
 DROP TABLE IF EXISTS core_external_application_resources;
 ALTER TABLE core_external_application_installations DROP COLUMN IF EXISTS service_credential_encrypted;`,
+	}, {
+		Module: "core", Version: 6, Name: "reviewed_external_application_upgrades",
+		UpSQL: `CREATE TABLE IF NOT EXISTS core_external_application_upgrades (
+  id UUID PRIMARY KEY,
+  application_id TEXT NOT NULL REFERENCES core_external_applications(id),
+  manifest JSONB NOT NULL,
+  manifest_sha256 TEXT NOT NULL,
+  installed_manifest_sha256 TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending_approval','applying','applied','failed','superseded')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  error_message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  applied_at TIMESTAMPTZ NULL
+);
+CREATE INDEX IF NOT EXISTS core_external_upgrade_history_idx ON core_external_application_upgrades(application_id,created_at DESC);`,
+		DownSQL: `DROP TABLE IF EXISTS core_external_application_upgrades;`,
 	}}
 }
