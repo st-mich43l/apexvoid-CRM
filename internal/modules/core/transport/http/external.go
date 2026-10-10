@@ -543,6 +543,10 @@ func (h *Handler) introspectSession(w http.ResponseWriter, r *http.Request) {
 	}
 	enabled, err := h.service.External().EnabledInWorkspace(r.Context(), app.ID, workspaceID)
 	if err != nil || !enabled {
+		if usersapi.ExternalApplicationDocumentNavigation(r) {
+			http.Redirect(w, r, "/auth/app-access-denied", http.StatusSeeOther)
+			return
+		}
 		httpserver.WriteError(w, r, http.StatusForbidden, "APPLICATION_DISABLED", "Application is not enabled for this workspace")
 		return
 	}
@@ -629,6 +633,10 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		return
 	}
 	if !allowed {
+		if usersapi.ExternalApplicationDocumentNavigation(r) {
+			http.Redirect(w, r, "/auth/app-access-denied", http.StatusSeeOther)
+			return
+		}
 		httpserver.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "You do not have permission to open this application")
 		return
 	}
