@@ -56,6 +56,7 @@ func TestExternalApplicationSessionContinuation(t *testing.T) {
 		{name: "fetch metadata navigation", path: destination, method: "GET", mode: "navigate", wantCode: http.StatusSeeOther, wantRoute: "/auth/continue"},
 		{name: "API request stays JSON 401", path: "/api/apps/photobooth/v1/bookings", method: "GET", accept: "application/json", wantCode: http.StatusUnauthorized},
 		{name: "asset request stays JSON 401", path: "/apps/photobooth/assets/index.js", method: "GET", accept: "*/*", dest: "script", wantCode: http.StatusUnauthorized},
+		{name: "XHR accepting HTML is not a navigation", path: destination, method: "GET", accept: "text/html", mode: "cors", wantCode: http.StatusUnauthorized},
 		{name: "API mutation stays JSON 401", path: "/api/apps/photobooth/v1/bookings", method: "POST", accept: "text/html", wantCode: http.StatusUnauthorized},
 		{name: "ordinary auth stays JSON 401", path: "/api/v1/framework/applications", method: "GET", accept: "text/html", wantCode: http.StatusUnauthorized},
 	} {
