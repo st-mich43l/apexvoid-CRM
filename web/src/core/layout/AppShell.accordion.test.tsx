@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Boxes, BriefcaseBusiness, FileText, Package, Settings2 } from 'lucide-react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api/client'
@@ -132,5 +132,31 @@ describe('collapsible sidebar navigation', () => {
     renderShell()
     expect(screen.getByRole('button', { name: 'Workspace section' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: 'CRM menu' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('opens installed applications from the sidebar in a new tab', async () => {
+    vi.spyOn(api.framework, 'applications').mockResolvedValue([{
+      id: 'cafe',
+      display_name: 'ApexVoid Café',
+      description: 'Coffee counter and photo booth booking',
+      version: '0.1.0',
+      api_contract_version: 'v1',
+      module_dependencies: [],
+      required_permissions: [],
+      required_capabilities: [],
+      frontend: { entry_route: '/apps/cafe', navigation_id: 'cafe' },
+      entry_authorized: true,
+      settings_authorized: false,
+      deployment: 'external',
+      frontend_external: true,
+    }])
+
+    renderShell()
+
+    await waitFor(() => expect(screen.getByRole('link', { name: 'ApexVoid Café' })).toBeInTheDocument())
+    const link = screen.getByRole('link', { name: 'ApexVoid Café' })
+    expect(link).toHaveAttribute('href', '/apps/cafe')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 })
