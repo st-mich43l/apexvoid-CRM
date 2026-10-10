@@ -258,7 +258,7 @@ and requires two explicit approvals before executing any new migrations.
 
 The browser-level UI now opens external applications as **top-level same-origin
 gateway documents** instead of embedding the API port in an iframe. The Vite
-development proxy and production Nginx forward \`/apps/\` to the Enterprise
+development proxy and production Nginx forward `/apps/` to the Enterprise
 backend. The launch URL retains the selected workspace; Enterprise validates
 membership and sets a protected workspace-selection cookie for subsequent
 gateway assets/API requests. No separate external domain or microfrontend
