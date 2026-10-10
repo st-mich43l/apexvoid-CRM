@@ -37,8 +37,8 @@ export function AppShell({ navigation, applications }: { navigation: NavigationI
   const dynamicNavigation = useMemo(() => {
     const existing = new Set(navigation.map(item => item.id))
     const external = (discovered.data ?? []).filter(item => item.deployment === 'external' && item.frontend_external && item.entry_authorized && item.frontend.entry_route && !existing.has(item.frontend.navigation_id))
-    return [...navigation, ...external.map(item => ({ id: item.frontend.navigation_id, label: item.display_name, path: item.frontend.entry_route, order: 500, icon: Boxes, openInNewTab: true }))]
-  }, [discovered.data, navigation])
+    return [...navigation, ...external.map(item => ({ id: item.frontend.navigation_id, label: item.display_name, path: `${item.frontend.entry_route}?workspace_id=${encodeURIComponent(activeWorkspaceId ?? '')}`, order: 500, icon: Boxes, openInNewTab: true }))]
+  }, [discovered.data, navigation, activeWorkspaceId])
   const healthy = health.data?.status === 'ok'
   const environment = health.data?.environment ? `${health.data.environment.charAt(0).toUpperCase()}${health.data.environment.slice(1)} environment` : 'Runtime environment'
   const visible = dynamicNavigation.filter(item => canAccessNavigation(item, platformCan, workspaceCan))

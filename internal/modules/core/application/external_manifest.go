@@ -337,64 +337,6 @@ func (s *ExternalStore) ListInstallations(ctx context.Context) ([]ExternalInstal
 	return result, rows.Err()
 }
 
-func (s *ExternalStore) CheckForUpdate(ctx context.Context, id string) (ExternalUpdateReport, error) {
-	app, err := s.Get(ctx, id)
-	if err != nil {
-		return ExternalUpdateReport{}, err
-	}
-	var installed ExternalManifest
-	if len(app.InstalledManifest) == 0 || json.Unmarshal(app.InstalledManifest, &installed) != nil {
-		return ExternalUpdateReport{}, fmt.Errorf("%w: installed manifest is unavailable", ErrInvalidManifest)
-	}
-	endpoint, err := manifestEndpoint(app.ServiceEndpoint, ExternalManifestPath)
-	if err != nil {
-		return ExternalUpdateReport{}, err
-	}
-	raw, err := httpRequest(ctx, s.client, http.MethodGet, endpoint, "", nil)
-	if err != nil {
-		return ExternalUpdateReport{}, err
-	}
-	available, err := decodeManifest(raw)
-	if err != nil {
-		return ExternalUpdateReport{}, err
-	}
-	report := ExternalUpdateReport{ApplicationID: id, InstalledVersion: installed.Application.Version, AvailableVersion: available.Application.Version, InstalledBundle: installed.Database.MigrationBundleVersion, AvailableBundle: available.Database.MigrationBundleVersion, PermissionChanges: []string{}, MigrationChanges: []int{}}
-	if report.InstalledVersion != report.AvailableVersion || report.InstalledBundle != report.AvailableBundle {
-		report.UpdateAvailable = true
-	}
-	installedPermissions := map[string]bool{}
-	for _, item := range installed.Permissions {
-		installedPermissions[item.Name] = true
-	}
-	availablePermissions := map[string]bool{}
-	for _, item := range available.Permissions {
-		availablePermissions[item.Name] = true
-		if !installedPermissions[item.Name] {
-			report.PermissionChanges = append(report.PermissionChanges, "+"+item.Name)
-		}
-	}
-	for name := range installedPermissions {
-		if !availablePermissions[name] {
-			report.PermissionChanges = append(report.PermissionChanges, "-"+name)
-		}
-	}
-	if len(report.PermissionChanges) > 0 {
-		report.UpdateAvailable = true
-	}
-	installedMigrations := map[int]string{}
-	for _, migration := range installed.Migrations {
-		installedMigrations[migration.Version] = strings.ToLower(migration.SHA256)
-	}
-	for _, migration := range available.Migrations {
-		if checksum, exists := installedMigrations[migration.Version]; !exists || checksum != strings.ToLower(migration.SHA256) {
-			report.MigrationChanges = append(report.MigrationChanges, migration.Version)
-			report.UpdateAvailable = true
-		}
-	}
-	sort.Strings(report.PermissionChanges)
-	return report, nil
-}
-
 func (s *ExternalStore) ApproveAndInstall(ctx context.Context, id uuid.UUID, input ApproveExternalInput) (ExternalInstallation, ExternalApplication, string, error) {
 	// Serialize installation attempts across all Enterprise backend instances.
 	// This lock is bound to an acquired connection rather than a transaction.

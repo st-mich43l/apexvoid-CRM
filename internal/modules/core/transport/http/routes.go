@@ -40,6 +40,8 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	managed.Get("/applications/external/installations/{installation}", h.getExternalInstallation)
 	managed.Post("/applications/external/installations/{installation}/approve", h.approveExternalInstallation)
 	managed.Post("/applications/external/{application}/updates/check", h.checkExternalUpdate)
+	managed.Get("/applications/external/{application}/updates/{upgrade}", h.getExternalUpdate)
+	managed.Post("/applications/external/{application}/updates/{upgrade}/approve", h.approveExternalUpdate)
 	managed.Get("/applications/external/{application}", h.getExternal)
 	managed.Patch("/applications/external/{application}", h.updateExternal)
 	managed.Delete("/applications/external/{application}", h.unregisterExternal)
@@ -53,7 +55,7 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 }
 
 func (h *Handler) RegisterPublicRoutes(routes module.RouteRegistry) error {
-	protected := routes.With(usersapi.RequireAuthentication(h.authenticator), organizationapi.RequireWorkspace(h.workspace))
+	protected := routes.With(usersapi.RequireAuthentication(h.authenticator), organizationapi.RequireExternalWorkspace(h.workspace))
 	protected.Get("/apps/{application}", h.proxyExternalFrontend)
 	protected.Get("/apps/{application}/*", h.proxyExternalFrontend)
 	protected.Get("/api/apps/{application}", h.proxyExternalAPI)

@@ -155,7 +155,7 @@ describe('collapsible sidebar navigation', () => {
 
     await waitFor(() => expect(screen.getByRole('link', { name: 'ApexVoid Café' })).toBeInTheDocument())
     const link = screen.getByRole('link', { name: 'ApexVoid Café' })
-    expect(link).toHaveAttribute('href', '/apps/cafe')
+    expect(link).toHaveAttribute('href', '/apps/cafe?workspace_id=workspace-1')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })

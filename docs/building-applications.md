@@ -231,11 +231,35 @@ uses a transaction. Failed attempts remain tracked and can be retried.
 The main Applications page refreshes discovery on a bounded 30-second polling
 interval; no Enterprise image rebuild is needed to show newly registered
 external apps. The existing manual registration and external service APIs
-continue for compatibility. Updates are currently **detected**, not silently
-installed or migrated; a separate reviewed update workflow is required.
+continue for compatibility. Updates are installed only through the reviewed upgrade workflow; no detected release is silently installed or migrated.
 
 For application deployment, provision a trusted shared Docker network and add
 the service DNS hostname to `INTEGRATIONS_ALLOWED_SERVICE_HOSTS`. Configure
 `DATABASE_PROVISIONING_URL` and `DATABASE_PROVISIONING_KEY` in Enterprise
 secrets. The standalone service must store its enrollment state in a persistent
 mount/secret store; process-local memory is insufficient across restarts.
+
+## Enrolled app release upgrades (Phase 1)
+
+New standalone app releases are deployed by the app owner in their own
+repository. To add a new permission or database migration, preserve all
+previous permission names/scopes, migration versions/paths/checksums, database
+identity and gateway routes. Increment the stable app version; for additional
+SQL migrations increment the migration-bundle version and append contiguous,
+checksummed SQL files. The next release should be backward-compatible until
+Enterprise administrators approve the corresponding schema changes.
+
+An installed app must answer a challenge-bound, HMAC-SHA256 signed manifest
+request (using the current permanent service credential). See
+[reviewed external upgrades](external-module-integration.md#reviewed-external-application-upgrades)
+for exact headers, signing bytes, admin endpoints, and restrictions.
+Enterprise checks the signed release, stages a short-lived immutable review,
+and requires two explicit approvals before executing any new migrations.
+
+The browser-level UI now opens external applications as **top-level same-origin
+gateway documents** instead of embedding the API port in an iframe. The Vite
+development proxy and production Nginx forward `/apps/` to the Enterprise
+backend. The launch URL retains the selected workspace; Enterprise validates
+membership and sets a protected workspace-selection cookie for subsequent
+gateway assets/API requests. No separate external domain or microfrontend
+runtime is implied by this behavior.
