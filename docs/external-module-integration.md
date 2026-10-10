@@ -1,9 +1,11 @@
 # External module integration
 
 ApexVoid CRM is the system of record for users, opaque sessions, workspaces,
-and RBAC. An external module is an administrator-approved Docker-network
-service. It is never loaded as Go code, never receives database credentials,
-and cannot add itself to a role.
+and RBAC. An external application is an administrator-approved Docker-network
+service. It is never loaded as Go code into Enterprise and cannot add itself to
+a platform or workspace role. A manifest-enrolled application receives a
+restricted credential for **its own Enterprise-provisioned application database**,
+not the Enterprise platform runtime database or unrestricted PostgreSQL access.
 
 ## Platform configuration
 
