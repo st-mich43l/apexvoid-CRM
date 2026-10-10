@@ -189,6 +189,9 @@ func (s *ExternalStore) PreviewUpdate(ctx context.Context, applicationID string)
 	next, raw, err := s.signedUpdateManifest(ctx, app)
 	if err != nil { return ExternalUpgrade{}, err }
 	if next.Application.ID != applicationID { return ExternalUpgrade{}, ErrUpgradeInvalid }
+	if string(mustJSON(installed)) == string(mustJSON(next)) {
+		return ExternalUpgrade{ApplicationID:applicationID,Status:"up_to_date",InstalledVersion:installed.Application.Version,AvailableVersion:next.Application.Version,InstalledBundle:installed.Database.MigrationBundleVersion,AvailableBundle:next.Database.MigrationBundleVersion,AddedPermissions:[]ExternalPermissionPreview{},PendingMigrations:[]ExternalMigration{},ManifestSHA256:manifestHash(raw)},nil
+	}
 	id := uuid.New()
 	expires := time.Now().Add(30*time.Minute)
 	preview, err := upgradeSnapshot(installed, next, raw, id, "pending_approval", expires)
