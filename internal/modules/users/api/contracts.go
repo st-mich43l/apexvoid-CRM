@@ -117,8 +117,12 @@ func externalDocumentNavigation(r *http.Request) bool {
 	if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/apps/") {
 		return false
 	}
-	if strings.EqualFold(r.Header.Get("Sec-Fetch-Mode"), "navigate") {
+	mode := strings.ToLower(r.Header.Get("Sec-Fetch-Mode"))
+	if mode == "navigate" {
 		return true
+	}
+	if mode != "" {
+		return false
 	}
 	// Compatibility with browsers that do not yet send Fetch Metadata.
 	// API/fetch requests and static assets must keep their 401 JSON response.
