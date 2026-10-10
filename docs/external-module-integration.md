@@ -165,22 +165,22 @@ and migration changes only after approval.
 
 The update manifest must be authenticated with the **current** service
 credential. Enterprise sends a fresh, random challenge on the normal manifest
-GET using the \`X-ApexVoid-Update-Challenge\` header. The application returns
+GET using the `X-ApexVoid-Update-Challenge` header. The application returns
 the *exact* manifest JSON bytes and:
 
-\`\`\`text
+```text
 X-ApexVoid-Update-Signature: sha256=<64 lowercase hex characters>
-\`\`\`
+```
 
 The HMAC-SHA256 key is the **raw 32-byte SHA-256 digest** of the UTF-8 service
 credential, not the credential itself and not its hexadecimal representation.
 The authenticated message is these bytes concatenated, in order:
 
-\`\`\`text
+```text
 apexvoid-update-manifest-v1\n<challenge>\n<exact manifest JSON response bytes>
-\`\`\`
+```
 
-Use \`integration.SignUpdateManifest(serviceCredential, challenge, manifestBytes)\`
+Use `integration.SignUpdateManifest(serviceCredential, challenge, manifestBytes)`
 from a compatible ApexVoid SDK release to produce the header. Never include the
 service credential, access tokens, enrollment code or platform database
 password in an update request or response. The server validates the response
@@ -190,28 +190,28 @@ short-lived immutable fingerprint.
 
 ### Administrator endpoints
 
-\`\`\`text
+```text
 POST /api/v1/applications/external/{application}/updates/check
 GET  /api/v1/applications/external/{application}/updates/{upgrade-id}
 POST /api/v1/applications/external/{application}/updates/{upgrade-id}/approve
-\`\`\`
+```
 
 The preview includes the installed/new release and migration bundle versions,
 new permission definitions, new migration versions/paths/checksums, the signed
 manifest fingerprint and expiry. An unchanged, signed manifest yields an
-\`up_to_date\` status. A changed manifest becomes a \`pending_approval\` plan.
+`up_to_date` status. A changed manifest becomes a `pending_approval` plan.
 For approval, the administrator sends:
 
-\`\`\`json
+```json
 {
   "manifest_sha256": "<exact preview fingerprint>",
   "approve_permissions": true,
   "approve_migrations": true
 }
-\`\`\`
+```
 
 Both approvals are mandatory even if one category has no additions.
-Only platform administrators with \`core.application.manage\` can perform these
+Only platform administrators with `core.application.manage` can perform these
 actions, and approval is auditable. The plan is not allowed to change or remove
 existing permissions or their scopes, rewrite an earlier SQL migration, rename
 the application or its database ownership, or change existing service gateway
