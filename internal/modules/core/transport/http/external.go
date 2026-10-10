@@ -108,6 +108,12 @@ func externalError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIAL", "The enrollment code is invalid")
 	case errors.Is(err, application.ErrInvalidManifest), errors.Is(err, application.ErrInstallationState), errors.Is(err, application.ErrInstallationExpired), errors.Is(err, application.ErrMigrationPolicy):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "INSTALLATION_ERROR", err.Error())
+	case errors.Is(err, application.ErrUpgradeInvalid):
+		httpserver.WriteError(w, r, http.StatusBadRequest, "UPDATE_INVALID", err.Error())
+	case errors.Is(err, application.ErrUpgradeState):
+		httpserver.WriteError(w, r, http.StatusConflict, "UPDATE_CONFLICT", err.Error())
+	case errors.Is(err, application.ErrUpgradeNotFound):
+		httpserver.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "External application update was not found")
 	case errors.Is(err, application.ErrInstallationNotFound):
 		httpserver.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "External installation was not found")
 	default:
@@ -220,17 +226,46 @@ func (h *Handler) approveExternalInstallation(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusCreated, response)
 }
 
+type approveUpdateRequest struct {
+	ApprovePermissions bool `json:"approve_permissions"`
+	ApproveMigrations bool `json:"approve_migrations"`
+	ManifestSHA256 string `json:"manifest_sha256"`
+}
+
 func (h *Handler) checkExternalUpdate(w http.ResponseWriter, r *http.Request) {
 	store := h.store(w, r)
-	if store == nil {
-		return
-	}
-	report, err := store.CheckForUpdate(r.Context(), chi.URLParam(r, "application"))
-	if err != nil {
-		externalError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, report)
+	if store == nil { return }
+	applicationID := chi.URLParam(r, "application")
+	auditContext, ok := auditExternal(w,r,applicationID,"external_application.update_preview",nil)
+	if !ok { return }
+	preview, err := store.PreviewUpdate(auditContext,applicationID)
+	if err != nil { externalError(w,r,err); return }
+	writeJSON(w,http.StatusCreated,preview)
+}
+
+func (h *Handler) getExternalUpdate(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w,r)
+	if store == nil {return}
+	id,err:=uuid.Parse(chi.URLParam(r,"upgrade"))
+	if err != nil {httpserver.WriteError(w,r,http.StatusBadRequest,"VALIDATION_ERROR","Invalid update identifier");return}
+	plan,err:=store.GetUpdate(r.Context(),chi.URLParam(r,"application"),id)
+	if err != nil {externalError(w,r,err);return}
+	writeJSON(w,http.StatusOK,plan)
+}
+
+func (h *Handler) approveExternalUpdate(w http.ResponseWriter, r *http.Request) {
+	store := h.store(w,r)
+	if store == nil {return}
+	id,err:=uuid.Parse(chi.URLParam(r,"upgrade"))
+	if err != nil {httpserver.WriteError(w,r,http.StatusBadRequest,"VALIDATION_ERROR","Invalid update identifier");return}
+	var request approveUpdateRequest
+	if !decodeStrict(w,r,&request) {return}
+	applicationID:=chi.URLParam(r,"application")
+	auditContext,ok:=auditExternal(w,r,applicationID,"external_application.update_approved",nil)
+	if !ok {return}
+	plan,err:=store.ApproveUpdate(auditContext,applicationID,id,request.ApprovePermissions,request.ApproveMigrations,request.ManifestSHA256)
+	if err != nil {externalError(w,r,err);return}
+	writeJSON(w,http.StatusOK,plan)
 }
 func auditExternal(w http.ResponseWriter, r *http.Request, applicationID, action string, workspaceID *uuid.UUID) (context.Context, bool) {
 	principal, ok := usersapi.PrincipalFromContext(r.Context())
