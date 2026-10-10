@@ -58,13 +58,13 @@ func RequireExternalWorkspace(resolver WorkspaceResolver) func(http.Handler) htt
 			}
 			if launchWorkspace != "" {
 				http.SetCookie(w, &http.Cookie{
-					Name: externalWorkspaceCookie,
-					Value: workspaceID.String(),
-					Path: "/",
+					Name:     externalWorkspaceCookie,
+					Value:    workspaceID.String(),
+					Path:     "/",
 					HttpOnly: true,
 					SameSite: http.SameSiteLaxMode,
-					Secure: r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
-					MaxAge: 60 * 60 * 12,
+					Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
+					MaxAge:   60 * 60 * 12,
 				})
 			}
 			next.ServeHTTP(w, r.WithContext(WithWorkspaceContext(r.Context(), workspaceContext)))
