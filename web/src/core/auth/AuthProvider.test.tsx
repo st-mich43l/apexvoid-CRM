@@ -29,6 +29,18 @@ describe('AuthProvider cache isolation', () => {
     authAPI.login.mockResolvedValue({ user: userB, permissions: [] })
   })
 
+  it('restores a first-party session after the access cookie expires', async () => {
+    authAPI.me.mockReset()
+    authAPI.me.mockRejectedValueOnce(Object.assign(new Error('Access expired'), { status: 401 }))
+      .mockResolvedValue({ user: userA, permissions: [] })
+    authAPI.refresh.mockResolvedValue({ user: userA, permissions: [] })
+    const client = new QueryClient()
+    render(<QueryClientProvider client={client}><AuthProvider><Probe /></AuthProvider></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByText('User A')).toBeInTheDocument())
+    expect(authAPI.refresh).toHaveBeenCalledTimes(1)
+    expect(authAPI.me).toHaveBeenCalledTimes(2)
+  })
+
   it('removes the previous identity cache when an account changes', async () => {
     const client = new QueryClient()
     render(<QueryClientProvider client={client}><AuthProvider><Probe /></AuthProvider></QueryClientProvider>)

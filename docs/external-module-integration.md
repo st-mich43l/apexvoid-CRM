@@ -148,6 +148,61 @@ gateway sends a restrictive baseline CSP and no-store responses for proxied
 external content, strips response cookies and redirects, bounds API request
 bodies, and uses bounded upstream connection/header timeouts.
 
+## Seamless browser sign-on and session recovery
+
+Enterprise remains the sole login and authorization authority. An external
+application must never prompt for the user's Enterprise password or maintain
+an independent token store.
+
+- A top-level navigation to `/apps/{application-id}?workspace_id=...` with
+  a valid access session opens normally.
+- If the access token has expired, **document navigations only** redirect to
+  first-party `/auth/continue?return_to=<encoded-local-app-URL>`. That React
+  route calls Enterprise's existing /auth/me and scoped /auth/refresh endpoints,
+  then returns to the original app and workspace. If the refresh session has
+  expired, it sends the user to /login and resumes after successful login.
+  Required first-login password changes preserve the return destination too.
+- API, JavaScript asset, and other non-document requests are **not** redirected
+  to HTML. They still receive structured JSON `401 UNAUTHENTICATED`.
+
+For a long-running app frontend, wrap the gateway fetch client:
+
+1. Only when a gateway request returns `401 UNAUTHENTICATED`, send a same-origin
+   `POST /api/v1/auth/refresh` with browser cookies included. Coordinate
+   simultaneous refreshes with one shared promise.
+2. Retry the original gateway request **at most once** after successful refresh.
+   A first gateway 401 was blocked before proxying, so the operation was not
+   executed. Preserve the original idempotency key on mutations.
+3. If refresh fails, navigate to Enterprise login with a validated same-origin
+   `/apps/{application-id}` return path. Never embed credentials or assertions
+   in URLs and do not add refresh tokens to localStorage or broader-scope cookies.
+
+The gateway still independently validates the live session, workspace
+membership, app availability, and RBAC on every request. The existing gateway
+strips browser cookies and Authorization headers before forwarding to the app;
+only its short-lived identity assertion reaches the service.
+
+**Workspace note:** the current browser workspace selector is not an
+independent security credential; the external app should supply
+`X-ApexVoid-Workspace` explicitly on API requests. A per-tab workspace routing
+design remains separate follow-up work for simultaneously opening the same app
+under different workspaces.
+
+### Manual verification
+
+With an existing Enterprise login and Photo Booth installed:
+
+1. Remove only the access-token cookie, leaving the refresh cookie valid.
+   Open `/apps/photobooth?workspace_id=<permitted-workspace-id>` in a new tab:
+   it should recover silently and open the application.
+2. In an already-open Photo Booth, expire the access token and use a protected
+   operation. The API wrapper should refresh and retry once.
+3. Remove/invalidate the refresh session too. A direct app launch should
+   display Enterprise login and restore the app/workspace after login.
+4. Verify that disabled apps, inaccessible workspaces and unauthorized users
+   are still denied. JSON API and asset requests should **never** receive
+   a login HTML document.
+
 ## Docker fixture and verification
 
 `test/fixtures/external-module` is a non-product Docker service used by the

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -62,33 +63,81 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	return principal, ok
 }
 
+// RequireExternalApplicationAuthentication preserves JSON 401 responses for
+// API and asset requests, but browser document navigations use the Enterprise
+// session-continuation page to recover an expired access token. Refresh tokens
+// remain scoped to /api/v1/auth and are never forwarded to external services.
+func RequireExternalApplicationAuthentication(auth Authenticator) func(http.Handler) http.Handler {
+	return requireAuthentication(auth, true)
+}
+
 func RequireAuthentication(auth Authenticator) func(http.Handler) http.Handler {
+	return requireAuthentication(auth, false)
+}
+
+func requireAuthentication(auth Authenticator, externalNavigation bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := r.Header.Get("Authorization")
 			if len(token) > 7 && token[:7] == "Bearer " {
 				token = token[7:]
-			} else {
-				if cookie, err := r.Cookie("apexvoid_access_token"); err == nil {
-					token = cookie.Value
+			} else if cookie, err := r.Cookie("apexvoid_access_token"); err == nil {
+				token = cookie.Value
+			}
+			unauthenticated := func() {
+				if externalNavigation && ExternalApplicationDocumentNavigation(r) {
+					redirectToExternalContinuation(w, r, "/auth/continue")
+					return
 				}
+				httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
 			}
 			if token == "" {
-				httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
+				unauthenticated()
 				return
 			}
 			principal, err := auth.AuthenticateAccess(r.Context(), token)
 			if err != nil {
-				httpserver.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required")
+				unauthenticated()
 				return
 			}
 			if principal.MustChangePassword && !passwordChangeAllowed(r.URL.Path) {
+				if externalNavigation && ExternalApplicationDocumentNavigation(r) {
+					redirectToExternalContinuation(w, r, "/change-password")
+					return
+				}
 				httpserver.WriteError(w, r, http.StatusForbidden, "PASSWORD_CHANGE_REQUIRED", "Change your password before continuing")
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
 		})
 	}
+}
+
+// ExternalApplicationDocumentNavigation identifies browser navigations only.
+// It must not classify API requests or subresource fetches as documents.
+func ExternalApplicationDocumentNavigation(r *http.Request) bool {
+	if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/apps/") {
+		return false
+	}
+	mode := strings.ToLower(r.Header.Get("Sec-Fetch-Mode"))
+	if mode == "navigate" {
+		return true
+	}
+	if mode != "" {
+		return false
+	}
+	// Compatibility with browsers that do not yet send Fetch Metadata.
+	// API/fetch requests and static assets must keep their 401 JSON response.
+	dest := strings.ToLower(r.Header.Get("Sec-Fetch-Dest"))
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html") &&
+		(dest == "" || dest == "document")
+}
+
+func redirectToExternalContinuation(w http.ResponseWriter, r *http.Request, page string) {
+	// Construct the destination exclusively from the already-matched /apps/
+	// route, never from Host, Origin, Referer, or a user supplied redirect URL.
+	query := url.Values{"return_to": {r.URL.RequestURI()}}
+	http.Redirect(w, r, page+"?"+query.Encode(), http.StatusSeeOther)
 }
 
 func passwordChangeAllowed(path string) bool {
