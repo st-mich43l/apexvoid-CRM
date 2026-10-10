@@ -422,7 +422,10 @@ func isolatedDatabaseURL(t *testing.T) (string, func()) {
 		t.Fatal(err)
 	}
 	query := parsed.Query()
-	query.Set("options", "-c search_path="+schema+",public")
+	// Keep each integration database genuinely isolated. Including public here
+	// lets a table from a developer's shared database mask a deliberately
+	// missing object in the isolated schema (notably the audit-failure fixture).
+	query.Set("options", "-c search_path="+schema)
 	parsed.RawQuery = query.Encode()
 	return parsed.String(), func() {
 		defer adminPool.Close()

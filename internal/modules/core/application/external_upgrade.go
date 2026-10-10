@@ -353,8 +353,49 @@ func (s *ExternalStore) GetUpdate(ctx context.Context, applicationID string, id 
 			result.Failure = &details
 		}
 	}
+	if err := s.hydrateMigrationStatuses(ctx, applicationID, &result); err != nil {
+		return ExternalUpgrade{}, err
+	}
 	result.ErrorMessage = failure
 	return result, nil
+}
+
+func (s *ExternalStore) hydrateMigrationStatuses(ctx context.Context, applicationID string, plan *ExternalUpgrade) error {
+	if plan == nil || len(plan.PendingMigrations) == 0 {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT version FROM core_external_application_migrations WHERE application_id=$1`, applicationID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	applied := map[int]bool{}
+	for rows.Next() {
+		var version int
+		if err := rows.Scan(&version); err != nil {
+			return err
+		}
+		applied[version] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for index := range plan.PendingMigrations {
+		migration := &plan.PendingMigrations[index]
+		switch {
+		case applied[migration.Version]:
+			migration.Status = "applied"
+		case plan.Status == "applying":
+			migration.Status = "applying"
+		case plan.Status == "failed" && plan.Failure != nil && plan.Failure.Version == migration.Version:
+			migration.Status = "failed"
+		case plan.Status == "pending_approval":
+			migration.Status = "pending_verification"
+		default:
+			migration.Status = "pending_approval"
+		}
+	}
+	return nil
 }
 
 // ApproveUpdate is intentionally append-only: no permission removal, no scope
@@ -444,7 +485,7 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 	for _, migration := range proposed.Migrations[len(current.Migrations):] {
 		endpoint, endpointErr := manifestEndpoint(app.ServiceEndpoint, migration.Path)
 		if endpointErr != nil {
-			return fail(endpointErr)
+			return fail(newMigrationFailure(MigrationFetchFailed, migration.Version, migration.Path, "The migration path is invalid and could not be retrieved.", endpointErr))
 		}
 		body, fetchErr := httpRequestLimit(ctx, s.client, http.MethodGet, endpoint, "", nil, maxMigrationBytes)
 		if fetchErr != nil {
@@ -512,7 +553,7 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 			return fail(err)
 		}
 	}
-	cmd, err := tx.Exec(ctx, `UPDATE core_external_applications SET display_name=$2,description=$3,version=$4,api_contract_version=$5,access_match=$6,access_permissions=$7,migration_bundle_version=$8,installed_manifest=$9,updated_at=NOW() WHERE id=$1 AND status='active' AND installed_manifest=$10`, applicationID, proposed.Application.DisplayName, proposed.Application.Description, proposed.Application.Version, proposed.Application.APIContractVersion, proposed.Access.Match, mustJSON(proposed.Access.Permissions), proposed.Database.MigrationBundleVersion, mustJSON(proposed), app.InstalledManifest)
+	cmd, err := tx.Exec(ctx, `UPDATE core_external_applications SET display_name=$2,description=$3,version=$4,api_contract_version=$5,access_match=$6,access_permissions=$7,migration_bundle_version=$8,installed_manifest=$9,update_available=FALSE,available_version=$4,available_migration_bundle_version=$8,update_checked_at=NOW(),update_check_error='',updated_at=NOW() WHERE id=$1 AND status='active' AND installed_manifest=$10`, applicationID, proposed.Application.DisplayName, proposed.Application.Description, proposed.Application.Version, proposed.Application.APIContractVersion, proposed.Access.Match, mustJSON(proposed.Access.Permissions), proposed.Database.MigrationBundleVersion, mustJSON(proposed), app.InstalledManifest)
 	if err != nil {
 		return fail(err)
 	}

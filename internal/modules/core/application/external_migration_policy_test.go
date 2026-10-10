@@ -26,7 +26,14 @@ func TestMigrationPolicyStillRejectsPrivilegeOrSessionChanges(t *testing.T) {
 		"CREATE EXTENSION btree_gist;",
 		"ALTER TABLE cafe.cafe_bookings OWNER TO postgres;",
 		"SELECT pg_read_file('/etc/passwd');",
+		`UPDATE "core_external_applications" SET description='cross application';`,
 		"CREATE OR REPLACE FUNCTION cafe.bad() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN NEW; END; $$;",
+		"DO $$ BEGIN EXECUTE 'GRANT ALL ON cafe.cafe_bookings TO public'; END; $$;",
+		"CREATE OR REPLACE FUNCTION cafe.dynamic() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN EXECUTE 'UPDATE cafe.cafe_bookings SET status = ''confirmed'''; RETURN NEW; END; $$;",
+		"CREATE OR REPLACE FUNCTION cafe.file_read() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_read_file('/etc/passwd'); RETURN NEW; END; $$;",
+		"DROP TABLE cafe.cafe_bookings;",
+		"CREATE EXTENSION IF NOT EXISTS btree_gist;",
+		"SELECT 1;",
 	} {
 		if err := validateMigrationSQL([]byte(statement)); err == nil {
 			t.Errorf("allowed restricted migration SQL: %s", statement)
@@ -35,6 +42,7 @@ func TestMigrationPolicyStillRejectsPrivilegeOrSessionChanges(t *testing.T) {
 	for _, statement := range []string{
 		"-- GRANT ALL ON cafe.cafe_bookings TO public\nUPDATE cafe.cafe_bookings SET notes='security definer and pg_read_file are ordinary text';",
 		"INSERT INTO cafe.cafe_booking_events(reason) VALUES ('COPY cafe.cafe_bookings TO PROGRAM');",
+		"/* outer comment /* nested GRANT ALL */ still comment */ UPDATE cafe.cafe_bookings SET notes=E'escaped \\' quote';",
 	} {
 		if err := validateMigrationSQL([]byte(statement)); err != nil {
 			t.Errorf("rejected safe comment or string content: %s (%v)", statement, err)
