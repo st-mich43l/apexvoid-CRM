@@ -85,7 +85,7 @@ func requireAuthentication(auth Authenticator, externalNavigation bool) func(htt
 				token = cookie.Value
 			}
 			unauthenticated := func() {
-				if externalNavigation && externalDocumentNavigation(r) {
+				if externalNavigation && ExternalApplicationDocumentNavigation(r) {
 					redirectToExternalContinuation(w, r, "/auth/continue")
 					return
 				}
@@ -101,7 +101,7 @@ func requireAuthentication(auth Authenticator, externalNavigation bool) func(htt
 				return
 			}
 			if principal.MustChangePassword && !passwordChangeAllowed(r.URL.Path) {
-				if externalNavigation && externalDocumentNavigation(r) {
+				if externalNavigation && ExternalApplicationDocumentNavigation(r) {
 					redirectToExternalContinuation(w, r, "/change-password")
 					return
 				}
@@ -113,7 +113,9 @@ func requireAuthentication(auth Authenticator, externalNavigation bool) func(htt
 	}
 }
 
-func externalDocumentNavigation(r *http.Request) bool {
+// ExternalApplicationDocumentNavigation identifies browser navigations only.
+// It must not classify API requests or subresource fetches as documents.
+func ExternalApplicationDocumentNavigation(r *http.Request) bool {
 	if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/apps/") {
 		return false
 	}
