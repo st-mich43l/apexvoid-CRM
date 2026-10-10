@@ -2,7 +2,8 @@
 // external-application document. Never use an arbitrary URL as a login return.
 export function safeExternalReturnTo(raw: string | null): string | null {
   if (!raw || raw.length > 2048 || !raw.startsWith('/apps/') || raw.startsWith('//') ||
-      raw.includes('\\') || raw.includes('#') || /[\u0000-\u001f\u007f]/.test(raw)) return null
+      raw.includes('\\') || raw.includes('#') ||
+      [...raw].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) return null
   const rawPath = raw.split(/[?#]/, 1)[0]
   if (/%(?:2e|2f|5c|00|25)/i.test(rawPath)) return null
   if (rawPath.split('/').some(segment => segment === '.' || segment === '..')) return null
