@@ -134,13 +134,13 @@ func (s *ExternalStore) provisionDatabase(ctx context.Context, installationID uu
 		FROM pg_auth_members membership
 		JOIN pg_roles member ON member.oid = membership.member
 		JOIN pg_roles granted ON granted.oid = membership.roleid
-		WHERE member.rolname=$1 AND granted.rolname=$2
+		WHERE member.rolname=$1 AND granted.rolname=$2 AND membership.set_option
 	)`, provisioner, role).Scan(&provisionerHasRole)
 	if err != nil {
 		return provisionedDatabase{}, err
 	}
 	if !provisionerHasRole {
-		if _, err = admin.Exec(ctx, `GRANT `+quoteIdentifier(role)+` TO `+quoteIdentifier(provisioner)); err != nil {
+		if _, err = admin.Exec(ctx, `GRANT `+quoteIdentifier(role)+` TO `+quoteIdentifier(provisioner)+` WITH SET TRUE`); err != nil {
 			return provisionedDatabase{}, fmt.Errorf("grant provisioner access to app role: %w", err)
 		}
 		defer func() {
