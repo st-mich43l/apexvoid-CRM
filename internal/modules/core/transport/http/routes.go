@@ -55,7 +55,7 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 }
 
 func (h *Handler) RegisterPublicRoutes(routes module.RouteRegistry) error {
-	protected := routes.With(usersapi.RequireAuthentication(h.authenticator), organizationapi.RequireWorkspace(h.workspace))
+	protected := routes.With(usersapi.RequireAuthentication(h.authenticator), organizationapi.RequireExternalWorkspace(h.workspace))
 	protected.Get("/apps/{application}", h.proxyExternalFrontend)
 	protected.Get("/apps/{application}/*", h.proxyExternalFrontend)
 	protected.Get("/api/apps/{application}", h.proxyExternalAPI)
