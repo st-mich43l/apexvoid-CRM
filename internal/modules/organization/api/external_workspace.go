@@ -53,6 +53,10 @@ func RequireExternalWorkspace(resolver WorkspaceResolver) func(http.Handler) htt
 				workspaceContext, err = resolver.ResolveWorkspaceContext(r.Context(), principal.UserID, workspaceID)
 			}
 			if err != nil {
+				if usersapi.ExternalApplicationDocumentNavigation(r) {
+					http.Redirect(w, r, "/auth/app-access-denied", http.StatusSeeOther)
+					return
+				}
 				httpserver.WriteError(w, r, http.StatusForbidden, "WORKSPACE_FORBIDDEN", "You do not have access to this workspace")
 				return
 			}
