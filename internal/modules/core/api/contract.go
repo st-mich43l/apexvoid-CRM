@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	frameworkapplication "github.com/st-mich43l/apexvoid-CRM/internal/framework/application"
@@ -44,4 +45,8 @@ type DiscoveredApplication struct {
 	Descriptor         frameworkapplication.Descriptor
 	EntryAuthorized    bool
 	SettingsAuthorized bool
+	UpdateAvailable    bool
+	AvailableVersion   string
+	UpdateCheckedAt    *time.Time
+	UpdateCheckError   string
 }

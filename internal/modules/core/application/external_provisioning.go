@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -13,11 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// Defense-in-depth lint only. Isolation is enforced by PostgreSQL privileges,
-// schema ownership, the dedicated DB, approval and SQL review. Regex is NOT a
-// SQL parser or a security boundary.
-var migrationForbiddenPattern = regexp.MustCompile(`(?i)(drop\s+(database|schema|role|owned)|truncate\s|alter\s+(system|database|role)|create\s+(database|role|schema)|grant\s|revoke\s|create\s+extension|copy\s+[^;]*\s+program|pg_(read_file|write_file|execute_server_program)|set\s|security\s+definer|\b(public|pg_catalog|core_|workspace_|apexvoid_)\w*\.)`)
 
 type provisionedDatabase struct {
 	Name     string
@@ -238,21 +232,21 @@ func (s *ExternalStore) applyMigrations(ctx context.Context, database provisione
 	for _, migration := range manifest.Migrations {
 		endpoint, err := manifestEndpoint(serviceURL, migration.Path)
 		if err != nil {
-			return err
+			return newMigrationFailure(MigrationFetchFailed, migration.Version, migration.Path, "The migration path is invalid and could not be retrieved.", err)
 		}
 		body, err := httpRequestLimit(ctx, s.client, http.MethodGet, endpoint, "", nil, maxMigrationBytes)
 		if err != nil {
-			return fmt.Errorf("fetch migration %d: %w", migration.Version, err)
+			return newMigrationFailure(MigrationFetchFailed, migration.Version, migration.Path, "The application service did not return the migration SQL.", fmt.Errorf("%w: %v", ErrMigrationFetch, err))
 		}
 		if len(body) > maxMigrationBytes {
-			return fmt.Errorf("migration %d exceeds size limit", migration.Version)
+			return newMigrationFailure(MigrationFetchFailed, migration.Version, migration.Path, "The migration SQL exceeds the maximum allowed size.", ErrMigrationFetch)
 		}
 		checksum := strings.ToLower(migration.SHA256)
 		if migrationChecksum(body) != checksum {
-			return fmt.Errorf("migration %d content differs from pinned, authenticated manifest", migration.Version)
+			return newMigrationFailure(MigrationChecksumMismatch, migration.Version, migration.Path, "Downloaded bytes differ from the checksum pinned in the signed manifest.", ErrMigrationChecksum)
 		}
-		if migrationForbiddenPattern.Match(body) {
-			return fmt.Errorf("migration %d: %w", migration.Version, ErrMigrationPolicy)
+		if policyErr := validateMigrationSQL(body); policyErr != nil {
+			return newMigrationFailure(MigrationPolicyRejected, migration.Version, migration.Path, "The SQL contains a privileged, session-changing, server-side, or cross-application operation.", fmt.Errorf("%w: %v", ErrMigrationPolicy, policyErr))
 		}
 		tx, err := appPool.Begin(ctx)
 		if err != nil {
@@ -280,7 +274,7 @@ func (s *ExternalStore) applyMigrations(ctx context.Context, database provisione
 			}
 			if err != nil {
 				_ = tx.Rollback(ctx)
-				return fmt.Errorf("apply migration %d: %w", migration.Version, err)
+				return migrationExecutionFailure(migration.Version, migration.Path, err)
 			}
 			if err = tx.Commit(ctx); err != nil {
 				return err

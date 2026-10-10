@@ -3,12 +3,13 @@ import { CheckCircle2, Clock3, Database, Fingerprint, GitPullRequest, ShieldChec
 import type { ExternalIntegration, ExternalUpgrade } from '../../../core/api/client'
 import { Badge, Button } from '../../../components/ui'
 
-export function ExternalUpgradeReview({ application, plan, pending, error, onClose, onApprove }: {
+export function ExternalUpgradeReview({ application, plan, pending, error, onClose, onRetry, onApprove }: {
   application: ExternalIntegration
   plan: ExternalUpgrade
   pending: boolean
   error?: string
   onClose: () => void
+  onRetry?: () => Promise<void>
   onApprove: (permissions: boolean, migrations: boolean) => Promise<void>
 }) {
   const [approvedPermissions, setApprovedPermissions] = useState(false)
@@ -27,6 +28,7 @@ export function ExternalUpgradeReview({ application, plan, pending, error, onClo
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+    {plan.failure && <div role="alert" className="rounded-xl border border-warning/25 bg-warning/5 p-4 text-sm text-warning"><p className="font-semibold">{plan.failure.code}</p><p className="mt-1 text-xs">Migration v{plan.failure.version} · {plan.failure.path}</p><p className="mt-2 text-xs leading-5">{plan.failure.message}</p></div>}
     {(upToDate || complete) ? <div className="flex gap-3 rounded-xl border border-success/20 bg-success/5 p-4"><CheckCircle2 size={18} className="shrink-0 text-success" /><div><p className="text-sm font-semibold">{upToDate ? 'No changes to install' : 'Verified upgrade completed'}</p><p className="mt-1 text-xs leading-6 text-muted-foreground">{upToDate ? 'The registered application manifest matches the installed version. Nothing was changed.' : 'The reviewed manifest and append-only migration history were activated.'}</p></div></div> : <>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-border p-4">
@@ -39,7 +41,7 @@ export function ExternalUpgradeReview({ application, plan, pending, error, onClo
           <p className="flex items-center gap-2 text-xs font-semibold"><Database size={15} className="text-primary" />Database migrations</p>
           <p className="mt-2 text-xl font-semibold">{plan.pending_migrations?.length ?? 0}</p>
           <p className="text-xs text-muted-foreground">Append-only SQL migrations</p>
-          <div className="mt-3 space-y-1.5">{plan.pending_migrations?.map(item => <p key={item.version} className="break-all font-mono text-[11px] text-foreground">v{item.version} · {item.path}</p>)}</div>
+          <div className="mt-3 space-y-2">{plan.pending_migrations?.map(item => <div key={item.version} className="flex items-start justify-between gap-2"><p className="break-all font-mono text-[11px] text-foreground">v{item.version} · {item.path}</p><Badge tone={item.status === 'failed' ? 'warning' : item.status === 'applied' ? 'success' : 'neutral'}>{item.status.replaceAll('_', ' ')}</Badge></div>)}</div>
         </div>
       </div>
       <div className="space-y-3 rounded-xl border border-border bg-muted/10 p-4">
@@ -57,6 +59,7 @@ export function ExternalUpgradeReview({ application, plan, pending, error, onClo
     </>}
     <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
       <Button type="button" variant="outline" disabled={pending} onClick={onClose}>{upToDate || complete ? 'Close' : 'Cancel'}</Button>
+      {onRetry && !upToDate && !complete && <Button type="button" variant="outline" disabled={pending} onClick={() => void onRetry()}>{pending ? 'Checking…' : 'Check again'}</Button>}
       {!upToDate && !complete && <Button type="button" disabled={!ready || pending} onClick={() => void onApprove(approvedPermissions, approvedMigrations)}>{pending ? 'Verifying & applying…' : 'Approve & install upgrade'}</Button>}
     </div>
   </div>

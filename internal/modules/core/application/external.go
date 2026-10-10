@@ -55,6 +55,10 @@ type ExternalApplication struct {
 	DatabaseName, DatabaseSchema, DatabaseRole                string
 	MigrationBundleVersion                                    string
 	InstalledManifest                                         json.RawMessage
+	UpdateAvailable                                           bool
+	AvailableVersion, AvailableMigrationBundleVersion         string
+	UpdateCheckedAt                                           *time.Time
+	UpdateCheckError                                          string
 }
 
 type RegisterExternalInput struct {
@@ -231,7 +235,7 @@ func (s *ExternalStore) writePermissions(ctx context.Context, tx pgx.Tx, app Ext
 }
 
 func (s *ExternalStore) List(ctx context.Context) ([]ExternalApplication, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status,workspace_default_enabled,installation_id,COALESCE(database_name,''),COALESCE(database_schema,''),COALESCE(database_role,''),COALESCE(migration_bundle_version,''),COALESCE(installed_manifest,'null'::jsonb) FROM core_external_applications WHERE status='active' ORDER BY id`)
+	rows, err := s.pool.Query(ctx, externalApplicationSelect+` WHERE status='active' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +257,7 @@ func (s *ExternalStore) List(ctx context.Context) ([]ExternalApplication, error)
 }
 
 func (s *ExternalStore) Get(ctx context.Context, id string) (ExternalApplication, error) {
-	row := s.pool.QueryRow(ctx, `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status,workspace_default_enabled,installation_id,COALESCE(database_name,''),COALESCE(database_schema,''),COALESCE(database_role,''),COALESCE(migration_bundle_version,''),COALESCE(installed_manifest,'null'::jsonb) FROM core_external_applications WHERE id=$1 AND status='active'`, id)
+	row := s.pool.QueryRow(ctx, externalApplicationSelect+` WHERE id=$1 AND status='active'`, id)
 	app, err := scanExternal(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ExternalApplication{}, ErrExternalNotFound
@@ -646,13 +650,16 @@ func samePermissionCatalog(left, right []ExternalPermission) bool {
 func scanExternal(row pgx.Row) (ExternalApplication, error) {
 	var app ExternalApplication
 	var raw []byte
-	err := row.Scan(&app.ID, &app.DisplayName, &app.Description, &app.Version, &app.APIContractVersion, &app.ServiceIdentity, &app.ServiceEndpoint, &app.HealthEndpoint, &app.FrontendRoute, &app.SettingsRoute, &app.Access.Match, &raw, &app.Enabled, &app.CredentialRevoked, &app.Status, &app.WorkspaceDefaultEnabled, &app.InstallationID, &app.DatabaseName, &app.DatabaseSchema, &app.DatabaseRole, &app.MigrationBundleVersion, &app.InstalledManifest)
+	err := row.Scan(&app.ID, &app.DisplayName, &app.Description, &app.Version, &app.APIContractVersion, &app.ServiceIdentity, &app.ServiceEndpoint, &app.HealthEndpoint, &app.FrontendRoute, &app.SettingsRoute, &app.Access.Match, &raw, &app.Enabled, &app.CredentialRevoked, &app.Status, &app.WorkspaceDefaultEnabled, &app.InstallationID, &app.DatabaseName, &app.DatabaseSchema, &app.DatabaseRole, &app.MigrationBundleVersion, &app.InstalledManifest, &app.UpdateAvailable, &app.AvailableVersion, &app.AvailableMigrationBundleVersion, &app.UpdateCheckedAt, &app.UpdateCheckError)
 	if err != nil {
 		return app, err
 	}
 	err = json.Unmarshal(raw, &app.Access.Permissions)
 	return app, err
 }
+
+const externalApplicationSelect = `SELECT id,display_name,description,version,api_contract_version,service_identity,service_endpoint,health_endpoint,frontend_route,settings_route,access_match,access_permissions,enabled,credential_revoked_at IS NOT NULL,status,workspace_default_enabled,installation_id,COALESCE(database_name,''),COALESCE(database_schema,''),COALESCE(database_role,''),COALESCE(migration_bundle_version,''),COALESCE(installed_manifest,'null'::jsonb),update_available,COALESCE(available_version,''),COALESCE(available_migration_bundle_version,''),update_checked_at,COALESCE(update_check_error,'') FROM core_external_applications`
+
 func mustJSON(value any) []byte { raw, _ := json.Marshal(value); return raw }
 func nullableText(value string) any {
 	if strings.TrimSpace(value) == "" {

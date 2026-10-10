@@ -16,12 +16,13 @@ import (
 )
 
 type App struct {
-	Environment  string
-	Logger       *slog.Logger
-	Database     *pgxpool.Pool
-	Transactions *database.TxManager
-	Health       *health.Checker
-	Runtime      *runtime.Runtime
+	Environment    string
+	Logger         *slog.Logger
+	Database       *pgxpool.Pool
+	Transactions   *database.TxManager
+	Health         *health.Checker
+	Runtime        *runtime.Runtime
+	stopBackground context.CancelFunc
 }
 
 func (a *App) RegisterRoutes(router chi.Router) error {
@@ -74,6 +75,9 @@ func writeJSON(w http.ResponseWriter, status int, value interface{}) {
 }
 
 func (a *App) Close(ctx context.Context) error {
+	if a.stopBackground != nil {
+		a.stopBackground()
+	}
 	if a.Database != nil {
 		a.Database.Close()
 	}

@@ -108,7 +108,9 @@ func Bootstrap(ctx context.Context, cfg config.Config) (*App, error) {
 			logger.Info("bootstrap administrator created", "email", user.Email)
 		}
 	}
-	application := &App{Environment: cfg.App.Environment, Logger: logger, Database: postgres, Transactions: database.NewTxManager(postgres), Health: health.NewChecker(postgres), Runtime: framework}
+	backgroundCtx, stopBackground := context.WithCancel(ctx)
+	coreModule.StartUpdateDiscovery(backgroundCtx, cfg.Integrations.UpdateDiscoveryInterval)
+	application := &App{Environment: cfg.App.Environment, Logger: logger, Database: postgres, Transactions: database.NewTxManager(postgres), Health: health.NewChecker(postgres), Runtime: framework, stopBackground: stopBackground}
 	framework.LogStartup(logger)
 	logger.Info("application initialized")
 	return application, nil

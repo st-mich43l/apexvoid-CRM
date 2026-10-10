@@ -78,7 +78,7 @@ func (s *Service) Applications(ctx context.Context, userID, workspaceID uuid.UUI
 					return nil, authorizeErr
 				}
 			}
-			result = append(result, api.DiscoveredApplication{Descriptor: definition, EntryAuthorized: entryAuthorized, SettingsAuthorized: settingsAuthorized})
+			result = append(result, api.DiscoveredApplication{Descriptor: definition, EntryAuthorized: entryAuthorized, SettingsAuthorized: settingsAuthorized, UpdateAvailable: registered.UpdateAvailable, AvailableVersion: registered.AvailableVersion, UpdateCheckedAt: registered.UpdateCheckedAt, UpdateCheckError: registered.UpdateCheckError})
 		}
 	}
 	return result, nil
