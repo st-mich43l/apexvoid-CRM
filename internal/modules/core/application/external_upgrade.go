@@ -161,7 +161,7 @@ func (s *ExternalStore) signedUpdateManifest(ctx context.Context, app ExternalAp
 	if app.CredentialRevoked || app.InstallationID == nil {
 		return ExternalManifest{}, nil, fmt.Errorf("%w: only active manifest-enrolled applications can be upgraded", ErrUpgradeInvalid)
 	}
-	if err := validateServiceURL(app.ServiceEndpoint, s.allowedHosts); err != nil {
+	if err := validateServiceURL(app.ServiceEndpoint); err != nil {
 		return ExternalManifest{}, nil, fmt.Errorf("%w: untrusted application endpoint", ErrUpgradeInvalid)
 	}
 	var hash string

@@ -34,12 +34,12 @@ describe('ApplicationsPage', () => {
   })
 
   it('labels installed applications and opens them in a new tab', async () => {
-    vi.spyOn(api.framework, 'applications').mockResolvedValue([registered(), registered({ id: 'cafe', display_name: 'ApexVoid Café', deployment: 'external', frontend: { entry_route: '/apps/cafe', navigation_id: 'cafe' } })])
+    vi.spyOn(api.framework, 'applications').mockResolvedValue([registered(), registered({ id: 'photobooth', display_name: 'ApexVoid Photobooth', deployment: 'external', frontend: { entry_route: '/apps/photobooth', navigation_id: 'photobooth' } })])
     renderPage()
     expect(await screen.findByText('Installed')).toBeInTheDocument()
-    const link = screen.getAllByRole('link', { name: /open application/i }).find(item => item.getAttribute('href') === '/apps/cafe?workspace_id=workspace-a')
+    const link = screen.getAllByRole('link', { name: /open application/i }).find(item => item.getAttribute('href') === '/apps/photobooth?workspace_id=workspace-a')
     expect(link).toBeDefined()
-    expect(link).toHaveAttribute('href', '/apps/cafe?workspace_id=workspace-a')
+    expect(link).toHaveAttribute('href', '/apps/photobooth?workspace_id=workspace-a')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
@@ -65,14 +65,14 @@ describe('ApplicationsPage', () => {
     vi.spyOn(api.framework, 'applications').mockResolvedValue([registered()])
     vi.spyOn(api.integrations, 'external').mockResolvedValue([])
     const discover = vi.spyOn(api.integrations, 'discover').mockResolvedValue({
-      id: 'install-1', application_id: 'cafe', service_url: 'http://apexvoid-cafe:8090',
+      id: 'install-1', application_id: 'photobooth', service_url: 'http://apexvoid-photobooth:8090',
       manifest: {
         manifest_version: 'v1',
-        application: { id: 'cafe', display_name: 'ApexVoid Café', description: 'Café operations', version: '2.7.3', api_contract_version: 'v1' },
-        service: { identity: 'cafe-service', health_path: '/health', enrollment_path: '/.well-known/apexvoid/enroll', frontend_route: '/apps/cafe', api_route: '/api' },
-        database: { name: 'apexvoid_cafe', schema: 'cafe', role: 'apexvoid_cafe', migration_bundle_version: '2.7.3' },
-        permissions: [{ name: 'cafe.order.read', display_name: 'Read orders', description: '', scope: 'workspace' }],
-        access: { match: 'all', permissions: ['cafe.order.read'] }, migrations: [],
+        application: { id: 'photobooth', display_name: 'ApexVoid Photobooth', description: 'Photobooth operations', version: '2.7.3', api_contract_version: 'v1' },
+        service: { identity: 'photobooth-service', health_path: '/health', enrollment_path: '/.well-known/apexvoid/enroll', frontend_route: '/apps/photobooth', api_route: '/api' },
+        database: { name: 'apexvoid_photobooth', schema: 'photobooth', role: 'apexvoid_photobooth', migration_bundle_version: '2.7.3' },
+        permissions: [{ name: 'photobooth.order.read', display_name: 'Read orders', description: '', scope: 'workspace' }],
+        access: { match: 'all', permissions: ['photobooth.order.read'] }, migrations: [],
       },
       status: 'pending_approval', expires_at: '', last_step: 'discovered', selected_workspace_ids: [], created_at: '', updated_at: '',
     })
@@ -83,8 +83,8 @@ describe('ApplicationsPage', () => {
     expect(screen.getByRole('dialog', { name: /register an application/i })).toBeInTheDocument()
     expect(screen.getByLabelText('Application service URL')).toBeInTheDocument()
     expect(screen.queryByLabelText('Application version')).not.toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Application service URL'), { target: { value: 'http://apexvoid-cafe:8090' } })
-    fireEvent.change(screen.getByLabelText('One-time enrollment code'), { target: { value: 'correct-32-character-secret-for-cafe-bootstrap' } })
+    fireEvent.change(screen.getByLabelText('Application service URL'), { target: { value: 'http://apexvoid-photobooth:8090' } })
+    fireEvent.change(screen.getByLabelText('One-time enrollment code'), { target: { value: 'correct-32-character-secret-for-photobooth-bootstrap' } })
     fireEvent.click(screen.getByRole('button', { name: 'Discover application' }))
     await waitFor(() => expect(discover).toHaveBeenCalled())
     expect(await screen.findByText('2.7.3')).toBeInTheDocument()

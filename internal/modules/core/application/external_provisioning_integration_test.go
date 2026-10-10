@@ -37,7 +37,7 @@ func TestIsolatedApplicationProvisioningAndMigrationRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 	suffix := strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	appID := "cafe" + suffix
+	appID := "photobooth" + suffix
 	database, schema, role := canonicalApplicationDatabase(appID)
 	platformDB := "platformtest" + suffix
 	_, err = admin.Exec(ctx, "CREATE DATABASE "+quoteIdentifier(platformDB))

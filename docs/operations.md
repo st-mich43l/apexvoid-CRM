@@ -5,8 +5,8 @@
 Copy `.env.example` to `.env` and run `make compose-up`. The Makefile creates
 the shared networks when they are missing, then starts Compose. The backend is
 attached to both networks: `apexvoid-apps`
-for service-to-service traffic and `apexvoid-data` for PostgreSQL. A Café
-Compose project must join both networks, use the service alias `cafe`, and
+for service-to-service traffic and `apexvoid-data` for PostgreSQL. A Photobooth
+Compose project must join both networks, use the service alias `photobooth`, and
 must not publish its database or backend to the public host.
 
 ```bash
@@ -17,20 +17,22 @@ make compose-up
 The backend receives the integration variables explicitly; Docker does not
 implicitly pass values from `.env` into a container. In particular,
 `DATABASE_PROVISIONING_URL` must use the Docker hostname `postgres`, not
-`localhost`, and `INTEGRATIONS_ALLOWED_SERVICE_HOSTS` should include `cafe`.
+`localhost`. External service endpoints are authorized by the signed manifest,
+one-time enrollment code, and platform-admin approval; no per-application host
+allowlist environment variable is required.
 The development PostgreSQL init hook creates `apexvoid_provisioner` only for a
 fresh volume when `DATABASE_PROVISIONER_PASSWORD` is set. Existing volumes
 require the DBA to create the separately managed role and grant it only the
 provisioning privileges required by the documented workflow.
 
-A separate Café Compose project joins the same externally managed networks:
+A separate Photobooth Compose project joins the same externally managed networks:
 
 ```yaml
 services:
-  cafe:
+  photobooth:
     networks:
       apexvoid-apps:
-        aliases: [cafe]
+        aliases: [photobooth]
       apexvoid-data:
 
 networks:
@@ -42,17 +44,16 @@ networks:
     name: apexvoid-data
 ```
 
-Only the Café backend needs both networks. Its browser-facing frontend may be
+Only the Photobooth backend needs both networks. Its browser-facing frontend may be
 published separately, but the Enterprise backend must resolve the backend as
-`cafe` on `apexvoid-apps`.
+`photobooth` on `apexvoid-apps`.
 
 ## Production startup
 
 1. Create the shared networks, copy `.env.production.example` to
    `.env.production`, and replace every placeholder with a unique secret. Set
    `APEXVOID_PUBLIC_ORIGIN` to the HTTPS origin exposed by your TLS ingress.
-   Configure `INTEGRATIONS_ALLOWED_SERVICE_HOSTS=cafe`, keep
-   `DATABASE_PROVISIONING_URL` on the Docker `postgres` hostname, and use a
+   Keep `DATABASE_PROVISIONING_URL` on the Docker `postgres` hostname, and use a
    separately managed `apexvoid_provisioner` role. Do not reuse the runtime
    `POSTGRES_USER` for application traffic.
 2. Run `docker compose --env-file .env.production -f docker-compose.production.yml up -d --build`.
@@ -75,9 +76,9 @@ environment values. It constructs an escaped PostgreSQL URI internally, so a
 password containing URI-reserved characters remains valid. Never print the
 resulting URI or place it in a shell command.
 
-The production Compose file fails early when the assertion secret, trusted
-service-host allowlist, provisioning URL, or provisioning encryption key is
-missing. `DATABASE_PROVISIONING_KEY` must remain stable across restarts because
+The production Compose file fails early when the assertion secret, provisioning
+URL, or provisioning encryption key is missing. `DATABASE_PROVISIONING_KEY` must
+remain stable across restarts because
 it decrypts provisioned application credentials. The PostgreSQL init hook only
 creates the provisioner role on a new data volume; for an existing deployment,
 create or rotate that role through the normal DBA process and update the URL in

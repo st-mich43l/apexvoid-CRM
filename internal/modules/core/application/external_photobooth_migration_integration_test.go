@@ -28,48 +28,48 @@ import (
 	"github.com/st-mich43l/apexvoid-CRM/internal/platform/database"
 )
 
-// The Café repository is checked out by CI at the immutable revision recorded
+// The Photobooth repository is checked out by CI at the immutable revision recorded
 // below. Keeping the source external prevents Enterprise from silently
 // rewriting a published application migration while still exercising the
 // exact artifacts used by the service.
 const (
-	cafeMigrationRevision = "b251c0c5e89b3f80c857464c45884d1423843aaf"
-	cafeMigration001Hash  = "63d3f1ee93d791cc68ea709d1e963abd465ce2874eb805b39ada18d953f9606e"
-	cafeMigration002Hash  = "781618236abda6405128d3aa95ab3a757821040bddf3e4ce989764ead40e2954"
+	photoboothMigrationRevision = "29e9e25f8fb687daa35d1d766cec4adcb718180d"
+	photoboothMigration001Hash  = "49b5d9d0a1b1c5eeaf6f39f0d8284db8d8bc98d2688468fe933c2da6ebaea385"
+	photoboothMigration002Hash  = "87ae9ab2a8525e58a988e619fa8348cf6cccfd0bfd29288aaeee4d391c93b4e0"
 )
 
-func TestExactCafeMigrationArtifactsPassEnterprisePolicy(t *testing.T) {
-	repository := os.Getenv("APEXVOID_CAFE_REPOSITORY")
+func TestExactPhotoboothMigrationArtifactsPassEnterprisePolicy(t *testing.T) {
+	repository := os.Getenv("APEXVOID_PHOTOBOOTH_REPOSITORY")
 	if repository == "" {
-		t.Skip("set APEXVOID_CAFE_REPOSITORY to the pinned Café repository checkout")
+		t.Skip("set APEXVOID_PHOTOBOOTH_REPOSITORY to the pinned Photobooth repository checkout")
 	}
 	for _, item := range []struct {
 		version int
 		name    string
 		hash    string
 	}{
-		{version: 1, name: "001_cafe.sql", hash: cafeMigration001Hash},
-		{version: 2, name: "002_advanced_booking.sql", hash: cafeMigration002Hash},
+		{version: 1, name: "001_photobooth.sql", hash: photoboothMigration001Hash},
+		{version: 2, name: "002_advanced_booking.sql", hash: photoboothMigration002Hash},
 	} {
 		body, err := os.ReadFile(filepath.Join(repository, "db", "migrations", item.name))
 		if err != nil {
-			t.Fatalf("read Café migration %d from revision %s: %v", item.version, cafeMigrationRevision, err)
+			t.Fatalf("read Photobooth migration %d from revision %s: %v", item.version, photoboothMigrationRevision, err)
 		}
 		actual := fmt.Sprintf("%x", sha256.Sum256(body))
 		if actual != item.hash {
-			t.Fatalf("Café migration %d checksum changed: got %s, want %s", item.version, actual, item.hash)
+			t.Fatalf("Photobooth migration %d checksum changed: got %s, want %s", item.version, actual, item.hash)
 		}
 		if err := validateMigrationSQL(body); err != nil {
-			t.Fatalf("Café migration %d violates Enterprise policy: %v", item.version, err)
+			t.Fatalf("Photobooth migration %d violates Enterprise policy: %v", item.version, err)
 		}
 	}
 }
 
-func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
-	repository := os.Getenv("APEXVOID_CAFE_REPOSITORY")
+func TestExactPhotoboothUpgradeApprovalWorkflow(t *testing.T) {
+	repository := os.Getenv("APEXVOID_PHOTOBOOTH_REPOSITORY")
 	source := os.Getenv("APEXVOID_TEST_DATABASE_URL")
 	if repository == "" || source == "" {
-		t.Skip("requires APEXVOID_CAFE_REPOSITORY and APEXVOID_TEST_DATABASE_URL")
+		t.Skip("requires APEXVOID_PHOTOBOOTH_REPOSITORY and APEXVOID_TEST_DATABASE_URL")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -79,15 +79,15 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 			t.Fatal(err)
 		}
 		if actual := fmt.Sprintf("%x", sha256.Sum256(body)); actual != expected {
-			t.Fatalf("Café %s checksum changed: got %s, want %s", name, actual, expected)
+			t.Fatalf("Photobooth %s checksum changed: got %s, want %s", name, actual, expected)
 		}
 		if err := validateMigrationSQL(body); err != nil {
-			t.Fatalf("Café %s violates Enterprise policy: %v", name, err)
+			t.Fatalf("Photobooth %s violates Enterprise policy: %v", name, err)
 		}
 		return body
 	}
-	migration001 := readMigration("001_cafe.sql", cafeMigration001Hash)
-	migration002 := readMigration("002_advanced_booking.sql", cafeMigration002Hash)
+	migration001 := readMigration("001_photobooth.sql", photoboothMigration001Hash)
+	migration002 := readMigration("002_advanced_booking.sql", photoboothMigration002Hash)
 
 	adminConfig, err := pgxpool.ParseConfig(source)
 	if err != nil {
@@ -100,11 +100,11 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 	}
 	defer admin.Close()
 	suffix := strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	platformDB := "apexvoid_cafe_test_" + suffix
-	const applicationID = "cafe"
-	const databaseName = "apexvoid_cafe"
-	const schemaName = "cafe"
-	const roleName = "apexvoid_cafe"
+	platformDB := "apexvoid_photobooth_test_" + suffix
+	const applicationID = "photobooth"
+	const databaseName = "apexvoid_photobooth"
+	const schemaName = "photobooth"
+	const roleName = "apexvoid_photobooth"
 	for _, name := range []string{databaseName, roleName} {
 		var exists bool
 		query := `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname=$1)`
@@ -115,7 +115,7 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 			t.Fatal(err)
 		}
 		if exists {
-			t.Skipf("refusing to use existing Café database or role %q", name)
+			t.Skipf("refusing to use existing Photobooth database or role %q", name)
 		}
 	}
 	if _, err := admin.Exec(ctx, `CREATE DATABASE `+quoteIdentifier(platformDB)); err != nil {
@@ -172,7 +172,7 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 			w.Header().Set("X-ApexVoid-Update-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(raw)
-		case "/.well-known/apexvoid/migrations/001_cafe.sql":
+		case "/.well-known/apexvoid/migrations/001_photobooth.sql":
 			_, _ = w.Write(migration001)
 		case "/.well-known/apexvoid/migrations/002_advanced_booking.sql":
 			_, _ = w.Write(migration002)
@@ -183,25 +183,25 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 	server.Start()
 	defer server.Close()
 	_, port, _ := net.SplitHostPort(server.Listener.Addr().String())
-	serviceURL := "http://cafe:" + port
+	serviceURL := "http://photobooth:" + port
 	initial := ExternalManifest{
 		ManifestVersion: SupportedExternalContractVersion,
-		Application:     ManifestApplication{ID: applicationID, DisplayName: "ApexVoid Café", Description: "Coffee counter and photo booth booking", Version: "0.1.0", APIContractVersion: "v1"},
-		Service:         ManifestService{Identity: "cafe-service", HealthPath: "/health", EnrollmentPath: "/.well-known/apexvoid/enroll", FrontendRoute: "/apps/cafe", APIRoute: "/api"},
+		Application:     ManifestApplication{ID: applicationID, DisplayName: "ApexVoid Photobooth", Description: "Coffee counter and photo booth booking", Version: "0.1.0", APIContractVersion: "v1"},
+		Service:         ManifestService{Identity: "photobooth-service", HealthPath: "/health", EnrollmentPath: "/.well-known/apexvoid/enroll", FrontendRoute: "/apps/photobooth", APIRoute: "/api"},
 		Database:        ManifestDatabase{Name: databaseName, Schema: schemaName, Role: roleName, MigrationBundleVersion: "0.1.0"},
-		Permissions:     []ExternalPermission{{Name: "cafe.booking.read", DisplayName: "Read bookings", Scope: permission.ScopeWorkspace}},
-		Access:          frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"cafe.booking.read"}},
-		Migrations:      []ExternalMigration{{Version: 1, Path: "/.well-known/apexvoid/migrations/001_cafe.sql", SHA256: cafeMigration001Hash}},
+		Permissions:     []ExternalPermission{{Name: "photobooth.booking.read", DisplayName: "Read bookings", Scope: permission.ScopeWorkspace}},
+		Access:          frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"photobooth.booking.read"}},
+		Migrations:      []ExternalMigration{{Version: 1, Path: "/.well-known/apexvoid/migrations/001_photobooth.sql", SHA256: photoboothMigration001Hash}},
 	}
 	next = initial
 	next.Application.Version = "0.2.0"
 	next.Database.MigrationBundleVersion = "0.2.0"
-	next.Migrations = append(next.Migrations, ExternalMigration{Version: 2, Path: "/.well-known/apexvoid/migrations/002_advanced_booking.sql", SHA256: cafeMigration002Hash})
+	next.Migrations = append(next.Migrations, ExternalMigration{Version: 2, Path: "/.well-known/apexvoid/migrations/002_advanced_booking.sql", SHA256: photoboothMigration002Hash})
 
 	clientTransport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
 	}}
-	store := NewExternalStore(platform, permission.NewRegistry(), nil, []string{"cafe"}, source, strings.Repeat("p", 48))
+	store := NewExternalStore(platform, permission.NewRegistry(), nil, source, strings.Repeat("p", 48))
 	store.client = &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
 	_, _, err = store.Register(ctx, RegisterExternalInput{Application: ExternalApplication{ID: applicationID, DisplayName: initial.Application.DisplayName, Description: initial.Application.Description, Version: initial.Application.Version, APIContractVersion: initial.Application.APIContractVersion, ServiceIdentity: initial.Service.Identity, ServiceEndpoint: serviceURL, HealthEndpoint: serviceURL + "/health", FrontendRoute: initial.Service.FrontendRoute, Access: initial.Access, Permissions: initial.Permissions}, Credential: credential})
 	if err != nil {
@@ -213,10 +213,10 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 	}
 	resource, err := store.provisionDatabase(ctx, installationID, initial)
 	if err != nil {
-		t.Fatal("provision Café database: ", err)
+		t.Fatal("provision Photobooth database: ", err)
 	}
 	if err := store.applyMigrations(ctx, resource, serviceURL, initial); err != nil {
-		t.Fatal("apply Café migration 001: ", err)
+		t.Fatal("apply Photobooth migration 001: ", err)
 	}
 	if _, err := platform.Exec(ctx, `UPDATE core_external_applications SET installation_id=$2,database_name=$3,database_schema=$4,database_role=$5,migration_bundle_version=$6,installed_manifest=$7 WHERE id=$1`, applicationID, installationID, resource.Name, resource.Schema, resource.Role, initial.Database.MigrationBundleVersion, mustJSON(initial)); err != nil {
 		t.Fatal(err)
@@ -227,21 +227,21 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 	}
 	defer appPool.Close()
 	workspaceID, boothID, itemID, bookingID, actorID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
-	if _, err := appPool.Exec(ctx, `INSERT INTO cafe.cafe_items(id,workspace_id,sku,name,kind,price_vnd,created_by) VALUES($1,$2,'legacy-package','Legacy package','photo',100000,$3)`, itemID, workspaceID, actorID); err != nil {
+	if _, err := appPool.Exec(ctx, `INSERT INTO photobooth.photobooth_items(id,workspace_id,sku,name,kind,price_vnd,created_by) VALUES($1,$2,'legacy-package','Legacy package','photo',100000,$3)`, itemID, workspaceID, actorID); err != nil {
 		t.Fatal("seed legacy item: ", err)
 	}
-	if _, err := appPool.Exec(ctx, `INSERT INTO cafe.cafe_booths(id,workspace_id,name,created_by) VALUES($1,$2,'Legacy booth',$3)`, boothID, workspaceID, actorID); err != nil {
+	if _, err := appPool.Exec(ctx, `INSERT INTO photobooth.photobooth_booths(id,workspace_id,name,created_by) VALUES($1,$2,'Legacy booth',$3)`, boothID, workspaceID, actorID); err != nil {
 		t.Fatal("seed legacy booth: ", err)
 	}
-	if _, err := appPool.Exec(ctx, `INSERT INTO cafe.cafe_bookings(id,workspace_id,booth_id,package_id,guest_name,start_at,end_at,status,package_name,price_vnd,created_by) VALUES($1,$2,$3,$4,'Legacy guest',NOW()+INTERVAL '1 day',NOW()+INTERVAL '1 day 1 hour','reserved','Legacy package',100000,$5)`, bookingID, workspaceID, boothID, itemID, actorID); err != nil {
+	if _, err := appPool.Exec(ctx, `INSERT INTO photobooth.photobooth_bookings(id,workspace_id,booth_id,package_id,guest_name,start_at,end_at,status,package_name,price_vnd,created_by) VALUES($1,$2,$3,$4,'Legacy guest',NOW()+INTERVAL '1 day',NOW()+INTERVAL '1 day 1 hour','reserved','Legacy package',100000,$5)`, bookingID, workspaceID, boothID, itemID, actorID); err != nil {
 		t.Fatal("seed legacy booking: ", err)
 	}
 	preview, err := store.PreviewUpdate(ctx, applicationID)
 	if err != nil {
-		t.Fatal("create Café upgrade review: ", err)
+		t.Fatal("create Photobooth upgrade review: ", err)
 	}
 	if len(preview.PendingMigrations) != 1 || preview.PendingMigrations[0].Version != 2 {
-		t.Fatalf("unexpected Café upgrade preview: %#v", preview.PendingMigrations)
+		t.Fatalf("unexpected Photobooth upgrade preview: %#v", preview.PendingMigrations)
 	}
 	go func() {
 		defer close(discoveryDone)
@@ -254,7 +254,7 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 	}
 	approved, err := store.ApproveUpdate(ctx, applicationID, preview.ID, true, true, preview.ManifestSHA256)
 	if err != nil {
-		t.Fatal("approve Café upgrade: ", err)
+		t.Fatal("approve Photobooth upgrade: ", err)
 	}
 	close(releaseFirstDiscovery)
 	releasedDiscovery = true
@@ -268,23 +268,23 @@ func TestExactCafeUpgradeApprovalWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if version != "0.2.0" || bundle != "0.2.0" || available || availableVersion != "0.2.0" {
-		t.Fatalf("installed Café state = version %s bundle %s available=%v available_version=%s", version, bundle, available, availableVersion)
+		t.Fatalf("installed Photobooth state = version %s bundle %s available=%v available_version=%s", version, bundle, available, availableVersion)
 	}
 	var historyCount, platformLedgerCount, eventCount int
-	if err := appPool.QueryRow(ctx, `SELECT COUNT(*) FROM cafe._apexvoid_migration_history`).Scan(&historyCount); err != nil {
+	if err := appPool.QueryRow(ctx, `SELECT COUNT(*) FROM photobooth._apexvoid_migration_history`).Scan(&historyCount); err != nil {
 		t.Fatal(err)
 	}
 	if err := platform.QueryRow(ctx, `SELECT COUNT(*) FROM core_external_application_migrations WHERE application_id=$1`, applicationID).Scan(&platformLedgerCount); err != nil {
 		t.Fatal(err)
 	}
-	if err := appPool.QueryRow(ctx, `SELECT COUNT(*) FROM cafe.cafe_booking_events`).Scan(&eventCount); err != nil {
+	if err := appPool.QueryRow(ctx, `SELECT COUNT(*) FROM photobooth.photobooth_booking_events`).Scan(&eventCount); err != nil {
 		t.Fatal(err)
 	}
 	if historyCount != 2 || platformLedgerCount != 2 || eventCount != 1 {
-		t.Fatalf("Café upgrade ledgers/events = app %d platform %d events %d", historyCount, platformLedgerCount, eventCount)
+		t.Fatalf("Photobooth upgrade ledgers/events = app %d platform %d events %d", historyCount, platformLedgerCount, eventCount)
 	}
 	var bookingStatus, bookingRef string
-	if err := appPool.QueryRow(ctx, `SELECT status,booking_ref FROM cafe.cafe_bookings WHERE id=$1`, bookingID).Scan(&bookingStatus, &bookingRef); err != nil {
+	if err := appPool.QueryRow(ctx, `SELECT status,booking_ref FROM photobooth.photobooth_bookings WHERE id=$1`, bookingID).Scan(&bookingStatus, &bookingRef); err != nil {
 		t.Fatal(err)
 	}
 	if bookingStatus != "confirmed" || bookingRef == "" {
