@@ -136,15 +136,15 @@ describe('collapsible sidebar navigation', () => {
 
   it('opens installed applications from the sidebar in a new tab', async () => {
     vi.spyOn(api.framework, 'applications').mockResolvedValue([{
-      id: 'cafe',
-      display_name: 'ApexVoid Café',
+      id: 'photobooth',
+      display_name: 'ApexVoid Photobooth',
       description: 'Coffee counter and photo booth booking',
       version: '0.1.0',
       api_contract_version: 'v1',
       module_dependencies: [],
       required_permissions: [],
       required_capabilities: [],
-      frontend: { entry_route: '/apps/cafe', navigation_id: 'cafe' },
+      frontend: { entry_route: '/apps/photobooth', navigation_id: 'photobooth' },
       entry_authorized: true,
       settings_authorized: false,
       deployment: 'external',
@@ -153,9 +153,9 @@ describe('collapsible sidebar navigation', () => {
 
     renderShell()
 
-    await waitFor(() => expect(screen.getByRole('link', { name: 'ApexVoid Café' })).toBeInTheDocument())
-    const link = screen.getByRole('link', { name: 'ApexVoid Café' })
-    expect(link).toHaveAttribute('href', '/apps/cafe?workspace_id=workspace-1')
+    await waitFor(() => expect(screen.getByRole('link', { name: 'ApexVoid Photobooth' })).toBeInTheDocument())
+    const link = screen.getByRole('link', { name: 'ApexVoid Photobooth' })
+    expect(link).toHaveAttribute('href', '/apps/photobooth?workspace_id=workspace-1')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })

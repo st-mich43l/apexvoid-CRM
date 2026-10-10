@@ -82,8 +82,8 @@ func TestProvisioningEncryptionAndCanonicalOwnership(t *testing.T) {
 	if _, err = recoverProvisioningPassword("different-provisioning-encryption-key-2026", cipher); err == nil {
 		t.Fatal("wrong master key accepted")
 	}
-	db, schema, role := canonicalApplicationDatabase("cafe")
-	if db != "apexvoid_cafe" || schema != "cafe" || role != "apexvoid_cafe" {
+	db, schema, role := canonicalApplicationDatabase("photobooth")
+	if db != "apexvoid_photobooth" || schema != "photobooth" || role != "apexvoid_photobooth" {
 		t.Fatalf("unexpected canonical ownership: %s/%s/%s", db, schema, role)
 	}
 }
@@ -91,7 +91,7 @@ func TestProvisioningEncryptionAndCanonicalOwnership(t *testing.T) {
 func TestEnrollmentServiceProvesCredentialReceipt(t *testing.T) {
 	const code = "local-pairing-secret-long-random-value-123456789"
 	credential := strings.Repeat("c", 64)
-	clear := []byte(`{"application_id":"cafe","api_contract_version":"v1","service_credential":"` + credential + `","database":{"name":"apexvoid_cafe","schema":"cafe","role":"apexvoid_cafe","password":"` + strings.Repeat("p", 40) + `","migration_bundle_version":"0.1.0"}}`)
+	clear := []byte(`{"application_id":"photobooth","api_contract_version":"v1","service_credential":"` + credential + `","database":{"name":"apexvoid_photobooth","schema":"photobooth","role":"apexvoid_photobooth","password":"` + strings.Repeat("p", 40) + `","migration_bundle_version":"0.1.0"}}`)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-ApexVoid-Enrollment-Code") != "" {
 			t.Error("enrollment leaked one-time code in HTTP headers")

@@ -24,7 +24,7 @@ func TestExternalModuleIntegrationLifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	const assertionSecret = "test-external-assertion-secret-which-is-long-enough"
-	platform, err := app.Bootstrap(ctx, config.Config{App: config.AppConfig{Name: "external-module-test", Environment: "test"}, Server: config.ServerConfig{Address: ":0"}, Database: config.DatabaseConfig{URL: databaseURL, MaxConns: 10, MinConns: 1}, Auth: config.AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128}, Integrations: config.IntegrationsConfig{AssertionSecret: assertionSecret, AllowedServiceHosts: []string{"fixture"}}, Bootstrap: config.BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"}, Logging: config.LoggingConfig{Level: "ERROR"}})
+	platform, err := app.Bootstrap(ctx, config.Config{App: config.AppConfig{Name: "external-module-test", Environment: "test"}, Server: config.ServerConfig{Address: ":0"}, Database: config.DatabaseConfig{URL: databaseURL, MaxConns: 10, MinConns: 1}, Auth: config.AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128}, Integrations: config.IntegrationsConfig{AssertionSecret: assertionSecret}, Bootstrap: config.BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"}, Logging: config.LoggingConfig{Level: "ERROR"}})
 	if err != nil {
 		t.Fatal(err)
 	}

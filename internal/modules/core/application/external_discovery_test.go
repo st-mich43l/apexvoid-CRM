@@ -10,11 +10,11 @@ import (
 func discoveryManifest(version, bundle string, migrations []ExternalMigration) ExternalManifest {
 	return ExternalManifest{
 		ManifestVersion: SupportedExternalContractVersion,
-		Application:     ManifestApplication{ID: "cafe", DisplayName: "ApexVoid Café", Version: version, APIContractVersion: SupportedExternalContractVersion},
-		Service:         ManifestService{Identity: "cafe-service", HealthPath: "/health", EnrollmentPath: "/enroll", FrontendRoute: "/apps/cafe", APIRoute: "/api"},
-		Database:        ManifestDatabase{Name: "apexvoid_cafe", Schema: "cafe", Role: "apexvoid_cafe", MigrationBundleVersion: bundle},
-		Permissions:     []ExternalPermission{{Name: "cafe.booking.read", DisplayName: "Read bookings", Scope: permission.ScopeWorkspace}},
-		Access:          frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"cafe.booking.read"}},
+		Application:     ManifestApplication{ID: "photobooth", DisplayName: "ApexVoid Photobooth", Version: version, APIContractVersion: SupportedExternalContractVersion},
+		Service:         ManifestService{Identity: "photobooth-service", HealthPath: "/health", EnrollmentPath: "/enroll", FrontendRoute: "/apps/photobooth", APIRoute: "/api"},
+		Database:        ManifestDatabase{Name: "apexvoid_photobooth", Schema: "photobooth", Role: "apexvoid_photobooth", MigrationBundleVersion: bundle},
+		Permissions:     []ExternalPermission{{Name: "photobooth.booking.read", DisplayName: "Read bookings", Scope: permission.ScopeWorkspace}},
+		Access:          frameworkapplication.PermissionPolicy{Match: frameworkapplication.PermissionMatchAll, Permissions: []string{"photobooth.booking.read"}},
 		Migrations:      migrations,
 	}
 }

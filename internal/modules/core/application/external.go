@@ -82,21 +82,14 @@ type ExternalStore struct {
 	pool            *pgxpool.Pool
 	permissions     *permission.Registry
 	metadata        coreapi.MetadataReader
-	allowedHosts    map[string]struct{}
 	provisioningURL string
 	provisioningKey string
 	mu              sync.Mutex
 	client          *http.Client
 }
 
-func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, allowedHosts []string, provisioningURL, provisioningKey string) *ExternalStore {
-	hosts := make(map[string]struct{}, len(allowedHosts))
-	for _, host := range allowedHosts {
-		if normalized := strings.ToLower(strings.TrimSpace(host)); normalized != "" {
-			hosts[normalized] = struct{}{}
-		}
-	}
-	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, allowedHosts: hosts, provisioningURL: provisioningURL, provisioningKey: provisioningKey, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+func NewExternalStore(pool *pgxpool.Pool, permissions *permission.Registry, metadata coreapi.MetadataReader, provisioningURL, provisioningKey string) *ExternalStore {
+	return &ExternalStore{pool: pool, permissions: permissions, metadata: metadata, provisioningURL: provisioningURL, provisioningKey: provisioningKey, client: &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (s *ExternalStore) Register(ctx context.Context, input RegisterExternalInput) (ExternalApplication, string, error) {
@@ -531,11 +524,7 @@ func settings(route string) *frameworkapplication.Settings {
 var externalIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
 var apiContractPattern = regexp.MustCompile(`^v[1-9][0-9]*$`)
 
-func validateExternal(app *ExternalApplication) error { return validateExternalWithHosts(app, nil) }
-func (s *ExternalStore) validateExternal(app *ExternalApplication) error {
-	return validateExternalWithHosts(app, s.allowedHosts)
-}
-func validateExternalWithHosts(app *ExternalApplication, allowedHosts map[string]struct{}) error {
+func validateExternal(app *ExternalApplication) error {
 	if app == nil || strings.TrimSpace(app.ID) == "" || strings.TrimSpace(app.DisplayName) == "" || strings.TrimSpace(app.Version) == "" || app.APIContractVersion == "" || app.ServiceIdentity == "" {
 		return ErrInvalidExternalModule
 	}
@@ -546,7 +535,7 @@ func validateExternalWithHosts(app *ExternalApplication, allowedHosts map[string
 		return fmt.Errorf("%w: %s is supported", ErrUnsupportedContract, SupportedExternalContractVersion)
 	}
 	for _, value := range []string{app.ServiceEndpoint, app.HealthEndpoint} {
-		if err := validateServiceURL(value, allowedHosts); err != nil {
+		if err := validateServiceURL(value); err != nil {
 			return fmt.Errorf("%w: invalid service URL", ErrInvalidExternalModule)
 		}
 	}
@@ -580,7 +569,10 @@ func validateExternalWithHosts(app *ExternalApplication, allowedHosts map[string
 	sort.Strings(app.Access.Permissions)
 	return nil
 }
-func validateServiceURL(raw string, allowedHosts map[string]struct{}) error {
+func (s *ExternalStore) validateExternal(app *ExternalApplication) error {
+	return validateExternal(app)
+}
+func validateServiceURL(raw string) error {
 	u, err := url.ParseRequestURI(raw)
 	if err != nil || u.Scheme != "http" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return ErrInvalidExternalModule
@@ -595,11 +587,6 @@ func validateServiceURL(raw string, allowedHosts map[string]struct{}) error {
 	}
 	if _, err := net.LookupPort("tcp", port); err != nil {
 		return ErrInvalidExternalModule
-	}
-	if allowedHosts != nil {
-		if _, ok := allowedHosts[host]; !ok {
-			return ErrInvalidExternalModule
-		}
 	}
 	return nil
 }

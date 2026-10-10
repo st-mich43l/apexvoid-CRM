@@ -4,23 +4,23 @@ import type { ExternalIntegration } from '../../../core/api/client'
 import { ExternalIntegrationEditor } from './ExternalIntegrationEditor'
 
 const installed: ExternalIntegration = {
-  id: 'cafe',
+  id: 'photobooth',
   deployment: 'external',
-  display_name: 'ApexVoid Café',
+  display_name: 'ApexVoid Photobooth',
   description: 'Orders and photo booth management',
   version: '2.3.4',
   api_contract_version: 'v1',
-  service_identity: 'cafe-service',
-  service_endpoint: 'http://apexvoid-cafe:8090',
-  health_endpoint: 'http://apexvoid-cafe:8090/health',
-  frontend_route: '/apps/cafe',
+  service_identity: 'photobooth-service',
+  service_endpoint: 'http://apexvoid-photobooth:8090',
+  health_endpoint: 'http://apexvoid-photobooth:8090/health',
+  frontend_route: '/apps/photobooth',
   settings_route: '',
   enabled: true,
   credential_revoked: false,
   status: 'active',
   access_match: 'all',
-  access_permissions: ['cafe.order.read'],
-  permissions: [{ name: 'cafe.order.read', display_name: 'View orders', description: '', scope: 'workspace' }],
+  access_permissions: ['photobooth.order.read'],
+  permissions: [{ name: 'photobooth.order.read', display_name: 'View orders', description: '', scope: 'workspace' }],
   health: 'healthy',
 }
 
@@ -34,10 +34,10 @@ describe('Existing application metadata editor', () => {
     expect(screen.getByText('v1')).toBeInTheDocument()
     expect(screen.queryByLabelText('Application version')).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'API contract' })).not.toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'New Café Display Name' } })
+    fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'New Photobooth Display Name' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save metadata' }))
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'cafe', display_name: 'New Café Display Name', version: '2.3.4', api_contract_version: 'v1',
+      id: 'photobooth', display_name: 'New Photobooth Display Name', version: '2.3.4', api_contract_version: 'v1',
     })))
   })
 })

@@ -37,7 +37,7 @@ func TestExternalWorkspaceLaunchSelectsAndPersistsWorkspace(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	request := httptest.NewRequest(http.MethodGet, "/apps/cafe/?workspace_id="+selected.String(), nil)
+	request := httptest.NewRequest(http.MethodGet, "/apps/photobooth/?workspace_id="+selected.String(), nil)
 	request = request.WithContext(usersapi.WithPrincipal(request.Context(), principal))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -48,7 +48,7 @@ func TestExternalWorkspaceLaunchSelectsAndPersistsWorkspace(t *testing.T) {
 	if len(cookies) != 1 || cookies[0].Value != selected.String() || !cookies[0].HttpOnly {
 		t.Fatalf("expected secured workspace selection cookie, got %+v", cookies)
 	}
-	next := httptest.NewRequest(http.MethodGet, "/api/apps/cafe/v1/orders", nil)
+	next := httptest.NewRequest(http.MethodGet, "/api/apps/photobooth/v1/orders", nil)
 	next.AddCookie(cookies[0])
 	next = next.WithContext(usersapi.WithPrincipal(next.Context(), principal))
 	response = httptest.NewRecorder()
@@ -64,14 +64,14 @@ func TestExternalWorkspaceLaunchChecksMembershipAndRejectsInvalidSelector(t *tes
 		t.Fatal("request must not be routed")
 	}))
 	principal := usersapi.Principal{UserID: uuid.New()}
-	request := httptest.NewRequest(http.MethodGet, "/apps/cafe/?workspace_id="+uuid.NewString(), nil)
+	request := httptest.NewRequest(http.MethodGet, "/apps/photobooth/?workspace_id="+uuid.NewString(), nil)
 	request = request.WithContext(usersapi.WithPrincipal(request.Context(), principal))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("expected membership denial, got %d", response.Code)
 	}
-	request = httptest.NewRequest(http.MethodGet, "/apps/cafe/?workspace_id=invalid", nil)
+	request = httptest.NewRequest(http.MethodGet, "/apps/photobooth/?workspace_id=invalid", nil)
 	request = request.WithContext(usersapi.WithPrincipal(request.Context(), principal))
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

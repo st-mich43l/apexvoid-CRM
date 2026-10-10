@@ -32,10 +32,7 @@ contacts:
   max_upload_bytes: 26214400
 
 integrations:
-  # Trusted Docker DNS names only. Leave empty to disable external registration.
   assertion_secret: replace-with-a-long-random-production-secret
-  allowed_service_hosts:
-    - trusted-module
 
 logging:
   level: INFO

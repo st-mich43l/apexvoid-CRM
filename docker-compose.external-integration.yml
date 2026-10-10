@@ -24,7 +24,6 @@ services:
       APEXVOID_BOOTSTRAP_ADMIN_USERNAME: admin
       APEXVOID_BOOTSTRAP_ADMIN_PASSWORD: admin
       INTEGRATIONS_ASSERTION_SECRET: external-integration-test-assertion-secret-0123456789
-      INTEGRATIONS_ALLOWED_SERVICE_HOSTS: fixture
       LOG_LEVEL: ERROR
     ports:
       - "16868:6868"

@@ -119,11 +119,11 @@ manifest response bytes using the secret enrollment code:
 - The response must be the *exact* bytes signed; no middleware reformatting.
 - Use the public Go helper `integration.SignManifest(code, manifestJSON)`.
 
-Enterprise checks the signature with constant-time comparison, enforces the
-configured Docker DNS hostname allowlist, disables redirects, enforces small
-response limits and validates the strict `v1` manifest contract. A SHA-256
-migration checksum is anchored by this authenticated manifest. Migration GETs
-are same-origin and do not expose the pairing code.
+Enterprise checks the signature with constant-time comparison, requires a
+reachable non-loopback Docker DNS service name, disables redirects, enforces
+small response limits and validates the strict `v1` manifest contract. A
+SHA-256 migration checksum is anchored by this authenticated manifest.
+Migration GETs are same-origin and do not expose the pairing code.
 
 The manifest JSON shape remains the versioned one below:
 
@@ -131,24 +131,24 @@ The manifest JSON shape remains the versioned one below:
 {
   "manifest_version": "v1",
   "application": {
-    "id": "cafe", "display_name": "ApexVoid Café",
+    "id": "photobooth", "display_name": "ApexVoid Photobooth",
     "description": "Coffee counter and photo booth booking",
     "version": "0.1.0", "api_contract_version": "v1"
   },
   "service": {
-    "identity": "cafe-service", "health_path": "/health",
+    "identity": "photobooth-service", "health_path": "/health",
     "enrollment_path": "/.well-known/apexvoid/enroll",
-    "frontend_route": "/apps/cafe", "api_route": "/api"
+    "frontend_route": "/apps/photobooth", "api_route": "/api"
   },
   "database": {
-    "name": "apexvoid_cafe", "schema": "cafe",
-    "role": "apexvoid_cafe", "migration_bundle_version": "0.1.0"
+    "name": "apexvoid_photobooth", "schema": "photobooth",
+    "role": "apexvoid_photobooth", "migration_bundle_version": "0.1.0"
   },
   "permissions": [{
-    "name": "cafe.order.read", "display_name": "View orders",
+    "name": "photobooth.order.read", "display_name": "View orders",
     "description": "View café orders", "scope": "workspace"
   }],
-  "access": {"match": "all", "permissions": ["cafe.order.read"]},
+  "access": {"match": "all", "permissions": ["photobooth.order.read"]},
   "migrations": [{
     "version": 1,
     "path": "/.well-known/apexvoid/migrations/001-init.sql",
@@ -167,8 +167,8 @@ key: changing it invalidates resumption of unfinished installations. Neither
 the application role nor the Enterprise runtime role should be the database
 provisioner.
 
-App IDs determine immutable database ownership names: `cafe` maps to database
-`apexvoid_cafe`, schema `cafe`, and role `apexvoid_cafe`. For IDs with `-`
+App IDs determine immutable database ownership names: `photobooth` maps to database
+`apexvoid_photobooth`, schema `photobooth`, and role `apexvoid_photobooth`. For IDs with `-`
 or `.`, those separators are canonicalized to `_`; database/role collisions
 are rejected. A pre-existing unclaimed database/role is **never** adopted.
 The restricted login owns only its schema, not the entire database, and has
@@ -233,11 +233,15 @@ interval; no Enterprise image rebuild is needed to show newly registered
 external apps. The existing manual registration and external service APIs
 continue for compatibility. Updates are installed only through the reviewed upgrade workflow; no detected release is silently installed or migrated.
 
-For application deployment, provision a trusted shared Docker network and add
-the service DNS hostname to `INTEGRATIONS_ALLOWED_SERVICE_HOSTS`. Configure
-`DATABASE_PROVISIONING_URL` and `DATABASE_PROVISIONING_KEY` in Enterprise
-secrets. The standalone service must store its enrollment state in a persistent
-mount/secret store; process-local memory is insufficient across restarts.
+For application deployment, provision a trusted shared Docker network and give
+the standalone service a stable DNS name reachable by the Enterprise backend.
+The signed manifest, one-time enrollment code, and platform-administrator
+approval authorize that endpoint during registration; the endpoint is then
+stored with the application record and reused for gateway traffic and reviewed
+upgrades. Configure `DATABASE_PROVISIONING_URL` and `DATABASE_PROVISIONING_KEY`
+in Enterprise secrets. The standalone service must store its enrollment state in
+a persistent mount/secret store; process-local memory is insufficient across
+restarts.
 
 ## Enrolled app release upgrades (Phase 1)
 

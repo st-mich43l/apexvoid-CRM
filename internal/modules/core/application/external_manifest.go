@@ -253,7 +253,7 @@ func migrationChecksum(body []byte) string {
 }
 
 func (s *ExternalStore) Discover(ctx context.Context, input DiscoverExternalInput) (ExternalInstallation, error) {
-	if err := validateServiceURL(input.ServiceURL, s.allowedHosts); err != nil || len(input.EnrollmentCode) < minEnrollmentCodeLength || len(input.EnrollmentCode) > 256 {
+	if err := validateServiceURL(input.ServiceURL); err != nil || len(input.EnrollmentCode) < minEnrollmentCodeLength || len(input.EnrollmentCode) > 256 {
 		return ExternalInstallation{}, fmt.Errorf("%w: invalid service URL or enrollment code", ErrInvalidManifest)
 	}
 	endpoint, err := manifestEndpoint(strings.TrimRight(input.ServiceURL, "/"), ExternalManifestPath)

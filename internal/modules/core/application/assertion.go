@@ -36,10 +36,8 @@ type AssertionIssuer struct {
 
 func NewAssertionIssuer(secret string) (*AssertionIssuer, error) {
 	if secret == "" {
-		// External registrations are disabled without an allowlisted service host,
-		// but retain a non-predictable process-local key for that safe default.
-		// Configuration validation requires an explicit secret before any service
-		// host can be enabled.
+		// Keep a non-predictable process-local fallback for direct library users.
+		// Production configuration requires an explicit stable secret.
 		randomSecret := make([]byte, 32)
 		if _, err := rand.Read(randomSecret); err != nil {
 			return nil, err

@@ -77,11 +77,10 @@ type ContactsConfig struct {
 	MaxUploadBytes int64  `yaml:"max_upload_bytes"`
 }
 
-// IntegrationsConfig controls trusted Docker-network applications. Production
-// deployments must provide both an assertion secret and explicit service hosts.
+// IntegrationsConfig controls external application assertions and provisioning.
+// Endpoint authorization is completed by signed enrollment and admin approval.
 type IntegrationsConfig struct {
 	AssertionSecret         string        `yaml:"assertion_secret"`
-	AllowedServiceHosts     []string      `yaml:"allowed_service_hosts"`
 	ProvisioningURL         string        `yaml:"provisioning_url"`
 	ProvisioningKey         string        `yaml:"provisioning_key"`
 	UpdateDiscoveryInterval time.Duration `yaml:"update_discovery_interval"`
@@ -138,7 +137,6 @@ func applyEnv(c *Config) {
 	setString(&c.Contacts.UploadDir, "CONTACTS_UPLOAD_DIR")
 	setInt64(&c.Contacts.MaxUploadBytes, "CONTACTS_MAX_UPLOAD_BYTES")
 	setString(&c.Integrations.AssertionSecret, "INTEGRATIONS_ASSERTION_SECRET")
-	setStringSlice(&c.Integrations.AllowedServiceHosts, "INTEGRATIONS_ALLOWED_SERVICE_HOSTS")
 	setString(&c.Integrations.ProvisioningURL, "DATABASE_PROVISIONING_URL")
 	setString(&c.Integrations.ProvisioningKey, "DATABASE_PROVISIONING_KEY")
 	setDuration(&c.Integrations.UpdateDiscoveryInterval, "INTEGRATIONS_UPDATE_DISCOVERY_INTERVAL")
@@ -272,11 +270,6 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Contacts.UploadDir) == "" || c.Contacts.MaxUploadBytes <= 0 {
 		return fmt.Errorf("invalid configuration: contacts attachment storage")
-	}
-	if len(c.Integrations.AllowedServiceHosts) > 0 {
-		if len(strings.TrimSpace(c.Integrations.AssertionSecret)) < 32 {
-			return fmt.Errorf("invalid configuration: integrations.assertion_secret must be at least 32 characters when external service hosts are enabled")
-		}
 	}
 	if strings.TrimSpace(c.Integrations.ProvisioningURL) != "" {
 		if len(c.Integrations.ProvisioningKey) < 32 {

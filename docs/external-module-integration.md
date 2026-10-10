@@ -9,21 +9,21 @@ not the Enterprise platform runtime database or unrestricted PostgreSQL access.
 
 ## Platform configuration
 
-External registrations are disabled by default. Enable only known Docker DNS
-hosts and use a unique, secret assertion key:
+External registrations use signed enrollment and platform-administrator
+approval. Use a unique, secret assertion key:
 
 ```yaml
 integrations:
   assertion_secret: "at-least-32-secret-characters-kept-out-of-git"
-  allowed_service_hosts: [reports-service]
 ```
 
-`INTEGRATIONS_ASSERTION_SECRET` and
-`INTEGRATIONS_ALLOWED_SERVICE_HOSTS=reports-service,other-service` provide the
-same configuration. Registration accepts HTTP Docker-network URLs only, with
-an explicit port, no credentials/query/fragment, and a hostname exactly in the
-allowlist. Loopback addresses, IP literals, redirects, and arbitrary hosts are
-rejected.
+`INTEGRATIONS_ASSERTION_SECRET` protects the short-lived gateway identity
+assertions. Registration accepts HTTP Docker-network URLs only, with an
+explicit port and no credentials/query/fragment. The signed manifest and
+single-use enrollment code prove control of the service, while the platform
+administrator approves the resulting application record. Loopback addresses,
+IP literals, redirects, and malformed hosts are rejected; the approved endpoint
+is persisted and reused for later gateway requests and upgrades.
 
 ## Registering and retiring a service
 

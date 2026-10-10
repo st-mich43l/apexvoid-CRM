@@ -40,10 +40,10 @@ export const guides: DocGuide[] = [
       ] },
       { id: 'choose-model', title: 'Choose your application model', blocks: [
         bullets('Built-in modules: compiled into the Enterprise Go runtime and React application; register explicitly at build time.', 'External applications: separate repositories and Docker deployments; discovered via signed manifests, enrolled and linked through the gateway.', 'Do not introduce business-specific code into Enterprise merely to register an external app.'),
-        note('Recommended for new products', 'Build new independent business products (such as ApexVoid Café) as external applications. Use compiled-in modules for capabilities that intentionally ship as part of the Enterprise runtime.', 'success'),
+        note('Recommended for new products', 'Build new independent business products (such as ApexVoid Photobooth) as external applications. Use compiled-in modules for capabilities that intentionally ship as part of the Enterprise runtime.', 'success'),
       ] },
       { id: 'learning-path', title: 'Your learning path', blocks: [
-        steps('Launch Enterprise locally and confirm both services are healthy.', 'Create a standalone Go application with an enrollment manifest, permission catalog and migration bundle.', 'Join the shared Docker networks and allowlist its service alias.', 'Register via Applications → Register application, review operations and enable workspaces.', 'Validate gateway access and per-operation RBAC; then plan production deployment.'),
+        steps('Launch Enterprise locally and confirm both services are healthy.', 'Create a standalone Go application with an enrollment manifest, permission catalog and migration bundle.', 'Join the shared Docker networks and give the service a stable DNS alias.', 'Register via Applications → Register application, review operations and enable workspaces.', 'Validate gateway access and per-operation RBAC; then plan production deployment.'),
         note('Scope', 'This documentation describes the capabilities implemented in the current repository. Proposed microfrontend composition and custom standalone domains are not automatically provided by the existing registration flow.'),
       ] },
     ], related: ['local-setup', 'first-application', 'compiled-modules'],
@@ -75,7 +75,6 @@ export const guides: DocGuide[] = [
           'DATABASE_PROVISIONING_URL=postgres://apexvoid_provisioner:<password>@postgres:5432/postgres?sslmode=disable',
           'DATABASE_PROVISIONING_KEY=<stable-random-secret-32-characters-or-more>',
           'INTEGRATIONS_ASSERTION_SECRET=<unique-random-secret-32-characters-or-more>',
-          'INTEGRATIONS_ALLOWED_SERVICE_HOSTS=cafe',
           'APEXVOID_APPS_NETWORK=apexvoid-apps',
           'APEXVOID_DATA_NETWORK=apexvoid-data'),
         p('Use the postgres Docker service hostname inside the provisioning URL, never localhost. Values in .env are passed to containers only when Compose explicitly maps them; the development Compose file already maps the integration settings.'),
@@ -89,12 +88,12 @@ export const guides: DocGuide[] = [
   },
   {
     slug: 'first-application', category: 'Build applications', title: 'Build your first external app',
-    description: 'A complete developer-to-administrator walkthrough using ApexVoid Café.',
-    minutes: 11, keywords: ['first application', 'cafe', 'register', 'tutorial', 'wizard', 'setup'],
+    description: 'A complete developer-to-administrator walkthrough using ApexVoid Photobooth.',
+    minutes: 11, keywords: ['first application', 'photobooth', 'register', 'tutorial', 'wizard', 'setup'],
     sections: [
       { id: 'contract', title: '1. Plan the application contract', blocks: [
-        p('Start in a separate repository, for example apexvoid-cafe. Its Go backend and React frontend stay outside Enterprise. Define a stable lowercase application ID, service identity, version, API contract, workspace permissions and SQL migration bundle.'),
-        table(['Field', 'Café example'], ['Application ID', 'cafe'], ['Service URL', 'http://cafe:8090 (Docker DNS address)'], ['Manifest path', '/.well-known/apexvoid/manifest.json'], ['Frontend entry', '/apps/cafe'], ['Application API gateway', '/api/apps/cafe'], ['Permission', 'cafe.order.read'], ['Database / schema', 'apexvoid_cafe / cafe']),
+        p('Start in a separate repository, for example apexvoid-photobooth. Its Go backend and React frontend stay outside Enterprise. Define a stable lowercase application ID, service identity, version, API contract, workspace permissions and SQL migration bundle.'),
+        table(['Field', 'Photobooth example'], ['Application ID', 'photobooth'], ['Service URL', 'http://photobooth:8090 (Docker DNS address)'], ['Manifest path', '/.well-known/apexvoid/manifest.json'], ['Frontend entry', '/apps/photobooth'], ['Application API gateway', '/api/apps/photobooth'], ['Permission', 'photobooth.order.read'], ['Database / schema', 'apexvoid_photobooth / photobooth']),
       ] },
       { id: 'implement', title: '2. Implement the bootstrap endpoints', blocks: [
         steps('Expose GET /health, returning a healthy response only when the application is ready.', 'Expose GET /.well-known/apexvoid/manifest.json, returning exact JSON bytes and an HMAC-SHA256 signature header derived from the one-time code.', 'Expose the versioned SQL migration files declared in that signed manifest.', 'Expose POST /.well-known/apexvoid/enroll, decrypt and persist the enrollment payload, and return the challenge acknowledgement.', 'Persist the one-time code consumption status across container restarts.'),
@@ -103,11 +102,11 @@ export const guides: DocGuide[] = [
       { id: 'docker', title: '3. Connect Docker networking', blocks: [
         snippet('Service Compose network wiring', 'yaml',
           'services:',
-          '  cafe:',
+          '  photobooth:',
           '    build: .',
           '    networks:',
           '      apexvoid-apps:',
-          '        aliases: [cafe]',
+          '        aliases: [photobooth]',
           '      apexvoid-data:',
           '',
           'networks:',
@@ -124,7 +123,7 @@ export const guides: DocGuide[] = [
         note('No manual SQL copy-paste', 'The administrator reviews the SQL migration list and approves it. Enterprise applies the authenticated, checksummed bundle using the restricted application login; it does not execute arbitrary scripts from an unauthenticated URL.'),
       ] },
       { id: 'verify', title: '5. Verify after activation', blocks: [
-        steps('Confirm ApexVoid Café appears in Applications and in authorized workspace navigation.', 'Open its frontend entry route and check API responses through the Enterprise gateway.', 'Assign cafe.order.read to a workspace role and verify both allowed and denied operations.', 'Disable the app for another workspace and verify access is denied.', 'Restart containers and confirm enrollment state and app data survive.'),
+        steps('Confirm ApexVoid Photobooth appears in Applications and in authorized workspace navigation.', 'Open its frontend entry route and check API responses through the Enterprise gateway.', 'Assign photobooth.order.read to a workspace role and verify both allowed and denied operations.', 'Disable the app for another workspace and verify access is denied.', 'Restart containers and confirm enrollment state and app data survive.'),
         note('Gateway launch', 'External applications now open as top-level browser pages through the authenticated Enterprise gateway at /apps/{application-id}. They are not embedded in an iframe, and the chosen workspace is retained through authorization.', 'success'),
       ] },
     ], related: ['manifest-and-enrollment', 'security-and-rbac', 'frontend-and-routing'],
@@ -140,24 +139,24 @@ export const guides: DocGuide[] = [
           '{',
           '  "manifest_version": "v1",',
           '  "application": {',
-          '    "id": "cafe", "display_name": "ApexVoid Café",',
+          '    "id": "photobooth", "display_name": "ApexVoid Photobooth",',
           '    "description": "Coffee and photo booth booking",',
           '    "version": "0.1.0", "api_contract_version": "v1"',
           '  },',
           '  "service": {',
-          '    "identity": "cafe-service", "health_path": "/health",',
+          '    "identity": "photobooth-service", "health_path": "/health",',
           '    "enrollment_path": "/.well-known/apexvoid/enroll",',
-          '    "frontend_route": "/apps/cafe", "api_route": "/api"',
+          '    "frontend_route": "/apps/photobooth", "api_route": "/api"',
           '  },',
           '  "database": {',
-          '    "name": "apexvoid_cafe", "schema": "cafe",',
-          '    "role": "apexvoid_cafe", "migration_bundle_version": "0.1.0"',
+          '    "name": "apexvoid_photobooth", "schema": "photobooth",',
+          '    "role": "apexvoid_photobooth", "migration_bundle_version": "0.1.0"',
           '  },',
           '  "permissions": [{',
-          '    "name": "cafe.order.read", "display_name": "View orders",',
+          '    "name": "photobooth.order.read", "display_name": "View orders",',
           '    "description": "View café orders", "scope": "workspace"',
           '  }],',
-          '  "access": { "match": "all", "permissions": ["cafe.order.read"] },',
+          '  "access": { "match": "all", "permissions": ["photobooth.order.read"] },',
           '  "migrations": [{',
           '    "version": 1,',
           '    "path": "/.well-known/apexvoid/migrations/001-init.sql",',
@@ -203,13 +202,13 @@ export const guides: DocGuide[] = [
     sections: [
       { id: 'network-boundaries', title: 'Two shared Docker networks', blocks: [
         table(['Network', 'Purpose'], ['apexvoid-apps', 'Private Docker DNS connectivity between the Enterprise backend and registered app services'], ['apexvoid-data', 'PostgreSQL connectivity for approved services and the Enterprise backend']),
-        p('The Enterprise backend joins both networks. An external app backend joins apexvoid-apps with the allowlisted alias and apexvoid-data if its database connection needs it. Docker Compose projects can use shared external networks without sharing deployment lifecycles.'),
+        p('The Enterprise backend joins both networks. An external app backend joins apexvoid-apps with a stable DNS alias and apexvoid-data if its database connection needs it. Docker Compose projects can use shared external networks without sharing deployment lifecycles.'),
         snippet('Inspect the shared networks', 'bash', 'docker network inspect apexvoid-apps', 'docker network inspect apexvoid-data', 'docker compose ps'),
       ] },
       { id: 'database-boundaries', title: 'Provisioned database, schema and role', blocks: [
         p('ApexVoid external enrollment uses one PostgreSQL server infrastructure but a dedicated logical database, schema and least-privilege login for each enrolled application. The canonical names derive from the application ID. This is stronger isolation than merely putting all applications into the Enterprise database schema.'),
-        table(['Resource', 'Example for cafe'], ['PostgreSQL server', 'Enterprise postgres container'], ['Application database', 'apexvoid_cafe'], ['Application schema', 'cafe'], ['Application role', 'apexvoid_cafe'], ['Enterprise runtime database', 'apexvoid (separate runtime store)']),
-        note('No additional Postgres container', 'Café does not need to bootstrap a separate PostgreSQL service for the database Enterprise provisions. Persistent application data remains its responsibility, and the app must connect using its provisioned restricted role.', 'success'),
+        table(['Resource', 'Example for photobooth'], ['PostgreSQL server', 'Enterprise postgres container'], ['Application database', 'apexvoid_photobooth'], ['Application schema', 'photobooth'], ['Application role', 'apexvoid_photobooth'], ['Enterprise runtime database', 'apexvoid (separate runtime store)']),
+        note('No additional Postgres container', 'Photobooth does not need to bootstrap a separate PostgreSQL service for the database Enterprise provisions. Persistent application data remains its responsibility, and the app must connect using its provisioned restricted role.', 'success'),
       ] },
       { id: 'bootstrap-roles', title: 'Provisioning credentials and setup', blocks: [
         bullets('DATABASE_PROVISIONING_URL must point to a dedicated administrator/provisioner identity at postgres:5432; it must not reuse the application login.', 'DATABASE_PROVISIONING_KEY encrypts stored application credentials. Keep it stable across restarts and back it up securely.', 'The docker/postgres/init/10-provisioner.sh hook only executes on a fresh PostgreSQL volume.', 'Registration refuses to adopt a pre-existing unclaimed database or role; do not manually pre-create an app database to bypass enrollment.'),
@@ -227,22 +226,22 @@ export const guides: DocGuide[] = [
     sections: [
       { id: 'ownership', title: 'What Enterprise owns', blocks: [
         bullets('User sessions and login; access and refresh credentials are held in HttpOnly cookies.', 'Organizations, workspaces and the current X-ApexVoid-Workspace context.', 'Permission definitions and platform/workspace role grants.', 'External application registration, allowed service identities and workspace enablement.'),
-        p('An application declares its own namespaced permissions, such as cafe.order.read. Enterprise validates ownership of the prefix; those permissions can be granted by workspace administrators through role assignments.'),
+        p('An application declares its own namespaced permissions, such as photobooth.order.read. Enterprise validates ownership of the prefix; those permissions can be granted by workspace administrators through role assignments.'),
       ] },
       { id: 'gateway', title: 'Trusted gateway request flow', blocks: [
-        steps('The browser requests /apps/cafe or /api/apps/cafe on the Enterprise gateway.', 'Enterprise verifies the authenticated session, active workspace, application availability and entry policy.', 'The gateway removes cookies, Authorization and any client-supplied identity headers before proxying.', 'It attaches a short-lived encrypted X-ApexVoid-Identity-Assertion for the target service.', 'The service authenticates itself to Enterprise and introspects the assertion for each protected operation.'),
+        steps('The browser requests /apps/photobooth or /api/apps/photobooth on the Enterprise gateway.', 'Enterprise verifies the authenticated session, active workspace, application availability and entry policy.', 'The gateway removes cookies, Authorization and any client-supplied identity headers before proxying.', 'It attaches a short-lived encrypted X-ApexVoid-Identity-Assertion for the target service.', 'The service authenticates itself to Enterprise and introspects the assertion for each protected operation.'),
         note('No browser token forwarding', 'Never hand a user access token, refresh token or raw session cookie to an external application. The encrypted assertion is scoped to one application and expires after roughly a minute.', 'warning'),
       ] },
       { id: 'introspection', title: 'Authorize operations, not just menu entries', blocks: [
         snippet('Service-to-platform authorization request', 'http',
           'POST /api/v1/integrations/v1/session/introspect',
-          'X-ApexVoid-Application-ID: cafe',
+          'X-ApexVoid-Application-ID: photobooth',
           'X-ApexVoid-Service-Credential: <service-secret>',
           'Content-Type: application/json',
           '',
           '{',
           '  "identity_assertion": "<gateway-assertion>",',
-          '  "permission": "cafe.order.read"',
+          '  "permission": "photobooth.order.read"',
           '}'),
         p('The introspection response is limited to user ID, workspace ID, checked permission and an allowed decision. A service must deny when introspection fails or returns allowed=false. Application-entry visibility does not authorize individual read/write business operations.'),
       ] },
@@ -250,14 +249,14 @@ export const guides: DocGuide[] = [
         snippet('Public Go integration client', 'go',
           'client, err := integration.NewClient(integration.Config{',
           '  PlatformURL: "http://backend:6868",',
-          '  ApplicationID: "cafe",',
+          '  ApplicationID: "photobooth",',
           '  ServiceCredential: os.Getenv("APEXVOID_SERVICE_CREDENTIAL"),',
           '})',
           'if err != nil { /* fail startup safely */ }',
           '',
           'assertion, err := integration.IdentityAssertionFromRequest(request)',
           'if err != nil { /* deny request */ }',
-          'decision, err := client.Introspect(request.Context(), assertion, "cafe.order.read")',
+          'decision, err := client.Introspect(request.Context(), assertion, "photobooth.order.read")',
           'if err != nil || !decision.Allowed { /* deny request */ }'),
         note('SDK setup', 'The integration helper lives in the apexvoid-enterprise Go module under integration/. Import the package into the external Go repository using the version of the Enterprise module you deploy; do not copy private platform internals.'),
       ] },
@@ -273,7 +272,7 @@ export const guides: DocGuide[] = [
     sections: [
       { id: 'routes', title: 'Registered browser and API paths', blocks: [
         table(['Route', 'Purpose'], ['/apps/{application-id}', 'Enterprise-validated external application entry'], ['/api/apps/{application-id}', 'Authenticated proxy for external business HTTP APIs'], ['/applications', 'Enterprise application discovery, installation and management'], ['/docs', 'Built-in developer and operator documentation']),
-        p('External applications declare their frontend_route and api_route in the signed manifest. Enterprise uses its gateway for authentication, RBAC and workspace validation before forwarding requests to the allowlisted service.'),
+        p('External applications declare their frontend_route and api_route in the signed manifest. Enterprise uses its gateway for authentication, RBAC and workspace validation before forwarding requests to the enrolled service endpoint.'),
       ] },
       { id: 'current-view', title: 'Current application viewer behavior', blocks: [
         p('Enterprise now serves external applications as top-level, same-origin gateway documents at /apps/{application-id}. Both Vite and production Nginx forward /apps/ requests to the authenticated Go gateway. This is not yet a native microfrontend loaded within the shared React shell.'),
@@ -315,7 +314,7 @@ export const guides: DocGuide[] = [
           'cp .env.production.example .env.production',
           '# Replace every placeholder with deployment-specific secrets.',
           'docker compose --env-file .env.production -f docker-compose.production.yml up -d --build'),
-        bullets('Set the HTTPS APEXVOID_PUBLIC_ORIGIN and AUTH_COOKIE_SECURE=true.', 'Set non-default administrator bootstrap credentials.', 'Use a dedicated DATABASE_PROVISIONING_URL, stable DATABASE_PROVISIONING_KEY, unique INTEGRATIONS_ASSERTION_SECRET and exact allowlisted service hostnames.', 'Persist and protect PostgreSQL volumes, application-owned databases and attachment data.'),
+        bullets('Set the HTTPS APEXVOID_PUBLIC_ORIGIN and AUTH_COOKIE_SECURE=true.', 'Set non-default administrator bootstrap credentials.', 'Use a dedicated DATABASE_PROVISIONING_URL, stable DATABASE_PROVISIONING_KEY and unique INTEGRATIONS_ASSERTION_SECRET.', 'Persist and protect PostgreSQL volumes, application-owned databases and attachment data.'),
       ] },
       { id: 'health', title: 'Health and diagnostics', blocks: [
         snippet('Container and readiness checks', 'bash',
@@ -328,7 +327,7 @@ export const guides: DocGuide[] = [
         bullets('Deployment of an independent external app is managed in that app repository; Enterprise does not restart its Docker container.', 'After a compatible app release is deployed, Enterprise verifies its challenge-signed manifest. New permissions and SQL migrations are applied only after explicit administrator review and approval.', 'Use Applications → Check upgrade to preview added permissions, new migration paths and pinned SHA-256 checksums; approve the exact manifest fingerprint before installation.', 'Revoked or retired services lose access. Permission tombstones prevent silent reuse of old role grants.'),
       ] },
       { id: 'backups', title: 'Backup and recovery', blocks: [
-        p('For Enterprise, back up the main PostgreSQL database and attachment volume together after quiescing writes. Also back up every externally provisioned application database, its persistent secrets and any app-specific assets. A backup of apexvoid alone does not cover apexvoid_cafe.'),
+        p('For Enterprise, back up the main PostgreSQL database and attachment volume together after quiescing writes. Also back up every externally provisioned application database, its persistent secrets and any app-specific assets. A backup of apexvoid alone does not cover apexvoid_photobooth.'),
         note('Production safety', 'Never run restore commands against a live production database without a validated recovery plan. Use an isolated restore drill, a distinct Compose project name and non-conflicting ports.', 'warning'),
       ] },
       { id: 'tests', title: 'Recommended verification commands', blocks: [
@@ -343,7 +342,7 @@ export const guides: DocGuide[] = [
     minutes: 8, keywords: ['error', 'troubleshoot', 'fix', 'firefox', '403', 'health', 'dns', 'failed'],
     sections: [
       { id: 'discover-fails', title: 'Application discovery fails', blocks: [
-        steps('Check that the application container and /health endpoint are available from the Enterprise backend container.', 'Confirm the service URL uses a Docker DNS name with an explicit port, not localhost or an IP literal.', 'Match the hostname against INTEGRATIONS_ALLOWED_SERVICE_HOSTS.', 'Verify the one-time code has at least 32 characters, is unused, and correctly signs the exact manifest response bytes.', 'Confirm that the signed manifest contract is v1 and that redirects are not involved.'),
+        steps('Check that the application container and /health endpoint are available from the Enterprise backend container.', 'Confirm the service URL uses a Docker DNS name with an explicit port, not localhost or an IP literal.', 'Verify the one-time code has at least 32 characters, is unused, and correctly signs the exact manifest response bytes.', 'Confirm that the signed manifest contract is v1 and that redirects are not involved.'),
       ] },
       { id: 'provisioning-fails', title: 'Database or migration approval fails', blocks: [
         bullets('DATABASE_PROVISIONING_URL must resolve postgres inside Docker and authenticate as a dedicated provisioner.', 'An existing Postgres volume does not rerun init scripts: a DBA must provision the restricted role.', 'DATABASE_PROVISIONING_KEY must remain stable across attempts; an incorrect key breaks encrypted enrollment state.', 'Migration paths must be same-origin and SHA-256 checksums must match the actual SQL response bytes.', 'A pre-existing unclaimed database or role cannot be silently adopted.'),
@@ -364,7 +363,7 @@ export const guides: DocGuide[] = [
           'docker compose ps',
           'docker compose logs --tail=150 backend',
           '# Run inside the external app repository:',
-          'docker compose logs --tail=150 cafe'),
+          'docker compose logs --tail=150 photobooth'),
         p('Use request IDs from safe API error responses to correlate log entries. Do not paste live credentials, pairing codes, cookies, encrypted assertion headers or database connection passwords into tickets.'),
       ] },
     ], related: ['local-setup', 'frontend-and-routing', 'security-and-rbac'],

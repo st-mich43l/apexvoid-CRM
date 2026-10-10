@@ -66,8 +66,8 @@ type sealedEnrollment struct {
 }
 
 // A high-entropy enrollment code is the out-of-band shared secret. The code is
-// never transmitted as an HTTP header. AES-GCM protects credentials even when
-// bootstrap communication uses an allowlisted internal HTTP Docker endpoint.
+// never transmitted as an HTTP header. AES-GCM protects credentials during the
+// authenticated internal HTTP enrollment exchange.
 func sealEnrollment(code string, clear []byte) ([]byte, error) {
 	if len(code) < minEnrollmentCodeLength {
 		return nil, errors.New("enrollment secret must contain at least 32 characters")

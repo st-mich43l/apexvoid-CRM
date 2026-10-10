@@ -27,8 +27,8 @@ func TestSignManifestNeverExposesSetupCode(t *testing.T) {
 func TestOpenEnrollmentAuthenticatedEnvelope(t *testing.T) {
 	code := "secure-one-time-application-pairing-secret-12345"
 	credentials := EnrollmentCredentials{
-		ApplicationID: "cafe", ServiceCredential: strings.Repeat("x", 40), APIContractVersion: "v1",
-		Database: EnrollmentDatabase{Name: "apexvoid_cafe", Schema: "cafe", Role: "apexvoid_cafe", Password: strings.Repeat("p", 40)},
+		ApplicationID: "photobooth", ServiceCredential: strings.Repeat("x", 40), APIContractVersion: "v1",
+		Database: EnrollmentDatabase{Name: "apexvoid_photobooth", Schema: "photobooth", Role: "apexvoid_photobooth", Password: strings.Repeat("p", 40)},
 	}
 	clear, err := json.Marshal(credentials)
 	if err != nil {
