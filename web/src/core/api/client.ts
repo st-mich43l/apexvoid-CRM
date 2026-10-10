@@ -21,7 +21,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     if (response.status === 401) reloadAfterSessionExpiry(path)
     let message = `API request failed with status ${response.status}`
-    try { const body = await response.json() as { error?: { message?: string } }; message = body.error?.message ?? message } catch { /* keep status message */ }
+    try { const body = await response.json() as { error?: { code?: string; message?: string } }; message = [body.error?.code, body.error?.message].filter(Boolean).join(': ') || message } catch { /* keep status message */ }
     const error = new Error(message) as Error & { status?: number }
     error.status = response.status
     throw error
@@ -32,7 +32,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
 
-export type ExternalIntegration = { id: string; deployment: 'external'; display_name: string; description: string; version: string; api_contract_version: string; service_identity: string; service_endpoint: string; health_endpoint: string; frontend_route: string; settings_route: string; enabled: boolean; workspace_default_enabled?: boolean; workspace_enabled?: boolean; credential_revoked: boolean; status: string; access_match: string; access_permissions: string[]; permissions: Array<{ name: string; display_name: string; description: string; scope: 'platform' | 'workspace' }>; health: 'healthy' | 'unhealthy' | 'unavailable' | 'invalid' | 'unknown'; database_name?: string; database_schema?: string; database_role?: string; migration_bundle_version?: string }
+export type ExternalIntegration = { id: string; deployment: 'external'; display_name: string; description: string; version: string; api_contract_version: string; service_identity: string; service_endpoint: string; health_endpoint: string; frontend_route: string; settings_route: string; enabled: boolean; workspace_default_enabled?: boolean; workspace_enabled?: boolean; credential_revoked: boolean; status: string; access_match: string; access_permissions: string[]; permissions: Array<{ name: string; display_name: string; description: string; scope: 'platform' | 'workspace' }>; health: 'healthy' | 'unhealthy' | 'unavailable' | 'invalid' | 'unknown'; database_name?: string; database_schema?: string; database_role?: string; migration_bundle_version?: string; update_available?: boolean; available_version?: string; available_migration_bundle_version?: string; update_checked_at?: string; update_check_error?: string }
 export type ExternalIntegrationInput = { id: string; display_name: string; description: string; version: string; api_contract_version: string; service_identity: string; service_endpoint: string; health_endpoint: string; frontend_route: string; settings_route?: string; access_match: 'all' | 'any'; access_permissions: string[]; permissions: Array<{ name: string; display_name: string; description?: string; scope: 'platform' | 'workspace' }> }
 export type ExternalManifest = { manifest_version: string; application: { id: string; display_name: string; description: string; version: string; api_contract_version: string }; service: { identity: string; health_path: string; enrollment_path: string; frontend_route: string; settings_route?: string; api_route: string }; database: { name: string; schema: string; role: string; migration_bundle_version: string }; permissions: ExternalIntegration['permissions']; access: { match: 'all' | 'any'; permissions: string[] }; migrations: Array<{ version: number; path: string; sha256: string }> }
 export type ExternalUpgrade = {
@@ -44,9 +44,11 @@ export type ExternalUpgrade = {
   installed_bundle_version: string
   available_bundle_version: string
   added_permissions: Array<{ name: string; scope: 'platform' | 'workspace'; display_name: string }>
-  pending_migrations: Array<{ version: number; path: string; sha256: string }>
+  pending_migrations: Array<{ version: number; path: string; sha256: string; status: 'pending_verification' | 'verified' | 'requires_approval' | 'applying' | 'applied' | 'failed' | string }>
   manifest_sha256: string
   expires_at?: string
+  error_code?: string
+  failure?: { code: string; version: number; path: string; message: string }
   error_message?: string
 }
 

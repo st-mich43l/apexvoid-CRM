@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/entity"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/field"
@@ -25,6 +26,10 @@ type applicationResponse struct {
 	SettingsAuthorized   bool              `json:"settings_authorized"`
 	Deployment           string            `json:"deployment"`
 	FrontendExternal     bool              `json:"frontend_external"`
+	UpdateAvailable      bool              `json:"update_available,omitempty"`
+	AvailableVersion     string            `json:"available_version,omitempty"`
+	UpdateCheckedAt      *time.Time        `json:"update_checked_at,omitempty"`
+	UpdateCheckError     string            `json:"update_check_error,omitempty"`
 }
 
 type frontendResponse struct {
@@ -72,7 +77,7 @@ func toModuleResponse(item metadata.ModuleMetadata) moduleResponse {
 }
 func toApplicationResponse(item coreapi.DiscoveredApplication) applicationResponse {
 	definition := item.Descriptor
-	result := applicationResponse{ID: definition.ID, DisplayName: definition.DisplayName, Description: definition.Description, Version: definition.Version, APIContractVersion: definition.APIContractVersion, ModuleDependencies: append([]string{}, definition.ModuleDependencies...), RequiredPermissions: append([]string{}, definition.RequiredPermissions...), RequiredCapabilities: append([]string{}, definition.RequiredCapabilities...), Frontend: frontendResponse{EntryRoute: definition.Frontend.EntryRoute, NavigationID: definition.Frontend.NavigationID}, EntryAuthorized: item.EntryAuthorized, SettingsAuthorized: item.SettingsAuthorized, Deployment: string(definition.Deployment), FrontendExternal: definition.Deployment == "external" && definition.Frontend.EntryRoute != ""}
+	result := applicationResponse{ID: definition.ID, DisplayName: definition.DisplayName, Description: definition.Description, Version: definition.Version, APIContractVersion: definition.APIContractVersion, ModuleDependencies: append([]string{}, definition.ModuleDependencies...), RequiredPermissions: append([]string{}, definition.RequiredPermissions...), RequiredCapabilities: append([]string{}, definition.RequiredCapabilities...), Frontend: frontendResponse{EntryRoute: definition.Frontend.EntryRoute, NavigationID: definition.Frontend.NavigationID}, EntryAuthorized: item.EntryAuthorized, SettingsAuthorized: item.SettingsAuthorized, Deployment: string(definition.Deployment), FrontendExternal: definition.Deployment == "external" && definition.Frontend.EntryRoute != "", UpdateAvailable: item.UpdateAvailable, AvailableVersion: item.AvailableVersion, UpdateCheckedAt: item.UpdateCheckedAt, UpdateCheckError: item.UpdateCheckError}
 	if definition.Settings != nil {
 		result.Settings = &settingsResponse{Route: definition.Settings.Route}
 	}

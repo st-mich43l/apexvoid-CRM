@@ -31,5 +31,8 @@ contacts:
   upload_dir: /var/lib/apexvoid/attachments
   max_upload_bytes: 26214400
 
+integrations:
+  update_discovery_interval: 5m
+
 logging:
   level: INFO

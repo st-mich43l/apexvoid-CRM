@@ -152,5 +152,23 @@ ALTER TABLE core_external_application_installations DROP COLUMN IF EXISTS servic
 );
 CREATE INDEX IF NOT EXISTS core_external_upgrade_history_idx ON core_external_application_upgrades(application_id,created_at DESC);`,
 		DownSQL: `DROP TABLE IF EXISTS core_external_application_upgrades;`,
+	}, {
+		Module: "core", Version: 7, Name: "external_application_upgrade_diagnostics",
+		UpSQL: `ALTER TABLE core_external_application_upgrades ADD COLUMN IF NOT EXISTS error_code TEXT NOT NULL DEFAULT '';
+ALTER TABLE core_external_application_upgrades ADD COLUMN IF NOT EXISTS error_details JSONB NOT NULL DEFAULT '{}'::jsonb;`,
+		DownSQL: `ALTER TABLE core_external_application_upgrades DROP COLUMN IF EXISTS error_details;
+ALTER TABLE core_external_application_upgrades DROP COLUMN IF EXISTS error_code;`,
+	}, {
+		Module: "core", Version: 8, Name: "external_application_update_discovery",
+		UpSQL: `ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS update_available BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS available_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS available_migration_bundle_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS update_checked_at TIMESTAMPTZ NULL;
+ALTER TABLE core_external_applications ADD COLUMN IF NOT EXISTS update_check_error TEXT NOT NULL DEFAULT '';`,
+		DownSQL: `ALTER TABLE core_external_applications DROP COLUMN IF EXISTS update_check_error;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS update_checked_at;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS available_migration_bundle_version;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS available_version;
+ALTER TABLE core_external_applications DROP COLUMN IF EXISTS update_available;`,
 	}}
 }

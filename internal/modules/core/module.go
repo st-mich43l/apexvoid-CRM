@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/st-mich43l/apexvoid-CRM/internal/framework/metadata"
@@ -74,4 +75,10 @@ func (m *Module) HydrateExternalPermissions(ctx context.Context) error {
 		return fmt.Errorf("hydrate external applications: %w", err)
 	}
 	return nil
+}
+
+func (m *Module) StartUpdateDiscovery(ctx context.Context, interval time.Duration) {
+	if m.external != nil {
+		m.external.StartUpdateDiscovery(ctx, interval)
+	}
 }

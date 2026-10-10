@@ -80,10 +80,11 @@ type ContactsConfig struct {
 // IntegrationsConfig controls trusted Docker-network applications. Production
 // deployments must provide both an assertion secret and explicit service hosts.
 type IntegrationsConfig struct {
-	AssertionSecret     string   `yaml:"assertion_secret"`
-	AllowedServiceHosts []string `yaml:"allowed_service_hosts"`
-	ProvisioningURL     string   `yaml:"provisioning_url"`
-	ProvisioningKey     string   `yaml:"provisioning_key"`
+	AssertionSecret         string        `yaml:"assertion_secret"`
+	AllowedServiceHosts     []string      `yaml:"allowed_service_hosts"`
+	ProvisioningURL         string        `yaml:"provisioning_url"`
+	ProvisioningKey         string        `yaml:"provisioning_key"`
+	UpdateDiscoveryInterval time.Duration `yaml:"update_discovery_interval"`
 }
 
 func Load(path string) (Config, error) {
@@ -113,7 +114,7 @@ func defaultConfig() Config {
 		Database:     DatabaseConfig{URL: "", MaxConns: 10, MinConns: 2, MaxConnLifetime: time.Hour, MaxConnIdleTime: 30 * time.Minute},
 		Auth:         AuthConfig{AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 720 * time.Hour, CookieSameSite: "lax", PasswordMinLen: 12, PasswordMaxLen: 128},
 		Contacts:     ContactsConfig{UploadDir: "/var/lib/apexvoid/attachments", MaxUploadBytes: 25 * 1024 * 1024},
-		Integrations: IntegrationsConfig{},
+		Integrations: IntegrationsConfig{UpdateDiscoveryInterval: 5 * time.Minute},
 		Bootstrap:    BootstrapConfig{AdminEmail: "admin@localhost", AdminUsername: "admin", AdminPassword: "admin"},
 		Logging:      LoggingConfig{Level: "INFO"},
 	}
@@ -140,6 +141,7 @@ func applyEnv(c *Config) {
 	setStringSlice(&c.Integrations.AllowedServiceHosts, "INTEGRATIONS_ALLOWED_SERVICE_HOSTS")
 	setString(&c.Integrations.ProvisioningURL, "DATABASE_PROVISIONING_URL")
 	setString(&c.Integrations.ProvisioningKey, "DATABASE_PROVISIONING_KEY")
+	setDuration(&c.Integrations.UpdateDiscoveryInterval, "INTEGRATIONS_UPDATE_DISCOVERY_INTERVAL")
 	setDuration(&c.Auth.AccessTokenTTL, "AUTH_ACCESS_TOKEN_TTL")
 	setDuration(&c.Auth.RefreshTokenTTL, "AUTH_REFRESH_TOKEN_TTL")
 	setBool(&c.Auth.CookieSecure, "AUTH_COOKIE_SECURE")

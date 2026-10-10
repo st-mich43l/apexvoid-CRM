@@ -38,10 +38,18 @@ type ExternalUpgrade struct {
 	InstalledBundle   string                      `json:"installed_bundle_version"`
 	AvailableBundle   string                      `json:"available_bundle_version"`
 	AddedPermissions  []ExternalPermissionPreview `json:"added_permissions"`
-	PendingMigrations []ExternalMigration         `json:"pending_migrations"`
+	PendingMigrations []ExternalMigrationPreview  `json:"pending_migrations"`
 	ManifestSHA256    string                      `json:"manifest_sha256"`
 	ExpiresAt         time.Time                   `json:"expires_at"`
+	ErrorCode         string                      `json:"error_code,omitempty"`
+	Failure           *MigrationDiagnostic        `json:"failure,omitempty"`
 	ErrorMessage      string                      `json:"error_message,omitempty"`
+}
+type ExternalMigrationPreview struct {
+	Version int    `json:"version"`
+	Path    string `json:"path"`
+	SHA256  string `json:"sha256"`
+	Status  string `json:"status"`
 }
 type ExternalPermissionPreview struct {
 	Name        string           `json:"name"`
@@ -218,8 +226,29 @@ func upgradeSnapshot(installed, next ExternalManifest, raw []byte, id uuid.UUID,
 		ID: id, ApplicationID: installed.Application.ID, Status: status,
 		InstalledVersion: installed.Application.Version, AvailableVersion: next.Application.Version,
 		InstalledBundle: installed.Database.MigrationBundleVersion, AvailableBundle: next.Database.MigrationBundleVersion,
-		AddedPermissions: added, PendingMigrations: migrations, ManifestSHA256: manifestHash(raw), ExpiresAt: expires,
+		AddedPermissions: added, PendingMigrations: migrationPreviews(migrations, migrationPreviewStatus(status)), ManifestSHA256: manifestHash(raw), ExpiresAt: expires,
 	}, nil
+}
+
+func migrationPreviewStatus(upgradeStatus string) string {
+	switch upgradeStatus {
+	case "applying":
+		return "applying"
+	case "applied":
+		return "applied"
+	case "failed":
+		return "failed"
+	default:
+		return "pending_verification"
+	}
+}
+
+func migrationPreviews(migrations []ExternalMigration, status string) []ExternalMigrationPreview {
+	previews := make([]ExternalMigrationPreview, 0, len(migrations))
+	for _, migration := range migrations {
+		previews = append(previews, ExternalMigrationPreview{Version: migration.Version, Path: migration.Path, SHA256: migration.SHA256, Status: status})
+	}
+	return previews
 }
 
 func (s *ExternalStore) PreviewUpdate(ctx context.Context, applicationID string) (ExternalUpgrade, error) {
@@ -239,7 +268,7 @@ func (s *ExternalStore) PreviewUpdate(ctx context.Context, applicationID string)
 		return ExternalUpgrade{}, ErrUpgradeInvalid
 	}
 	if string(mustJSON(installed)) == string(mustJSON(next)) {
-		return ExternalUpgrade{ApplicationID: applicationID, Status: "up_to_date", InstalledVersion: installed.Application.Version, AvailableVersion: next.Application.Version, InstalledBundle: installed.Database.MigrationBundleVersion, AvailableBundle: next.Database.MigrationBundleVersion, AddedPermissions: []ExternalPermissionPreview{}, PendingMigrations: []ExternalMigration{}, ManifestSHA256: manifestHash(raw)}, nil
+		return ExternalUpgrade{ApplicationID: applicationID, Status: "up_to_date", InstalledVersion: installed.Application.Version, AvailableVersion: next.Application.Version, InstalledBundle: installed.Database.MigrationBundleVersion, AvailableBundle: next.Database.MigrationBundleVersion, AddedPermissions: []ExternalPermissionPreview{}, PendingMigrations: []ExternalMigrationPreview{}, ManifestSHA256: manifestHash(raw)}, nil
 	}
 	id := uuid.New()
 	expires := time.Now().Add(30 * time.Minute)
@@ -290,15 +319,16 @@ func (s *ExternalStore) GetUpdate(ctx context.Context, applicationID string, id 
 	var nextRaw []byte
 	var status, fingerprint, expected string
 	var expires time.Time
-	var failure string
-	if err := s.pool.QueryRow(ctx, `SELECT manifest,manifest_sha256,installed_manifest_sha256,status,expires_at,error_message FROM core_external_application_upgrades WHERE id=$1 AND application_id=$2`, id, applicationID).Scan(&nextRaw, &fingerprint, &expected, &status, &expires, &failure); err != nil {
+	var failure, errorCode string
+	var errorDetails []byte
+	if err := s.pool.QueryRow(ctx, `SELECT manifest,manifest_sha256,installed_manifest_sha256,status,expires_at,error_code,error_message,error_details FROM core_external_application_upgrades WHERE id=$1 AND application_id=$2`, id, applicationID).Scan(&nextRaw, &fingerprint, &expected, &status, &expires, &errorCode, &failure, &errorDetails); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ExternalUpgrade{}, ErrUpgradeNotFound
 		}
 		return ExternalUpgrade{}, err
 	}
 	if manifestHash(app.InstalledManifest) != expected && status != "applied" {
-		return ExternalUpgrade{}, ErrUpgradeState
+		return ExternalUpgrade{}, fmt.Errorf("%w: installed manifest changed after review", ErrUpgradeManifest)
 	}
 	var next ExternalManifest
 	if err := json.Unmarshal(nextRaw, &next); err != nil {
@@ -316,6 +346,13 @@ func (s *ExternalStore) GetUpdate(ctx context.Context, applicationID string, id 
 		result = ExternalUpgrade{ID: id, ApplicationID: applicationID, Status: status, AvailableVersion: next.Application.Version, ManifestSHA256: fingerprint, ExpiresAt: expires}
 	}
 	result.ManifestSHA256 = fingerprint
+	result.ErrorCode = errorCode
+	if len(errorDetails) > 0 && string(errorDetails) != "{}" {
+		var details MigrationDiagnostic
+		if json.Unmarshal(errorDetails, &details) == nil && details.Code != "" {
+			result.Failure = &details
+		}
+	}
 	result.ErrorMessage = failure
 	return result, nil
 }
@@ -356,8 +393,11 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 	if status != "pending_approval" && status != "failed" {
 		return ExternalUpgrade{}, ErrUpgradeState
 	}
-	if time.Now().After(expires) || !constantEqual(expectedHash, fingerprint) || manifestHash(app.InstalledManifest) != baseHash {
-		return ExternalUpgrade{}, ErrUpgradeState
+	if time.Now().After(expires) {
+		return ExternalUpgrade{}, ErrUpgradeExpired
+	}
+	if !constantEqual(expectedHash, fingerprint) || manifestHash(app.InstalledManifest) != baseHash {
+		return ExternalUpgrade{}, ErrUpgradeManifest
 	}
 	var current, proposed ExternalManifest
 	if json.Unmarshal(app.InstalledManifest, &current) != nil || json.Unmarshal(storedRaw, &proposed) != nil {
@@ -373,7 +413,7 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 		return ExternalUpgrade{}, err
 	}
 	if liveManifest.Application.ID != applicationID || manifestHash(liveRaw) != fingerprint {
-		return ExternalUpgrade{}, fmt.Errorf("%w: service manifest changed since review; preview again", ErrUpgradeState)
+		return ExternalUpgrade{}, fmt.Errorf("%w: service manifest changed since review; preview again", ErrUpgradeManifest)
 	}
 	// The on-disk schema, role and password remain bound to the original app.
 	var name, schema, role string
@@ -388,11 +428,16 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 	if err != nil {
 		return ExternalUpgrade{}, err
 	}
-	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_upgrades SET status='applying',error_message='',updated_at=NOW() WHERE id=$1 AND status IN ('pending_approval','failed')`, id); err != nil {
+	if _, err = s.pool.Exec(ctx, `UPDATE core_external_application_upgrades SET status='applying',error_code='',error_message='',error_details='{}'::jsonb,updated_at=NOW() WHERE id=$1 AND status IN ('pending_approval','failed')`, id); err != nil {
 		return ExternalUpgrade{}, err
 	}
 	fail := func(cause error) (ExternalUpgrade, error) {
-		_, _ = s.pool.Exec(ctx, `UPDATE core_external_application_upgrades SET status='failed',error_message=$2,updated_at=NOW() WHERE id=$1 AND status='applying'`, id, safeInstallationError(cause))
+		code := migrationFailureCode(cause)
+		details := []byte(`{}`)
+		if failure, ok := migrationFailure(cause); ok {
+			details = mustJSON(failure.Diagnostic())
+		}
+		_, _ = s.pool.Exec(ctx, `UPDATE core_external_application_upgrades SET status='failed',error_code=$2,error_message=$3,error_details=$4,updated_at=NOW() WHERE id=$1 AND status='applying'`, id, code, safeInstallationError(cause), details)
 		return ExternalUpgrade{}, cause
 	}
 	// Check the signed, pinned migration bodies before applying any change.
@@ -402,8 +447,14 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 			return fail(endpointErr)
 		}
 		body, fetchErr := httpRequestLimit(ctx, s.client, http.MethodGet, endpoint, "", nil, maxMigrationBytes)
-		if fetchErr != nil || migrationChecksum(body) != strings.ToLower(migration.SHA256) || migrationForbiddenPattern.Match(body) {
-			return fail(fmt.Errorf("%w: migration %d cannot be verified or violates SQL policy", ErrUpgradeInvalid, migration.Version))
+		if fetchErr != nil {
+			return fail(newMigrationFailure(MigrationFetchFailed, migration.Version, migration.Path, "The application service did not return the migration SQL.", fmt.Errorf("%w: %v", ErrMigrationFetch, fetchErr)))
+		}
+		if migrationChecksum(body) != strings.ToLower(migration.SHA256) {
+			return fail(newMigrationFailure(MigrationChecksumMismatch, migration.Version, migration.Path, "Downloaded bytes differ from the checksum pinned in the signed manifest.", ErrMigrationChecksum))
+		}
+		if policyErr := validateMigrationSQL(body); policyErr != nil {
+			return fail(newMigrationFailure(MigrationPolicyRejected, migration.Version, migration.Path, "The SQL contains a privileged, session-changing, server-side, or cross-application operation.", fmt.Errorf("%w: %v", ErrMigrationPolicy, policyErr)))
 		}
 	}
 	if err := s.applyMigrations(ctx, provisionedDatabase{Name: name, Schema: schema, Role: role, Password: password}, app.ServiceEndpoint, proposed); err != nil {

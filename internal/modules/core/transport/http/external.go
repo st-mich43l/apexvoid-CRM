@@ -92,7 +92,7 @@ func externalResponse(item application.ExternalApplication, health string) map[s
 	for _, p := range item.Permissions {
 		permissions = append(permissions, map[string]any{"name": p.Name, "display_name": p.DisplayName, "description": p.Description, "scope": p.Scope})
 	}
-	return map[string]any{"id": item.ID, "deployment": "external", "display_name": item.DisplayName, "description": item.Description, "version": item.Version, "api_contract_version": item.APIContractVersion, "service_identity": item.ServiceIdentity, "service_endpoint": item.ServiceEndpoint, "health_endpoint": item.HealthEndpoint, "frontend_route": item.FrontendRoute, "settings_route": item.SettingsRoute, "enabled": item.Enabled, "workspace_default_enabled": item.WorkspaceDefaultEnabled, "credential_revoked": item.CredentialRevoked, "status": item.Status, "access_match": item.Access.Match, "access_permissions": item.Access.Permissions, "permissions": permissions, "health": health, "database_name": item.DatabaseName, "database_schema": item.DatabaseSchema, "database_role": item.DatabaseRole, "migration_bundle_version": item.MigrationBundleVersion}
+	return map[string]any{"id": item.ID, "deployment": "external", "display_name": item.DisplayName, "description": item.Description, "version": item.Version, "api_contract_version": item.APIContractVersion, "service_identity": item.ServiceIdentity, "service_endpoint": item.ServiceEndpoint, "health_endpoint": item.HealthEndpoint, "frontend_route": item.FrontendRoute, "settings_route": item.SettingsRoute, "enabled": item.Enabled, "workspace_default_enabled": item.WorkspaceDefaultEnabled, "credential_revoked": item.CredentialRevoked, "status": item.Status, "access_match": item.Access.Match, "access_permissions": item.Access.Permissions, "permissions": permissions, "health": health, "database_name": item.DatabaseName, "database_schema": item.DatabaseSchema, "database_role": item.DatabaseRole, "migration_bundle_version": item.MigrationBundleVersion, "update_available": item.UpdateAvailable, "available_version": item.AvailableVersion, "available_migration_bundle_version": item.AvailableMigrationBundleVersion, "update_checked_at": item.UpdateCheckedAt, "update_check_error": item.UpdateCheckError}
 }
 func externalError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
@@ -110,6 +110,18 @@ func externalError(w http.ResponseWriter, r *http.Request, err error) {
 		httpserver.WriteError(w, r, http.StatusBadRequest, "INSTALLATION_ERROR", err.Error())
 	case errors.Is(err, application.ErrUpgradeInvalid):
 		httpserver.WriteError(w, r, http.StatusBadRequest, "UPDATE_INVALID", err.Error())
+	case errors.Is(err, application.ErrUpgradeManifest):
+		httpserver.WriteError(w, r, http.StatusConflict, application.UpgradeManifestChanged, "The signed application manifest changed after review. Check for updates again to create a fresh review.")
+	case errors.Is(err, application.ErrUpgradeExpired):
+		httpserver.WriteError(w, r, http.StatusConflict, application.UpgradeReviewExpired, "The administrator review expired. Check for updates again to create a fresh review.")
+	case errors.Is(err, application.ErrMigrationFetch), errors.Is(err, application.ErrMigrationChecksum), errors.Is(err, application.ErrMigrationPolicy), errors.Is(err, application.ErrMigrationExecution), errors.Is(err, application.ErrMigrationPermission):
+		code := application.MigrationPolicyRejected
+		if failure, ok := application.MigrationFailureDetails(err); ok {
+			code = failure.Code
+			httpserver.WriteError(w, r, http.StatusBadRequest, code, failure.Message)
+			return
+		}
+		httpserver.WriteError(w, r, http.StatusBadRequest, code, err.Error())
 	case errors.Is(err, application.ErrUpgradeState):
 		httpserver.WriteError(w, r, http.StatusConflict, "UPDATE_CONFLICT", err.Error())
 	case errors.Is(err, application.ErrUpgradeNotFound):
