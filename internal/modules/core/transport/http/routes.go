@@ -40,6 +40,8 @@ func (h *Handler) RegisterRoutes(routes module.RouteRegistry) error {
 	managed.Get("/applications/external/installations/{installation}", h.getExternalInstallation)
 	managed.Post("/applications/external/installations/{installation}/approve", h.approveExternalInstallation)
 	managed.Post("/applications/external/{application}/updates/check", h.checkExternalUpdate)
+	managed.Get("/applications/external/{application}/updates/{upgrade}", h.getExternalUpdate)
+	managed.Post("/applications/external/{application}/updates/{upgrade}/approve", h.approveExternalUpdate)
 	managed.Get("/applications/external/{application}", h.getExternal)
 	managed.Patch("/applications/external/{application}", h.updateExternal)
 	managed.Delete("/applications/external/{application}", h.unregisterExternal)
