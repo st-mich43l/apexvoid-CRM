@@ -30,6 +30,18 @@ describe('ApplicationsPage', () => {
     expect(await screen.findByText('Available')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /open application/i })).toHaveAttribute('href', '/crm')
     expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/crm/settings/pipelines')
+    expect(screen.getByText('Built-in')).toBeInTheDocument()
+  })
+
+  it('labels installed applications and opens them in a new tab', async () => {
+    vi.spyOn(api.framework, 'applications').mockResolvedValue([registered(), registered({ id: 'cafe', display_name: 'ApexVoid Café', deployment: 'external', frontend: { entry_route: '/apps/cafe', navigation_id: 'cafe' } })])
+    renderPage()
+    expect(await screen.findByText('Installed')).toBeInTheDocument()
+    const link = screen.getAllByRole('link', { name: /open application/i }).find(item => item.getAttribute('href') === '/apps/cafe')
+    expect(link).toBeDefined()
+    expect(link).toHaveAttribute('href', '/apps/cafe')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
   it('explains unavailable access without rendering privileged actions', async () => {
