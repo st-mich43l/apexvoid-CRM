@@ -269,9 +269,9 @@ func (s *ExternalStore) ApproveUpdate(ctx context.Context, applicationID string,
 	if _, _, err := validateUpgrade(current, proposed); err != nil { return ExternalUpgrade{}, err }
 	// Verify the service STILL serves the same authenticated manifest. This
 	// rejects stale previews and prevents a publisher swapping SQL at approval.
-	liveManifest, _, err := s.signedUpdateManifest(ctx, app)
+	liveManifest, liveRaw, err := s.signedUpdateManifest(ctx, app)
 	if err != nil { return ExternalUpgrade{}, err }
-	if manifestHash(mustJSON(liveManifest)) != fingerprint { return ExternalUpgrade{}, fmt.Errorf("%w: service manifest changed since review; preview again",ErrUpgradeState) }
+	if liveManifest.Application.ID != applicationID || manifestHash(liveRaw) != fingerprint { return ExternalUpgrade{}, fmt.Errorf("%w: service manifest changed since review; preview again",ErrUpgradeState) }
 	// The on-disk schema, role and password remain bound to the original app.
 	var name, schema, role string
 	var encrypted []byte
