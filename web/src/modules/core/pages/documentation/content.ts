@@ -125,7 +125,7 @@ export const guides: DocGuide[] = [
       ] },
       { id: 'verify', title: '5. Verify after activation', blocks: [
         steps('Confirm ApexVoid Café appears in Applications and in authorized workspace navigation.', 'Open its frontend entry route and check API responses through the Enterprise gateway.', 'Assign cafe.order.read to a workspace role and verify both allowed and denied operations.', 'Disable the app for another workspace and verify access is denied.', 'Restart containers and confirm enrollment state and app data survive.'),
-        note('Important frontend caveat', 'The current Enterprise React route embeds an external frontend in an iframe sourced from the API server. Browsers can refuse this cross-origin frame. See Frontend delivery and routing for the current limitation and gateway behavior.', 'warning'),
+        note('Gateway launch', 'External applications now open as top-level browser pages through the authenticated Enterprise gateway at /apps/{application-id}. They are not embedded in an iframe, and the chosen workspace is retained through authorization.', 'success'),
       ] },
     ], related: ['manifest-and-enrollment', 'security-and-rbac', 'frontend-and-routing'],
   },
@@ -190,7 +190,7 @@ export const guides: DocGuide[] = [
         note('Transport security', 'The protocol protects secrets within the trusted administrator-controlled Docker network. For traffic crossing untrusted networks, configure TLS in addition to the enrollment protocol.', 'warning'),
       ] },
       { id: 'retry', title: 'Retries and updates', blocks: [
-        p('An incomplete installation is persisted and may be retried without adopting unclaimed databases or rotating credentials unexpectedly. Registration, schema identity and migration checksums are immutable ownership boundaries. New app versions may be detected, but current Enterprise does not automatically install or migrate an update.'),
+        p('An incomplete installation is persisted and may be retried without adopting unclaimed databases or rotating credentials unexpectedly. Registration, schema identity and migration checksums are immutable ownership boundaries. New versions require a challenge-signed upgrade preview and explicit administrator approval. New permissions and append-only SQL migrations are not installed automatically.'),
       ] },
     ], related: ['first-application', 'docker-and-database', 'operations-and-release'],
   },
@@ -266,7 +266,7 @@ export const guides: DocGuide[] = [
   },
   {
     slug: 'frontend-and-routing', category: 'Platform architecture', title: 'Frontend delivery and routing',
-    description: 'Understand integrated navigation, gateway URLs and the current iframe limitation.',
+    description: 'Navigate external apps through same-origin gateway URLs without an iframe.',
     minutes: 7, keywords: ['frontend', 'iframe', 'firefox', 'domain', 'routing', 'gateway', 'react', 'view'],
     sections: [
       { id: 'routes', title: 'Registered browser and API paths', blocks: [
@@ -274,9 +274,9 @@ export const guides: DocGuide[] = [
         p('External applications declare their frontend_route and api_route in the signed manifest. Enterprise uses its gateway for authentication, RBAC and workspace validation before forwarding requests to the allowlisted service.'),
       ] },
       { id: 'current-view', title: 'Current application viewer behavior', blocks: [
-        p('The current Enterprise React frontend uses ExternalApplicationPage, which renders an iframe sourced from the API base URL and the application route. This is different from a fully integrated microfrontend or a native same-page React module.'),
-        note('Firefox can block the frame', 'If frontend runs at localhost:8386 while the iframe points to localhost:6868, browser security headers or frame-origin rules can prevent rendering. This does not imply that enrollment or the backend service failed.', 'warning'),
-        p('Do not disable all framing protections globally as a workaround. First inspect the iframe source, Content-Security-Policy and X-Frame-Options, plus the gateway response headers. External frontend HTML is trusted application code and must be reviewed accordingly.'),
+        p('Enterprise now serves external applications as top-level, same-origin gateway documents at /apps/{application-id}. Both Vite and production Nginx forward /apps/ requests to the authenticated Go gateway. This is not yet a native microfrontend loaded within the shared React shell.'),
+        note('No cross-origin iframe', 'The viewer no longer embeds localhost:6868 in localhost:8386. Use the Applications launcher or navigation link to open the same-origin gateway URL as a full page.', 'success'),
+        p('Keep frame protections enabled. External frontend code is still trusted same-origin application code and must be reviewed. If app opening fails, inspect the gateway, workspace selection and app availability instead of weakening frame headers.'),
       ] },
       { id: 'future-composition', title: 'Standalone versus integrated UI', blocks: [
         bullets('Standalone deployment is already supported at the service level: each app can have its own Go/React deployment and Docker lifecycle.', 'The native Enterprise sidebar can discover authorized external applications without rebuilding the Enterprise image.', 'A shared-shell microfrontend contract and automatic external domain/SSO launch are architectural directions, not guarantees of the current frontend implementation.'),
