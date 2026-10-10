@@ -157,8 +157,7 @@ func (s *ExternalStore) signedUpdateManifest(ctx context.Context, app ExternalAp
 	supplied, err := hex.DecodeString(strings.TrimPrefix(response.Header.Get("X-ApexVoid-Update-Signature"), "sha256="))
 	if err != nil || len(supplied) != sha256.Size { return ExternalManifest{}, nil, fmt.Errorf("%w: update signature is missing", ErrUpgradeInvalid) }
 	mac := hmac.New(sha256.New, key)
-	_, _ = mac.Write([]byte(upgradeManifestContext + challenge + "
-"))
+	_, _ = mac.Write([]byte(upgradeManifestContext + challenge + "\n"))
 	_, _ = mac.Write(raw)
 	if !hmac.Equal(supplied, mac.Sum(nil)) { return ExternalManifest{}, nil, fmt.Errorf("%w: update manifest signature is invalid", ErrUpgradeInvalid) }
 	manifest, err := decodeManifest(raw)
