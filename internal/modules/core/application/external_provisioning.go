@@ -17,7 +17,7 @@ import (
 // Defense-in-depth lint only. Isolation is enforced by PostgreSQL privileges,
 // schema ownership, the dedicated DB, approval and SQL review. Regex is NOT a
 // SQL parser or a security boundary.
-var migrationForbiddenPattern = regexp.MustCompile(`(?i)(drop\s+(database|schema|role|owned)|truncate\s|alter\s+(system|database|role)|create\s+(database|role|schema)|grant\s|revoke\s|create\s+extension|copy\s+[^;]*\s+program|pg_(read_file|write_file|execute_server_program)|set\s|security\s+definer|\b(public|pg_catalog|core_|workspace_|apexvoid_)\w*\.)`)
+var migrationForbiddenPattern = regexp.MustCompile(`(?i)(drop\s+(database|schema|role|owned)|truncate\s|alter\s+(system|database|role)|create\s+(database|role|schema)|grant\s|revoke\s|create\s+extension|copy\s+[^;]*\s+program|pg_(read_file|write_file|execute_server_program)|\bset\s+(?:role|search_path|session_authorization|transaction|constraints)\b|security\s+definer|\b(public|pg_catalog|core_|workspace_|apexvoid_)\w*\.)`)
 
 type provisionedDatabase struct {
 	Name     string
