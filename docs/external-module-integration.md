@@ -154,3 +154,79 @@ assertions by calling the real Core introspection endpoint with its own service
 credential. The Docker integration command exercises registration, gateway
 frontend/API access, RBAC denial, workspace disablement, credential rotation,
 revocation, and retirement without any database access from the fixture.
+
+## Reviewed external application upgrades
+
+After an application is enrolled, the administrator can choose **Applications → Check upgrade**.
+This does **not** install software or rebuild Docker images. The application
+owner first deploys a backward-compatible release to its independently managed
+container, then Enterprise previews and applies its application-owned catalog
+and migration changes only after approval.
+
+The update manifest must be authenticated with the **current** service
+credential. Enterprise sends a fresh, random challenge on the normal manifest
+GET using the \`X-ApexVoid-Update-Challenge\` header. The application returns
+the *exact* manifest JSON bytes and:
+
+\`\`\`text
+X-ApexVoid-Update-Signature: sha256=<64 lowercase hex characters>
+\`\`\`
+
+The HMAC-SHA256 key is the **raw 32-byte SHA-256 digest** of the UTF-8 service
+credential, not the credential itself and not its hexadecimal representation.
+The authenticated message is these bytes concatenated, in order:
+
+\`\`\`text
+apexvoid-update-manifest-v1\n<challenge>\n<exact manifest JSON response bytes>
+\`\`\`
+
+Use \`integration.SignUpdateManifest(serviceCredential, challenge, manifestBytes)\`
+from a compatible ApexVoid SDK release to produce the header. Never include the
+service credential, access tokens, enrollment code or platform database
+password in an update request or response. The server validates the response
+with the currently active credential hash, which also supports credential
+rotation. Each update preview is tied to that single signed response and a
+short-lived immutable fingerprint.
+
+### Administrator endpoints
+
+\`\`\`text
+POST /api/v1/applications/external/{application}/updates/check
+GET  /api/v1/applications/external/{application}/updates/{upgrade-id}
+POST /api/v1/applications/external/{application}/updates/{upgrade-id}/approve
+\`\`\`
+
+The preview includes the installed/new release and migration bundle versions,
+new permission definitions, new migration versions/paths/checksums, the signed
+manifest fingerprint and expiry. An unchanged, signed manifest yields an
+\`up_to_date\` status. A changed manifest becomes a \`pending_approval\` plan.
+For approval, the administrator sends:
+
+\`\`\`json
+{
+  "manifest_sha256": "<exact preview fingerprint>",
+  "approve_permissions": true,
+  "approve_migrations": true
+}
+\`\`\`
+
+Both approvals are mandatory even if one category has no additions.
+Only platform administrators with \`core.application.manage\` can perform these
+actions, and approval is auditable. The plan is not allowed to change or remove
+existing permissions or their scopes, rewrite an earlier SQL migration, rename
+the application or its database ownership, or change existing service gateway
+routes. Stable application version must increase. Any new migration requires
+an increased migration-bundle version.
+
+Enterprise re-verifies a fresh signed response before applying a plan.
+SQL is fetched from the original allowed Docker service URL, verified against
+the pinned SHA-256 checksums and applied using the **existing restricted app
+database role**. No new database is provisioned for an upgrade. Application
+schema migrations should be *backward compatible*, since a previously deployed
+service version may remain running during or after an unsuccessful review.
+Failed reviews can be retried while valid, with existing applied migration
+history checked for tampering. A completed review updates application metadata
+and new permission definitions without assigning those permissions to roles.
+
+Do **not** repurpose the legacy manual metadata editor as an upgrade API,
+reuse the consumed registration code, or attempt unauthenticated update checks.
