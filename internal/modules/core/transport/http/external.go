@@ -591,6 +591,10 @@ func (h *Handler) proxyExternal(w http.ResponseWriter, r *http.Request, api bool
 		}
 		request.Header.Set("X-ApexVoid-Gateway", "external-application")
 		request.Header.Set("X-ApexVoid-Identity-Assertion", assertion)
+		// The installed application's display label is Enterprise-managed
+		// metadata. Forward it only after stripping all browser-supplied
+		// identity headers so the external frontend can render the same label.
+		request.Header.Set("X-ApexVoid-Application-Display-Name", app.DisplayName)
 	}
 	proxy.ModifyResponse = func(response *http.Response) error {
 		response.Header.Del("Set-Cookie")
